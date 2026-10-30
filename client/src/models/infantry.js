@@ -45,7 +45,10 @@ function soldierGeos(team, type) {
     part(BOX, t.cloth, -0.28, 1.15, 0.14, -1.1, 0, 0.2, 0.14, 0.5, 0.14), // left arm
     part(BOX, 0x5a4a32, -0.1, 1.05, -0.2, 0, 0, 0, 0.36, 0.4, 0.18), // pack
   ];
-  if (type === 'rocket') {
+  if (type === 'crew') {
+    // Tank crew carry the M4-style rifle: small black carbine held across the chest.
+    body.push(...m4Parts(0.12, 1.24, 0.3));
+  } else if (type === 'rocket') {
     body.push(part(TUBE, 0x3d4a32, 0.22, 1.5, 0.15, Math.PI / 2, 0, 0, 0.13, 1.3, 0.13));
     body.push(part(TUBE, 0x2a2a26, 0.22, 1.5, 0.82, Math.PI / 2, 0, 0, 0.2, 0.25, 0.2));
   } else {
@@ -73,6 +76,71 @@ export function buildSoldier(team, type) {
   });
   for (const m of [body, ...legs]) m.castShadow = true;
   return { group, inner, body, legs, phase: Math.random() * 6 };
+}
+
+// ---------- M4A4-style rifle ----------
+// Parts in rifle space: barrel along +Z, sight line at y = M4_SIGHT_Y. Scaled for
+// third-person soldiers; the first-person viewmodel uses scale 1.
+const BLACK = 0x1b1c1d;
+const DARK = 0x101112;
+const GREY = 0x2c2e30;
+export const M4_SIGHT_Y = 0.085;
+function m4Parts(x = 0, y = 0, z = 0, k = 1) {
+  const P = (geo, col, px, py, pz, rx, ry, rz, sx, sy, sz) => part(geo, col, x + px * k, y + py * k, z + pz * k, rx, ry, rz, sx * k, sy * k, sz * k);
+  const out = [
+    P(BOX, BLACK, 0, 0, 0.02, 0, 0, 0, 0.05, 0.06, 0.26), // upper receiver
+    P(BOX, GREY, 0, -0.05, 0.0, 0, 0, 0, 0.044, 0.05, 0.19), // lower receiver
+    P(BOX, DARK, -0.026, 0.005, 0.03, 0, 0, 0, 0.004, 0.022, 0.07), // ejection port
+    P(TUBE, BLACK, 0, -0.002, 0.27, Math.PI / 2, 0, 0, 0.064, 0.24, 0.064), // handguard
+    P(TUBE, DARK, 0, 0, 0.47, Math.PI / 2, 0, 0, 0.018, 0.2, 0.018), // barrel
+    P(TUBE, DARK, 0, 0, 0.585, Math.PI / 2, 0, 0, 0.026, 0.045, 0.026), // flash hider
+    P(BOX, BLACK, 0, 0.042, 0.39, 0, 0, 0, 0.02, 0.03, 0.018), // front sight base
+    P(BOX, BLACK, 0, 0.072, 0.39, 0, 0, 0, 0.006, 0.03, 0.006), // front sight post
+    P(BOX, BLACK, -0.012, 0.07, 0.39, 0, 0, 0, 0.004, 0.032, 0.012), // post wings
+    P(BOX, BLACK, 0.012, 0.07, 0.39, 0, 0, 0, 0.004, 0.032, 0.012),
+    P(BOX, DARK, 0, 0.036, 0.02, 0, 0, 0, 0.03, 0.012, 0.25), // top rail
+    P(BOX, BLACK, 0, 0.074, -0.01, 0, 0, 0, 0.022, 0.016, 0.15), // carry handle
+    P(BOX, BLACK, 0, 0.054, 0.055, 0, 0, 0, 0.018, 0.024, 0.02), // handle legs
+    P(BOX, BLACK, 0, 0.054, -0.07, 0, 0, 0, 0.018, 0.024, 0.02),
+    P(BOX, BLACK, -0.009, M4_SIGHT_Y, -0.075, 0, 0, 0, 0.005, 0.022, 0.012), // rear aperture
+    P(BOX, BLACK, 0.009, M4_SIGHT_Y, -0.075, 0, 0, 0, 0.005, 0.022, 0.012),
+    P(BOX, DARK, 0, -0.13, 0.06, 0.25, 0, 0, 0.032, 0.13, 0.065), // 30-round magazine
+    P(BOX, DARK, 0, -0.105, -0.075, -0.35, 0, 0, 0.03, 0.09, 0.035), // pistol grip
+    P(BOX, BLACK, 0, -0.085, -0.02, 0, 0, 0, 0.012, 0.008, 0.06), // trigger guard
+    P(TUBE, GREY, 0, -0.005, -0.18, Math.PI / 2, 0, 0, 0.03, 0.14, 0.03), // buffer tube
+    P(BOX, BLACK, 0, -0.03, -0.27, 0, 0, 0, 0.04, 0.075, 0.12), // stock
+    P(BOX, DARK, 0, -0.035, -0.335, 0, 0, 0, 0.042, 0.09, 0.012), // butt pad
+    P(BOX, GREY, 0, 0.02, -0.11, 0, 0, 0, 0.03, 0.012, 0.03), // charging handle
+  ];
+  return out;
+}
+
+// First-person rifle with gloved hands. Barrel points -Z (camera forward).
+export function buildM4Viewmodel() {
+  const parts = m4Parts();
+  const sleeve = TEAM.blue.cloth;
+  const glove = 0x2d2a24;
+  parts.push(
+    part(BOX, glove, 0.0, -0.09, -0.05, -0.35, 0, 0, 0.05, 0.07, 0.06), // right hand on the grip
+    part(BOX, sleeve, -0.03, -0.14, -0.15, -0.5, 0.25, 0, 0.07, 0.07, 0.24), // right forearm
+    part(BOX, glove, -0.005, -0.04, 0.27, 0, 0, 0, 0.075, 0.05, 0.08), // left hand under the handguard
+    part(BOX, sleeve, 0.07, -0.1, 0.16, -0.25, -0.5, 0, 0.07, 0.07, 0.26), // left forearm
+  );
+  const geo = mergeGeometries(parts);
+  geo.rotateY(Math.PI);
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(geo, MAT));
+  // Red dot on the front post, for the red-dot style sight picture.
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a, fog: false }));
+  dot.position.set(0, M4_SIGHT_Y, -0.39);
+  group.add(dot);
+  // Muzzle flash, shown for a frame or two per shot.
+  const flash = new THREE.Mesh(new THREE.OctahedronGeometry(0.05, 0), new THREE.MeshBasicMaterial({ color: 0xffd27a, fog: false, transparent: true, opacity: 0.9 }));
+  flash.position.set(0, 0, -0.64);
+  flash.scale.set(1, 1, 2.2);
+  flash.visible = false;
+  group.add(flash);
+  return { group, flash, dot };
 }
 
 const gunCache = new Map();

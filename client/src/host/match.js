@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
-import { TANKS, TICK_RATE, PING, MATCH, TYPE_IDS } from '../../../shared/constants.js';
+import { TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
+import { footBlocked, nearGarage } from '../../../shared/foot.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
 import { tankPose, muzzlePose, planePitchAlong, wrapAngle } from '../../../shared/tank.js';
@@ -72,6 +73,36 @@ class Tank {
   }
 }
 
+// A crew member on foot. Movement is reported by the player's client (it predicts it
+// locally); the host checks it, runs the weapons and takes the damage.
+class CrewSoldier {
+  constructor(role, x, z, h) {
+    this.id = nextId++;
+    this.kind = 'inf';
+    this.crew = role;
+    this.team = 'blue';
+    this.type = 'crew';
+    this.spec = { ...UNITS.crew, size: { ...UNITS.crew.size } };
+    this.x = x;
+    this.z = z;
+    this.h = h;
+    this.ty = 0; // 1 = crouched
+    this.gp = 0; // aim pitch
+    this.jy = 0; // height above ground (jumping)
+    this.hp = this.spec.hp;
+    this.dead = false;
+    this.radius = 0.5;
+    this.pose = { y: groundAt(x, z) };
+    this.input = { fire: false, ads: false, moving: false };
+    this.mag = FOOT.rifle.mag;
+    this.reserve = FOOT.rifle.reserve;
+    this.reloading = 0;
+    this.cd = 0;
+    this.grenades = FOOT.grenades;
+    this.grenadeCd = 0;
+  }
+}
+
 export class Match {
   constructor(room) {
     this.room = room;
@@ -93,6 +124,8 @@ export class Match {
     this.bleedT = MATCH.bleedInterval;
     this.points = POINTS.map((p) => ({ id: p.id, owner: null, progress: 0, contested: false }));
     this.capturedByUs = new Set();
+    // Crew state after the tank dies: 'tank' (in or waiting for a tank), 'choice', 'foot'.
+    this.crew = { mode: 'tank', until: 0, picks: {}, foot: {} };
 
     const b = BASES.blue;
     this.tank = this.addTank(new Tank('blue', room.tank, b.x, b.z + 45, b.heading, { player: true }));
@@ -117,6 +150,10 @@ export class Match {
   // ---------- Input ----------
   onMessage(player, msg) {
     const t = this.tank;
+    if (msg.t === 'bail') return this.onBailPick(player.role, msg.pick);
+    // Dev-only test hook: destroy our own tank.
+    if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
+    if (this.crew.mode === 'foot') return this.onFootMessage(player.role, msg);
     if (player.role === 'driver' && msg.t === 'drive') {
       t.drive.th = Math.max(-1, Math.min(1, Number(msg.th) || 0));
       t.drive.st = Math.max(-1, Math.min(1, Number(msg.st) || 0));
@@ -152,7 +189,11 @@ export class Match {
     this.time += DT;
     const t = this.tank;
     if (t.dead) {
-      if (this.time >= t.respawnAt) {
+      const c = this.crew;
+      if (c.mode === 'choice') {
+        if ((c.picks.driver && c.picks.gunner) || this.time >= c.until) this.resolveBail();
+      } else if (c.mode === 'foot') this.updateFoot();
+      else if (this.time >= t.respawnAt) {
         t.respawn();
         this.events.push({ k: 'spawn', u: t.id });
       }
@@ -169,10 +210,133 @@ export class Match {
     this.updateTickets();
     // Ping expires after its lifetime or once the tank reaches it.
     if (this.ping) {
-      const reached = Math.hypot(this.tank.x - this.ping.x, this.tank.z - this.ping.z) < PING.reachRadius;
+      const near = this.crew.mode === 'foot' ? Object.values(this.crew.foot).filter((s) => !s.dead) : [this.tank];
+      const reached = near.some((u) => Math.hypot(u.x - this.ping.x, u.z - this.ping.z) < PING.reachRadius);
       if (reached || this.time - this.ping.t0 > PING.lifetime) this.ping = null;
     }
     this.broadcast();
+  }
+
+  // ---------- Bail out / on foot ----------
+  onBailPick(role, pick) {
+    if (this.crew.mode !== 'choice' || (pick !== 'tank' && pick !== 'foot')) return;
+    this.crew.picks[role] = pick;
+  }
+
+  // Both should agree; if they don't, the driver's pick wins (default: wait for a tank).
+  resolveBail() {
+    const c = this.crew;
+    if ((c.picks.driver ?? 'tank') === 'foot') {
+      const t = this.tank;
+      // Bail out on both sides of the wreck.
+      const lx = Math.cos(t.h), lz = -Math.sin(t.h);
+      const off = t.spec.size.width / 2 + 1.6;
+      c.foot = {};
+      for (const [role, side] of [['driver', 1], ['gunner', -1]]) {
+        let x = t.x + lx * off * side, z = t.z + lz * off * side;
+        for (let k = 0; k < 8 && footBlocked(x, z, this.propDead); k++) {
+          x = t.x + Math.cos(k) * (off + 2);
+          z = t.z + Math.sin(k) * (off + 2);
+        }
+        const s = new CrewSoldier(role, x, z, t.h);
+        c.foot[role] = s;
+        this.units.push(s);
+      }
+      t.respawnAt = Infinity;
+      c.mode = 'foot';
+    } else c.mode = 'tank';
+    c.picks = {};
+  }
+
+  onFootMessage(role, msg) {
+    const s = this.crew.foot[role];
+    if (msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
+      if (this.time >= this.pingReadyAt) {
+        this.ping = { x: msg.x, z: msg.z, t0: this.time, id: (this.ping?.id ?? 0) + 1 };
+        this.pingReadyAt = this.time + PING.cooldown;
+      }
+      return;
+    }
+    if (!s || s.dead) return;
+    if (msg.t === 'foot') {
+      if (Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
+        // Trust the client's own prediction unless it jumps too far or into a wall.
+        const d = Math.hypot(msg.x - s.x, msg.z - s.z);
+        if (d < 4 && !footBlocked(msg.x, msg.z, this.propDead)) {
+          s.x = msg.x;
+          s.z = msg.z;
+        }
+      }
+      if (Number.isFinite(msg.h)) s.h = msg.h;
+      if (Number.isFinite(msg.p)) s.gp = Math.max(-1.5, Math.min(1.5, msg.p));
+      s.jy = Math.max(0, Math.min(2, Number(msg.jy) || 0));
+      s.ty = msg.crouch ? 1 : 0;
+      s.spec.size.height = msg.crouch ? 1.2 : 1.8;
+      s.pose.y = groundAt(s.x, s.z) + s.jy;
+      s.input = { fire: !!msg.fire, ads: !!msg.ads, moving: !!msg.moving };
+    } else if (msg.t === 'reload') {
+      if (s.reloading <= 0 && s.mag < FOOT.rifle.mag && s.reserve > 0) s.reloading = FOOT.rifle.reload;
+    } else if (msg.t === 'grenade') {
+      if (s.grenades > 0 && s.grenadeCd <= 0) {
+        s.grenades--;
+        s.grenadeCd = FOOT.grenade.cooldown;
+        const g = FOOT.grenade;
+        const p = s.gp + 0.25; // lobbed a little above the crosshair
+        const dir = new Vector3(Math.sin(s.h) * Math.cos(p), Math.sin(p), Math.cos(s.h) * Math.cos(p));
+        const eye = new Vector3(s.x, s.pose.y + (s.ty ? FOOT.crouchEye : FOOT.eye), s.z).addScaledVector(dir, 0.6);
+        this.fire(s, { kind: 'grenade', damage: g.damage, speed: g.speed, splash: g.splash, splashDamage: g.splashDamage, spread: 0 }, eye, dir);
+      }
+    } else if (msg.t === 'garage') {
+      // Everyone still standing has to be at the garage.
+      const alive = Object.values(this.crew.foot).filter((u) => !u.dead);
+      if (alive.every((u) => nearGarage(u.x, u.z))) this.endFoot();
+    }
+  }
+
+  updateFoot() {
+    const r = FOOT.rifle;
+    const crew = Object.values(this.crew.foot);
+    for (const s of crew) {
+      if (s.dead) continue;
+      s.cd = Math.max(0, s.cd - DT);
+      s.grenadeCd = Math.max(0, s.grenadeCd - DT);
+      if (s.reloading > 0) {
+        s.reloading -= DT;
+        if (s.reloading <= 0) {
+          const n = Math.min(r.mag - s.mag, s.reserve);
+          s.mag += n;
+          s.reserve -= n;
+          s.reloading = 0;
+        }
+      }
+      // Ammo resupply at the base garages.
+      if (nearGarage(s.x, s.z)) {
+        s.reserve = r.reserve;
+        s.grenades = FOOT.grenades;
+      }
+      if (s.input.fire && s.cd <= 0 && s.reloading <= 0) {
+        if (s.mag > 0) {
+          s.mag--;
+          s.cd = r.interval;
+          const spread = (s.input.ads ? r.ads : r.hip) * (s.input.moving ? 2 : 1) * (s.ty ? 0.7 : 1);
+          const dir = new Vector3(Math.sin(s.h) * Math.cos(s.gp), Math.sin(s.gp), Math.cos(s.h) * Math.cos(s.gp));
+          const eye = new Vector3(s.x, s.pose.y + (s.ty ? FOOT.crouchEye : FOOT.eye) - 0.05, s.z).addScaledVector(dir, 0.5);
+          this.fire(s, { kind: 'rifle', damage: r.damage, speed: r.speed, splash: 0, splashDamage: 0, spread }, eye, dir);
+        } else if (s.reserve > 0) s.reloading = r.reload;
+      }
+    }
+    // Both down: the crew waits for a fresh tank at base.
+    if (crew.every((s) => s.dead)) this.endFoot();
+  }
+
+  endFoot() {
+    this.units = this.units.filter((u) => !u.crew || u.dead);
+    this.crew.foot = {};
+    this.crew.mode = 'tank';
+    const t = this.tank;
+    t.respawnAt = this.time + 15;
+    t.drive = { th: 0, st: 0, boost: false, brake: false };
+    t.trigger = { main: false, coax: false };
   }
 
   // Module effects that tick over time: engine fire, repairs, NPC field fixes.
@@ -599,10 +763,13 @@ export class Match {
       u.dead = true;
       u.v = 0;
       u.diedAt = this.time;
-      if (u.player) u.respawnAt = this.time + 15;
+      if (u.player) {
+        u.respawnAt = this.time + 15;
+        this.crew = { mode: 'choice', until: this.time + FOOT.choiceTime, picks: {}, foot: {} };
+      }
       this.events.push({ k: 'k', u: u.id, by: p.owner, team: u.team, type: u.type });
       const shooter = this.units.find((x) => x.id === p.owner);
-      if (shooter?.player && u.team !== shooter.team) this.stats.kills++;
+      if ((shooter?.player || shooter?.crew) && u.team !== shooter.team) this.stats.kills++;
       const cost = u.player ? MATCH.deathCost.player : MATCH.deathCost[u.kind] ?? 1;
       this.tickets[u.team] = Math.max(0, this.tickets[u.team] - cost);
     }
@@ -619,7 +786,7 @@ export class Match {
         if (Math.abs(u.x - def.x) > def.r || Math.abs(u.z - def.z) > def.r) continue;
         if (Math.hypot(u.x - def.x, u.z - def.z) > def.r) continue;
         weight[u.team] += u.player ? MATCH.capWeight.player : MATCH.capWeight[u.kind] ?? 1;
-        if (u.player) usInside = true;
+        if (u.player || u.crew) usInside = true;
       }
       pt.contested = weight.blue > 0 && weight.red > 0;
       if (pt.contested || (weight.blue === 0 && weight.red === 0)) continue;
@@ -659,6 +826,22 @@ export class Match {
   }
 
   // ---------- Networking ----------
+  crewSnapshot() {
+    const c = this.crew;
+    const out = { mode: c.mode };
+    if (c.mode === 'choice') {
+      out.left = r2(Math.max(0, c.until - this.time));
+      out.picks = c.picks;
+    }
+    if (c.mode === 'foot') {
+      out.foot = {};
+      for (const [role, s] of Object.entries(c.foot)) {
+        out.foot[role] = { id: s.id, hp: Math.round(s.hp), dead: s.dead, x: r2(s.x), z: r2(s.z), mag: s.mag, res: s.reserve, gren: s.grenades, rl: r2(s.reloading) };
+      }
+    }
+    return out;
+  }
+
   broadcast() {
     const t = this.tank;
     const snap = {
@@ -683,8 +866,13 @@ export class Match {
         repair: t.repair && { mod: t.repair.mod, p: r2(t.repair.t / t.repair.total) },
         ping: this.ping && { id: this.ping.id, x: r2(this.ping.x), z: r2(this.ping.z), age: r2(this.time - this.ping.t0) },
         pingCd: r2(Math.max(0, this.pingReadyAt - this.time)),
+        crew: this.crewSnapshot(),
       },
-      u: this.units.map((u) => [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], r2(u.x), r2(u.z), r3(u.h), r3(u.ty), r3(u.gp), r2(u.hp / u.spec.hp), u.dead ? 1 : 0, u.player ? 1 : 0]),
+      u: this.units.map((u) => {
+        const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], r2(u.x), r2(u.z), r3(u.h), r3(u.ty), r3(u.gp), r2(u.hp / u.spec.hp), u.dead ? 1 : 0, u.player ? 1 : 0];
+        if (u.crew) a.push(r2(u.jy));
+        return a;
+      }),
       pts: this.points.map((p) => [p.id, p.owner ? TEAM_CODE[p.owner] : -1, r2(p.progress), p.contested ? 1 : 0]),
       tk: [this.tickets.blue, this.tickets.red],
       left: Math.max(0, Math.round(MATCH.duration - this.time)),

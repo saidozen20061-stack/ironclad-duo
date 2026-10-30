@@ -131,7 +131,7 @@ export class ArmyAI {
     for (const team of ['blue', 'red']) {
       this.waveT[team] -= dt;
       this.tankT[team] -= dt;
-      const alive = m.units.filter((u) => u.team === team && !u.dead && !u.player);
+      const alive = m.units.filter((u) => u.team === team && !u.dead && !u.player && !u.crew);
       const inf = alive.filter((u) => u.kind === 'inf').length;
       const tanks = alive.filter((u) => u.kind === 'tank').length;
       if (this.waveT[team] <= 0) {
@@ -163,7 +163,7 @@ export class ArmyAI {
       } else if (!owner) s.respawnAt = 0;
     }
     for (const u of m.units) {
-      if (u.dead || u.player) continue;
+      if (u.dead || u.player || u.crew) continue;
       if (u.kind === 'inf') this.infantry(u, dt);
       else if (u.kind === 'tank') this.tank(u, dt);
       else if (u.kind === 'atgun') this.atgun(u, dt);

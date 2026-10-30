@@ -6,7 +6,7 @@ const INTERP_DELAY = 0.1; // seconds behind the newest server state
 const TEAMS = ['blue', 'red'];
 
 export function decodeUnit(a) {
-  return { id: a[0], team: TEAMS[a[1]], type: TYPE_IDS[a[2]], x: a[3], z: a[4], h: a[5], ty: a[6], gp: a[7], hp: a[8], dead: !!a[9], player: !!a[10] };
+  return { id: a[0], team: TEAMS[a[1]], type: TYPE_IDS[a[2]], x: a[3], z: a[4], h: a[5], ty: a[6], gp: a[7], hp: a[8], dead: !!a[9], player: !!a[10], y: a[11] ?? 0 };
 }
 
 export class SnapshotBuffer {

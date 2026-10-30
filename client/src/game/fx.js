@@ -13,9 +13,10 @@ const TRACER = {
   mg: { color: 0xff7040, len: 3, width: 0.06 },
   rifle: { color: 0xffe070, len: 2.2, width: 0.04 },
   rocket: { color: 0xffc060, len: 1.4, width: 0.22 },
+  grenade: { color: 0x2f3a26, len: 0.14, width: 0.1 },
 };
 
-const IMPACT_SIZE = { ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3 };
+const IMPACT_SIZE = { ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
 export class FX {
   constructor(scene) {

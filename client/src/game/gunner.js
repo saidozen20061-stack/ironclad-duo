@@ -492,6 +492,7 @@ export class GunnerView {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('contextmenu', this.onContext);
+    this.world.scene.remove(this.pingMarker);
     this.el.remove();
   }
 }

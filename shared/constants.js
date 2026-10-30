@@ -116,10 +116,14 @@ export const UNITS = {
     turretSpeed: (30 * Math.PI) / 180,
     weapon: { kind: 'ap', range: 480, interval: 6.5, damage: 230, speed: 750, spread: 0.004, splash: 1.5, splashDamage: 30 },
   },
+  // The player crew after bailing out of a destroyed tank.
+  crew: {
+    id: 'crew', class: 'Tank Crew', hp: 100, size: { length: 0.7, width: 0.7, height: 1.8 }, armor: { front: 1, side: 1, rear: 1 },
+  },
 };
 
 // Unit type codes on the wire.
-export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun'];
+export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew'];
 
 export const MATCH = {
   tickets: 500,
@@ -136,3 +140,13 @@ export const MATCH = {
 
 export const PING = { cooldown: 5, lifetime: 15, reachRadius: 12 };
 export const RADAR_RANGE = 120;
+
+// On-foot crew: choice after the tank dies, movement and the M4-style rifle.
+export const FOOT = {
+  choiceTime: 10,
+  walk: 4.2, sprint: 6.8, crouch: 2.2, jump: 4.6, eye: 1.6, crouchEye: 1.05,
+  rifle: { mag: 30, reserve: 180, interval: 0.1, reload: 2.3, damage: 25, speed: 820, hip: 0.022, ads: 0.004 },
+  grenades: 3,
+  grenade: { speed: 17, damage: 20, splash: 7, splashDamage: 120, cooldown: 1 },
+  garageRadius: 15,
+};

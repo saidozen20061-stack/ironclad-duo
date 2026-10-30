@@ -93,7 +93,7 @@ export class UnitsView {
   }
 
   updateSoldier(m, u, dt, dist) {
-    m.pose.y = groundAt(u.x, u.z);
+    m.pose.y = groundAt(u.x, u.z) + u.y; // u.y: jump height (player crew)
     const s = m.handles;
     s.group.position.set(u.x, m.pose.y, u.z);
     s.group.rotation.y = u.h;
