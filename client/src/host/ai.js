@@ -193,8 +193,14 @@ export class ArmyAI {
   }
 
   spawnTank(team) {
-    const r = Math.random();
-    const type = r < 0.35 ? 'light' : r < 0.8 ? 'medium' : 'heavy';
+    // Weighted mix of every tank class; the big ones are rarer.
+    const mix = [['light', 18], ['medium', 26], ['heavy', 12], ['scout', 10], ['wheeled', 10], ['destroyer', 9], ['aa', 8], ['assault', 5], ['superheavy', 2]];
+    let r = Math.random() * mix.reduce((a, [, w]) => a + w, 0);
+    let type = 'medium';
+    for (const [id, w] of mix) if ((r -= w) <= 0) {
+      type = id;
+      break;
+    }
     const [x, z] = this.spawnPoint(team, 60);
     const t = this.match.createTank(team, type, x, z, BASES[team].heading);
     t.ai = { state: 'move', objective: chooseObjective(this.match, t), think: rand(0, 0.5), target: null, stuckT: 0, reverseT: 0, lastPos: [x, z] };
@@ -393,6 +399,15 @@ export class ArmyAI {
         drive.st = Math.max(-1, Math.min(1, diff * 2));
         drive.th = Math.abs(diff) > 1.0 ? 0.15 : Math.abs(diff) > 0.5 ? 0.5 : 1;
       } else drive.brake = Math.abs(t.v) > 0.5;
+    }
+    // Casemate guns can't swing far: point the hull at the target instead.
+    if (t.spec.traverse && ai.target && !ai.target.dead && ai.state !== 'retreat' && ai.reverseT <= 0) {
+      const diff = wrapAngle(Math.atan2(ai.target.x - t.x, ai.target.z - t.z) - t.h);
+      if (Math.abs(diff) > t.spec.traverse * 0.7) {
+        drive.st = Math.max(-1, Math.min(1, diff * 2));
+        drive.th = 0;
+        drive.brake = false;
+      }
     }
     t.drive = drive;
     if (ai.state === 'retreat' && Math.hypot(BASES[t.team].x - t.x, BASES[t.team].z - t.z) < 80) t.hp = Math.min(t.spec.hp, t.hp + t.spec.hp * 0.03 * dt);

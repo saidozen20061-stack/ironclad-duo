@@ -22,7 +22,10 @@ Everything (terrain, buildings, trees, tanks, soldiers, sounds) is generated in 
 1. Both open the game link in **Chrome, Edge or Firefox** on a computer.
 2. Type a callsign. One of you clicks **Host Game** and gets a **5-letter room code**.
 3. The other clicks **Join Game** and types the code.
-4. In the lobby each player picks **Driver** or **Gunner**; the host picks the tank: **Hornet** (light, fast, autocannon), **Warden** (medium, AP/HE + machine gun) or **Bastion** (heavy, huge slow gun).
+4. In the lobby each player picks **Driver** or **Gunner**; the host picks one of nine vehicles:
+   - **Jackal** (recon tank: tiny, fastest tracks, 20mm) · **Hornet** (light, 30mm autocannon) · **Strider** (six-wheeled armored car, top road speed, 75mm AP/HE)
+   - **Wasp** (twin 25mm autocannons, aims steeply) · **Warden** (medium, AP/HE + machine gun) · **Viper** (tank destroyer: no turret, the gun swings only 12°, long 105mm)
+   - **Mauler** (assault howitzer, lobbed 165mm with a huge blast) · **Bastion** (heavy, 152mm) · **Colossus** (super-heavy: very slow, thickest armor, 128mm + MG)
 5. Both click **Ready**. Allow the microphone when the browser asks, then talk with **V** (push-to-talk) or switch to open mic in Settings.
 
 The host's browser runs the battle (all the AI units), so the player with the faster computer and the better internet connection should host. Keep the game tab open; minimising it is fine.

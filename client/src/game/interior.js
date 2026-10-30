@@ -61,7 +61,7 @@ export class ShellRack {
     this.type = tankType;
     this.weapon = weapon;
     // Light tank: one autocannon magazine of rounds. Others: ready rack of shells.
-    this.capacity = weapon.kind === 'autocannon' ? weapon.magazine : tankType === 'heavy' ? 6 : 10;
+    this.capacity = weapon.kind === 'autocannon' ? Math.min(12, weapon.magazine) : tankType === 'heavy' ? 6 : 10;
     this.count = this.capacity;
     this.restockT = 0;
     const group = new THREE.Group();

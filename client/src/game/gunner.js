@@ -361,7 +361,9 @@ export class GunnerView {
     bar.style.width = `${frac * 100}%`;
     bar.classList.toggle('ready', ready);
     const gunDead = (me.mods?.gun ?? 1) <= 0;
-    $('.w-state').textContent = me.dead ? 'TANK DESTROYED' : gunDead ? 'GUN DESTROYED — driver must repair' : ready ? 'READY' : `RELOAD ${me.reload.toFixed(1)}s`;
+    // Casemate guns: warn when the target is outside the gun's arc.
+    const outOfArc = this.spec.traverse && Math.abs(wrapAngle(this.aim.yaw - self.h)) > this.spec.traverse + 0.05;
+    $('.w-state').textContent = me.dead ? 'TANK DESTROYED' : gunDead ? 'GUN DESTROYED — driver must repair' : outOfArc ? 'OUT OF ARC — driver: turn the hull' : ready ? 'READY' : `RELOAD ${me.reload.toFixed(1)}s`;
     // Module diagram
     if (me.mods) {
       $('.g-mods .hp b').textContent = `${Math.round((me.hp / this.spec.hp) * 100)}%${me.burning ? ' 🔥' : ''}`;

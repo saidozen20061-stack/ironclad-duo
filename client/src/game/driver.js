@@ -97,7 +97,7 @@ export class DriverView {
     const s = this.scene;
     const dark = new THREE.MeshStandardMaterial({ color: 0x23281d, flatShading: true, roughness: 0.9 });
     // Walls, fittings, gunner, shell rack, lights (see interior.js).
-    this.interior = buildInterior(s, this.tankType, this.spec.weapon);
+    this.interior = buildInterior(s, this.spec.frame ?? this.tankType, this.spec.weapon);
     this.levers = this.interior.levers;
     this.lamps = this.interior.lamps;
     this.warnLight = this.interior.warnLight;

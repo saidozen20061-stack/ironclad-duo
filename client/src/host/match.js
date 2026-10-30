@@ -500,6 +500,7 @@ export class Match {
     const want = wrapAngle(t.aim.yaw - t.h);
     const diff = wrapAngle(want - t.ty);
     t.ty = wrapAngle(t.ty + Math.max(-maxStep, Math.min(maxStep, diff)));
+    if (s.traverse) t.ty = Math.max(-s.traverse, Math.min(s.traverse, t.ty)); // casemate gun arc
     // Elevation target is world pitch minus the hull's slope along the turret direction.
     const worldYaw = t.h + t.ty;
     const wantElev = t.aim.pitch - planePitchAlong(t.pose.up, worldYaw);
