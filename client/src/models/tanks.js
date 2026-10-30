@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TANKS } from '../../../shared/constants.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { paintMaterial, bakePaintCoords } from './paint.js';
 
 // Procedural low-poly tank models. Forward is +Z, up is +Y, origin at ground centre.
@@ -370,7 +371,48 @@ const BUILDERS = {
   superheavy: buildSuperheavy,
 };
 
+// Collapse each pivot's (hull / turret / gun) static parts into one mesh per material.
+// Looks identical but turns ~40 draw calls per tank into a handful.
+function mergeParts(root, pivots) {
+  root.updateMatrixWorld(true);
+  for (const node of pivots) {
+    const inv = new THREE.Matrix4().copy(node.matrixWorld).invert();
+    const byMat = new Map();
+    const collect = (o) => {
+      for (const c of [...o.children]) {
+        if (pivots.includes(c)) continue;
+        if (c.isMesh) {
+          const g = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+          g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, c.matrixWorld));
+          g.clearGroups();
+          if (!byMat.has(c.material)) byMat.set(c.material, []);
+          byMat.get(c.material).push(g);
+          c.removeFromParent();
+        } else collect(c);
+      }
+    };
+    collect(node);
+    for (const [material, geos] of byMat) {
+      const m = new THREE.Mesh(mergeGeometries(geos), material);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      node.add(m);
+    }
+  }
+}
+
+// One built + merged template per type and team; units get cheap clones sharing its geometry.
+const templates = new Map();
+
 export function buildTank(type = 'medium', team = 'blue') {
+  const key = `${type}|${team}`;
+  if (!templates.has(key)) templates.set(key, makeTank(type, team));
+  const group = templates.get(key).group.clone();
+  const find = (name) => group.getObjectByName(name);
+  return { group, turret: find('turret'), gun: find('gun'), muzzle: find('muzzle'), type, team };
+}
+
+function makeTank(type, team) {
   const colors = TEAM_COLORS[team] ?? TEAM_COLORS.blue;
   const handles = BUILDERS[type](colors);
   // Swap the plain hull colours for this class's paint scheme (tracks, tyres, guns' black parts stay).
@@ -399,7 +441,9 @@ export function buildTank(type = 'medium', team = 'blue') {
       o.receiveShadow = true;
     }
   });
-  handles.type = type;
-  handles.team = team;
+  handles.turret.name = 'turret';
+  handles.gun.name = 'gun';
+  handles.muzzle.name = 'muzzle';
+  mergeParts(handles.group, [handles.group, handles.turret, handles.gun]);
   return handles;
 }
