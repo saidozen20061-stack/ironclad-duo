@@ -1,5 +1,6 @@
 import { TANKS, TANK_IDS } from '../../../shared/constants.js';
 import { net } from '../net.js';
+import { PAINT } from '../models/paint.js';
 import { $, $$, escapeHtml, toast, setStatus } from './screens.js';
 
 // Renders lobby state pushed by the server. All mutations go through the server.
@@ -28,7 +29,7 @@ function buildTankCards() {
     const bars = Object.entries(t.stats)
       .map(([k, v]) => `<label>${STAT_LABELS[k]}</label><div class="bar"><i style="width:${v * 20}%"></i></div>`)
       .join('');
-    btn.innerHTML = `<div class="cls">${t.class}</div><b>${t.name}</b><span>${t.blurb}</span><div class="wpn">${t.weapon.label}</div><div class="bars">${bars}</div>`;
+    btn.innerHTML = `<div class="cls">${t.class}</div><b>${t.name}</b><span>${t.blurb}</span><div class="wpn">${t.weapon.label}</div><div class="paint">Paint: ${PAINT[id]?.name ?? 'Standard'}</div><div class="bars">${bars}</div>`;
     btn.addEventListener('click', () => net.send({ t: 'tank', tank: id }));
     root.appendChild(btn);
   }

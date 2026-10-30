@@ -177,6 +177,7 @@ input, select {
 .tank-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
 .tank-card .cls { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
 .tank-card .wpn { color: var(--ink); font-weight: 600; font-size: 14px; }
+.tank-card .paint { color: var(--ink-dim); font-size: 12px; font-style: italic; }
 .bars { display: grid; grid-template-columns: 70px 1fr 70px 1fr; gap: 3px 8px; font-size: 12px; color: var(--ink-dim); margin-top: 4px; align-items: center; }
 .bar { height: 6px; background: #0c0e0a; border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TANKS } from '../../../shared/constants.js';
+import { paintMaterial, bakePaintCoords } from './paint.js';
 
 // Procedural low-poly tank models. Forward is +Z, up is +Y, origin at ground centre.
 // Returned handles: group (hull root), turret (yaw pivot), gun (pitch pivot), muzzle (barrel tip).
@@ -372,6 +373,15 @@ const BUILDERS = {
 export function buildTank(type = 'medium', team = 'blue') {
   const colors = TEAM_COLORS[team] ?? TEAM_COLORS.blue;
   const handles = BUILDERS[type](colors);
+  // Swap the plain hull colours for this class's paint scheme (tracks, tyres, guns' black parts stay).
+  handles.group.updateMatrixWorld(true);
+  const hullMat = mat(colors.hull);
+  const darkMat = mat(colors.dark);
+  handles.group.traverse((o) => {
+    if (!o.isMesh || (o.material !== hullMat && o.material !== darkMat)) return;
+    bakePaintCoords(o, handles.group);
+    o.material = paintMaterial(type, team, o.material === hullMat ? 1 : 0.62);
+  });
   // Team marking: a coloured stripe on the turret
   const spec = TANKS[type];
   const stripe = box(spec.size.width * 0.32, 0.12, 0.12, mat(colors.mark, { emissive: colors.mark, emissiveIntensity: 0.15 }));
