@@ -7,7 +7,7 @@ A low-poly, first-person **co-op tank game for two players**, playable in the br
 
 Everything (terrain, buildings, trees, tanks, soldiers, sounds) is generated in code. There are no downloaded assets and no game server: the two players connect directly to each other.
 
-**▶ Play now: https://YOUR-GITHUB-USERNAME.github.io/ironclad-duo/** *(replace with your link after the first deploy)*
+**▶ Play now: https://saidozen20061-stack.github.io/ironclad-duo/**
 
 ## Screenshots
 
