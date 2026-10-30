@@ -1,0 +1,355 @@
+import Peer from 'peerjs';
+import { RoomManager, Player } from './host/rooms.js';
+import { iceServers, hasTurn } from './iceConfig.js';
+
+// Peer-to-peer networking. There is no game server: the HOST's browser runs the lobby
+// and the simulation (in a Web Worker), and the guest connects straight to it over a
+// WebRTC data channel. PeerJS's free public broker is only used to find each other:
+// the room code is part of the host's PeerJS id.
+//
+// The rest of the game talks to `net` exactly as it did to the old WebSocket server:
+// net.send({ t: ... }) and net.on('lobby' | 's' | 'matchStart' | ..., fn).
+
+export const PEER_PREFIX = 'ironclad-duo-v1-';
+const HEARTBEAT_MS = 2000;
+const TIMEOUT_MS = 12000;
+const CONNECT_TIMEOUT_MS = 20000;
+
+const peerOptions = () => ({ debug: 1, config: { iceServers: iceServers() } });
+
+function friendlyPeerError(err, code) {
+  switch (err?.type) {
+    case 'peer-unavailable':
+      return `No game found with code ${code}. Check the code, and make sure the host is still in the lobby.`;
+    case 'network':
+    case 'server-error':
+    case 'socket-error':
+    case 'socket-closed':
+      return "Can't reach the matchmaking service. Check your internet connection and try again.";
+    case 'browser-incompatible':
+      return "This browser doesn't support WebRTC. Try a current Chrome, Edge or Firefox.";
+    case 'ssl-unavailable':
+      return 'Online play needs the game to be opened over https:// (or localhost).';
+    default:
+      return `Connection error (${err?.type ?? err?.message ?? 'unknown'}). Please try again.`;
+  }
+}
+
+const iceHelp = () =>
+  hasTurn()
+    ? 'Could not connect to the host. Your networks may block the connection even through the relay server — try again or check the TURN settings.'
+    : 'Could not open a direct connection to the host. One of you is probably behind a strict firewall or mobile network. Both players can add a TURN relay server in Settings → Network (see the README), then try again.';
+
+// Runs the room + simulation for both players inside the host's browser.
+class LocalHost {
+  constructor(net) {
+    this.net = net;
+    this.manager = new RoomManager();
+    this.manager.onMatchStart = (room) => {
+      room.match = new SimProxy(room);
+    };
+    this.guests = new Map(); // conn -> { player, lastSeen }
+  }
+
+  async start(name) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const code = this.manager.newCode();
+      try {
+        this.peer = await openPeer(PEER_PREFIX + code);
+        this.code = code;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (err?.type !== 'unavailable-id') throw err;
+      }
+    }
+    if (!this.peer) throw lastErr;
+    this.peer.on('connection', (conn) => this.accept(conn));
+    // Keep the broker connection alive so the friend can still find us.
+    this.peer.on('disconnected', () => !this.closed && this.peer.reconnect());
+    this.peer.on('error', (err) => console.warn('peer error', err?.type, err));
+
+    this.room = this.manager.create(this.code);
+    this.me = new Player((msg) => this.net.deliver(msg));
+    this.me.name = name;
+    this.net.id = this.me.id;
+    this.room.add(this.me);
+    this.me.send({ t: 'joined', code: this.code, you: this.me.id });
+    this.room.sync();
+    this.heartbeat = setInterval(() => this.checkGuests(), HEARTBEAT_MS);
+    return this.code;
+  }
+
+  accept(conn) {
+    conn.on('open', () => {
+      if (this.closed || this.room.players.length >= 2 || this.room.phase !== 'lobby') {
+        conn.send({ t: 'error', msg: this.room.phase !== 'lobby' ? 'That match is already running.' : 'That room is full.' });
+        setTimeout(() => conn.close(), 500);
+        return;
+      }
+      const player = new Player((msg) => conn.open && conn.send(msg));
+      const g = { player, lastSeen: performance.now(), conn };
+      this.guests.set(conn, g);
+      conn.send({ t: 'welcome', id: player.id });
+      conn.on('data', (msg) => {
+        g.lastSeen = performance.now();
+        if (!msg || typeof msg.t !== 'string' || msg.t === 'hb') return;
+        if (msg.t === 'leave') return this.dropGuest(conn, 'left');
+        if (!this.manager.handle(player, msg)) player.room?.match?.onMessage(player, msg);
+      });
+      conn.on('close', () => this.dropGuest(conn, 'disconnected'));
+      conn.on('error', () => this.dropGuest(conn, 'disconnected'));
+    });
+  }
+
+  dropGuest(conn, reason) {
+    const g = this.guests.get(conn);
+    if (!g) return;
+    this.guests.delete(conn);
+    g.player.room?.remove(g.player, reason);
+    try {
+      conn.close();
+    } catch {
+      // already closed
+    }
+  }
+
+  checkGuests() {
+    const now = performance.now();
+    for (const [conn, g] of this.guests) {
+      if (now - g.lastSeen > TIMEOUT_MS) this.dropGuest(conn, 'disconnected');
+      else if (conn.open) conn.send({ t: 'hb' });
+    }
+  }
+
+  fromLocal(msg) {
+    if (msg.t === 'hb' || msg.t === 'hello' && !msg.name) return;
+    if (!this.manager.handle(this.me, msg)) this.room?.match?.onMessage(this.me, msg);
+  }
+
+  shutdown() {
+    this.closed = true;
+    clearInterval(this.heartbeat);
+    for (const conn of this.guests.keys()) {
+      try {
+        conn.send({ t: 'hostLeft' });
+      } catch {
+        // ignore
+      }
+    }
+    // Give the goodbye a moment to leave before tearing the peer down.
+    const peer = this.peer;
+    setTimeout(() => peer?.destroy(), 300);
+    this.room?.endMatch();
+  }
+}
+
+// The match simulation lives in a worker; this forwards inputs in and snapshots out.
+class SimProxy {
+  constructor(room) {
+    this.room = room;
+    this.over = false;
+    this.worker = new Worker(new URL('./host/simWorker.js', import.meta.url), { type: 'module' });
+    this.worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.t === 'matchEnd') this.over = true;
+      room.broadcast(msg);
+    };
+    this.worker.onerror = (e) => console.error('simulation worker error', e.message ?? e);
+    this.worker.postMessage({ type: 'start', tank: room.tank });
+  }
+  onMessage(player, msg) {
+    if (msg.t === 'toLobby') return;
+    this.worker.postMessage({ type: 'input', role: player.role, msg });
+  }
+  dispose() {
+    this.worker.terminate();
+  }
+}
+
+function openPeer(id) {
+  return new Promise((resolve, reject) => {
+    const peer = id ? new Peer(id, peerOptions()) : new Peer(peerOptions());
+    const timer = setTimeout(() => {
+      peer.destroy();
+      reject({ type: 'network' });
+    }, CONNECT_TIMEOUT_MS);
+    peer.once('open', () => {
+      clearTimeout(timer);
+      resolve(peer);
+    });
+    peer.once('error', (err) => {
+      clearTimeout(timer);
+      peer.destroy();
+      reject(err);
+    });
+  });
+}
+
+export class Net {
+  constructor() {
+    this.handlers = new Map();
+    this.id = null;
+    this.mode = null; // null | 'host' | 'guest'
+    this.name = 'Tanker';
+    this.host = null;
+    this.peer = null;
+    this.conn = null;
+  }
+
+  on(type, fn) {
+    if (!this.handlers.has(type)) this.handlers.set(type, new Set());
+    this.handlers.get(type).add(fn);
+    return () => this.handlers.get(type).delete(fn);
+  }
+
+  emit(type, msg) {
+    for (const fn of this.handlers.get(type) ?? []) fn(msg);
+    for (const fn of this.handlers.get('*') ?? []) fn(msg);
+  }
+
+  // A message from the (local or remote) host to this client.
+  deliver(msg) {
+    // Async like a real network hop, so handlers never run re-entrantly.
+    queueMicrotask(() => this.emit(msg.t, msg));
+  }
+
+  get connected() {
+    return this.mode === 'host' || (this.mode === 'guest' && !!this.conn?.open);
+  }
+
+  // Kept for compatibility with the menu code: P2P needs no up-front connection.
+  connect() {
+    return Promise.resolve();
+  }
+
+  send(msg) {
+    switch (msg.t) {
+      case 'hello':
+        this.name = msg.name || this.name;
+        break;
+      case 'host':
+        return this.startHost();
+      case 'join':
+        return this.startJoin(String(msg.code ?? '').toUpperCase().trim());
+      case 'leave':
+        return this.leave();
+    }
+    if (this.mode === 'host') this.host.fromLocal(msg);
+    else if (this.mode === 'guest' && this.conn?.open) this.conn.send(msg);
+  }
+
+  async startHost() {
+    this.leave();
+    this.mode = 'host';
+    this.host = new LocalHost(this);
+    try {
+      await this.host.start(this.name);
+    } catch (err) {
+      this.host.shutdown();
+      this.host = null;
+      this.mode = null;
+      this.emit('error', { t: 'error', msg: friendlyPeerError(err, ''), where: 'host' });
+    }
+  }
+
+  startJoin(code) {
+    this.leave();
+    if (!/^[A-Z]{5}$/.test(code)) {
+      this.emit('error', { t: 'error', msg: 'Room codes are 5 letters.', where: 'join' });
+      return;
+    }
+    this.mode = 'guest';
+    const fail = (msg) => {
+      if (this.mode !== 'guest' || this.joinedOk) return;
+      this.emit('error', { t: 'error', msg, where: 'join' });
+      this.leave();
+    };
+    this.joinedOk = false;
+    openPeer(null)
+      .then((peer) => {
+        if (this.mode !== 'guest') return peer.destroy();
+        this.peer = peer;
+        peer.on('error', (err) => {
+          if (!this.joinedOk) fail(friendlyPeerError(err, code));
+        });
+        const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
+        this.conn = conn;
+        const timer = setTimeout(() => fail(iceHelp()), CONNECT_TIMEOUT_MS);
+        conn.on('open', () => {
+          clearTimeout(timer);
+          this.lastSeen = performance.now();
+          conn.send({ t: 'hello', name: this.name });
+          conn.send({ t: 'join', code });
+          this.heartbeat = setInterval(() => this.guestHeartbeat(), HEARTBEAT_MS);
+        });
+        conn.on('data', (msg) => this.fromHost(msg));
+        conn.on('close', () => this.lostHost('Connection to the host was lost.'));
+        conn.on('error', () => this.lostHost('Connection to the host was lost.'));
+        // Surface ICE failures quickly instead of waiting for the timeout.
+        const watchIce = () => {
+          const pc = conn.peerConnection;
+          if (!pc) return setTimeout(watchIce, 200);
+          pc.addEventListener('iceconnectionstatechange', () => {
+            if (pc.iceConnectionState === 'failed') {
+              clearTimeout(timer);
+              if (this.joinedOk) this.lostHost('The connection to the host failed.');
+              else fail(iceHelp());
+            }
+          });
+        };
+        watchIce();
+      })
+      .catch((err) => fail(friendlyPeerError(err, code)));
+  }
+
+  fromHost(msg) {
+    this.lastSeen = performance.now();
+    if (!msg || typeof msg.t !== 'string' || msg.t === 'hb') return;
+    if (msg.t === 'welcome') this.id = msg.id;
+    if (msg.t === 'joined') this.joinedOk = true;
+    if (msg.t === 'hostLeft') return this.lostHost('The host left the game.');
+    if (msg.t === 'error' && !this.joinedOk) {
+      this.emit('error', { ...msg, where: 'join' });
+      return this.leave();
+    }
+    this.emit(msg.t, msg);
+  }
+
+  guestHeartbeat() {
+    if (!this.conn?.open) return;
+    this.conn.send({ t: 'hb' });
+    if (performance.now() - this.lastSeen > TIMEOUT_MS) this.lostHost('The host stopped responding.');
+  }
+
+  lostHost(reason) {
+    if (this.mode !== 'guest') return;
+    const wasJoined = this.joinedOk;
+    this.leave();
+    if (wasJoined) this.emit('disconnected', { reason });
+  }
+
+  leave() {
+    clearInterval(this.heartbeat);
+    if (this.mode === 'host') this.host?.shutdown();
+    if (this.mode === 'guest') {
+      try {
+        if (this.conn?.open) this.conn.send({ t: 'leave' });
+      } catch {
+        // ignore
+      }
+      const peer = this.peer;
+      setTimeout(() => peer?.destroy(), 200);
+    }
+    this.mode = null;
+    this.host = null;
+    this.peer = null;
+    this.conn = null;
+    this.joinedOk = false;
+    this.id = null;
+  }
+}
+
+export const net = new Net();
+window.addEventListener('beforeunload', () => net.leave());

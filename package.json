@@ -1,0 +1,23 @@
+{
+  "name": "ironclad-duo",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Low-poly two-player co-op tank game: one drives blind, one sees everything. Peer-to-peer, runs on GitHub Pages.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.5",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

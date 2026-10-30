@@ -1,0 +1,767 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { PROPS, CRATERS, RAIL } from '../../../shared/props.js';
+import { groundAt, heightAt, POINTS, BASES } from '../../../shared/map.js';
+import { mulberry32 } from '../../../shared/noise.js';
+import { quality } from '../settings.js';
+import { Vegetation } from './vegetation.js';
+
+// Buildings and other solid props. Static props are merged per 120 m map chunk (one
+// draw call per chunk); a chunk is re-merged when one of its props is destroyed.
+// Moving parts (windmill sails, radar dishes, base artillery) stay separate meshes.
+
+const MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92 });
+const CHUNK = 120;
+
+const C = {
+  stone: 0x8e877a, stoneDark: 0x6c665c, plaster: 0xb9ad94, roof: 0x7a3f2c, roofDark: 0x5a3426, wood: 0x6b5238,
+  woodDark: 0x4a3828, concrete: 0x8a8a82, sand: 0xa08d64, metal: 0x6d7468, rust: 0x7b4a2e, red: 0x8f2f25,
+  burnt: 0x24211e, canvas: 0x6f7354, wire: 0x3a3a36, hay: 0xc9a54d, white: 0xd8d2c0, fuel: 0xb7b9b0,
+  brick: 0x8a4a36, olive: 0x4f5a3a, glass: 0x2c3238, blueTeam: 0x3f6fa8, redTeam: 0xa8443a, black: 0x1e1e1c,
+};
+
+const tmpColor = new THREE.Color();
+function part(geo, color, { x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1 } = {}) {
+  const g = geo.index ? geo.toNonIndexed() : geo.clone();
+  if (g.attributes.uv) g.deleteAttribute('uv');
+  const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
+  g.applyMatrix4(m);
+  const n = g.attributes.position.count;
+  const col = new Float32Array(n * 3);
+  tmpColor.setHex(color);
+  // Slight per-face variation keeps flat surfaces from looking plastic.
+  for (let i = 0; i < n; i += 3) {
+    const k = 0.92 + Math.random() * 0.12;
+    for (let j = 0; j < 3 && i + j < n; j++) {
+      col[(i + j) * 3] = tmpColor.r * k;
+      col[(i + j) * 3 + 1] = tmpColor.g * k;
+      col[(i + j) * 3 + 2] = tmpColor.b * k;
+    }
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (!g.attributes.normal) g.computeVertexNormals();
+  return g;
+}
+
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+const CYL6 = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
+const CYL8 = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
+const CYL10 = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
+const TAPER = new THREE.CylinderGeometry(0.36, 0.5, 1, 8);
+const CONE4 = new THREE.ConeGeometry(0.71, 1, 4);
+const CONE8 = new THREE.ConeGeometry(0.5, 1, 8);
+const HALFCYL = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, false, 0, Math.PI);
+const ROOF = (() => {
+  // Triangular prism, base 1x1, ridge along Z, height 1.
+  const s = new THREE.Shape();
+  s.moveTo(-0.5, 0);
+  s.lineTo(0.5, 0);
+  s.lineTo(0, 1);
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false });
+  g.translate(0, 0, -0.5);
+  return g;
+})();
+const TET = new THREE.TetrahedronGeometry(1, 0);
+const ICO = new THREE.IcosahedronGeometry(1, 0);
+const DOME = new THREE.SphereGeometry(0.5, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+const box = (c, x, y, z, w, h, d, extra = {}) => part(BOX, c, { x, y: y + h / 2, z, sx: w, sy: h, sz: d, ...extra });
+const wheel = (x, y, z, r, w = 0.3) => part(CYL8, C.black, { x, y, z, rz: Math.PI / 2, sx: r * 2, sy: w, sz: r * 2 });
+
+// ---------- Builders: return arrays of geometries in prop-local space ----------
+const builders = {
+  house(p, r) {
+    const parts = [];
+    const { w, d, h } = p;
+    const wallC = r() < 0.5 ? C.plaster : C.stone;
+    parts.push(box(wallC, 0, 0, 0, w, h, d));
+    parts.push(part(ROOF, r() < 0.5 ? C.roof : C.roofDark, { y: h, sx: w + 0.8, sy: 2.6, sz: d + 0.6, ry: Math.PI / 2 }));
+    parts.push(box(C.stoneDark, w * 0.25, h, d * 0.2, 0.9, 2.6, 0.9)); // chimney
+    for (const sx of [-1, 1]) for (let i = -1; i <= 1; i++) parts.push(box(0x2a2620, i * w * 0.28, h * 0.45, sx * (d / 2 + 0.02), 1.0, 1.2, 0.08));
+    parts.push(box(C.woodDark, 0, 0, d / 2 + 0.03, 1.2, 2.2, 0.1));
+    if (p.shop) {
+      // Shop front: big window, sign board and a striped awning over the street.
+      const awning = r() < 0.5 ? 0x7a2a22 : 0x2f5a3a;
+      parts.push(box(C.glass, -w * 0.25, 0.4, d / 2 + 0.04, w * 0.38, 1.8, 0.08));
+      parts.push(box(C.woodDark, 0, 2.7, d / 2 + 0.08, w * 0.8, 0.6, 0.12));
+      for (let i = 0; i < 6; i++) parts.push(box(i % 2 ? awning : C.white, -w * 0.4 + (i + 0.5) * (w * 0.8) / 6, 2.4, d / 2 + 0.75, (w * 0.8) / 6, 0.08, 1.5, { rx: 0.35 }));
+    }
+    if (p.farm) parts.push(box(C.wood, -w / 2 - 1.2, 0, 0, 0.12, 1.1, d * 1.6), box(C.wood, w / 2 + 1.2, 0, 0, 0.12, 1.1, d * 1.6));
+    return parts;
+  },
+  ruin(p, r) {
+    const parts = [];
+    const { w, d, h } = p;
+    const c = r() < 0.5 ? C.stone : C.plaster;
+    // Broken walls of uneven height, one side missing.
+    parts.push(box(c, 0, 0, -d / 2 + 0.3, w, h, 0.6));
+    parts.push(box(c, -w / 2 + 0.3, 0, 0, 0.6, h * 0.8, d));
+    parts.push(box(c, w * 0.25, 0, d / 2 - 0.3, w * 0.5, h * 0.55, 0.6));
+    parts.push(box(c, w / 2 - 0.3, 0, -d * 0.2, 0.6, h * 0.4, d * 0.6));
+    for (let i = 0; i < 4; i++) parts.push(box(c, -w / 2 + r() * w, h, -d / 2 + 0.3, 1 + r(), 0.6 + r() * 1.5, 0.6));
+    // Exposed upper floor: half a slab hanging on, broken joists poking out.
+    const fy = Math.min(h * 0.55, 2.8);
+    parts.push(box(C.woodDark, -w * 0.18, fy, -d * 0.15, w * 0.6, 0.25, d * 0.6, { rz: 0.06 }));
+    for (let i = 0; i < 4; i++) parts.push(box(C.wood, -w * 0.4 + i * w * 0.22, fy - 0.2, d * 0.1, 0.22, 0.22, d * (0.4 + r() * 0.3), { rx: 0.08 * (r() - 0.5) }));
+    parts.push(box(c, 0, 0, 0, w * 0.18, fy, 0.5, { ry: 0.2 })); // interior wall stub
+    // Charred beams + rubble inside
+    parts.push(box(C.burnt, 0, h * 0.4, 0, 0.3, 0.3, d * 1.05, { rx: 0.4 }));
+    for (let i = 0; i < 6; i++) parts.push(part(TET, c, { x: (r() - 0.5) * w * 0.7, y: 0.4, z: (r() - 0.5) * d * 0.7, sx: 0.8 + r(), sy: 0.6 + r() * 0.6, sz: 0.8 + r(), ry: r() * 6 }));
+    return parts;
+  },
+  wall(p, r) {
+    const parts = [box(C.stone, 0, 0, 0, p.w, p.h, p.d)];
+    for (let i = 0; i < 3; i++) parts.push(box(C.stoneDark, (r() - 0.5) * p.w * 0.8, p.h, 0, 0.8 + r() * 1.2, 0.3 + r() * 0.4, p.d * 1.02));
+    return parts;
+  },
+  church(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.white, 0, 0, 0, w, h, d),
+      part(ROOF, C.roofDark, { y: h, sx: w + 1, sy: 4.5, sz: d + 0.6 }),
+      box(0x3a3832, 0, 2, -d / 2 - 0.02, 2.4, 4, 0.1),
+      ...[-1, 1].flatMap((s) => [-5, 0, 5].map((z) => box(0x37414a, s * (w / 2 + 0.02), h * 0.45, z, 0.08, 3.2, 1.2))),
+    ];
+  },
+  steeple(p) {
+    const { w, h } = p;
+    return [
+      box(C.white, 0, 0, 0, w, h * 0.72, w),
+      box(C.stone, 0, h * 0.72, 0, w * 0.85, h * 0.1, w * 0.85),
+      part(CONE4, C.roofDark, { y: h * 0.82 + (h * 0.18) / 2, sx: w * 1.1, sy: h * 0.18, sz: w * 1.1, ry: Math.PI / 4 }),
+      box(0x2a2620, 0, h * 0.55, w / 2 + 0.02, 1.8, 2.2, 0.08),
+      box(0x2a2620, 0, h * 0.75, w * 0.43, 1.2, 1.6, 0.1), // belfry opening
+      box(C.wood, 0, h + 0.2, 0, 0.15, 1.6, 0.15),
+      box(C.wood, 0, h + 1.0, 0, 0.9, 0.15, 0.15),
+    ];
+  },
+  bunker(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.concrete, 0, 0, 0, w, h, d),
+      box(C.concrete, 0, h, 0, w + 0.8, 0.5, d + 0.8),
+      box(0x1e1e1c, 0, h * 0.55, d / 2 + 0.01, w * 0.6, 0.45, 0.1),
+      part(ICO, C.sand, { y: h + 0.5, sx: w * 0.45, sy: 0.6, sz: d * 0.45 }),
+    ];
+  },
+  obstower(p) {
+    const { w, h } = p;
+    const parts = [];
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(C.wood, (sx * w) / 2.4, 0, (sz * w) / 2.4, 0.3, h, 0.3, { rz: -sx * 0.04, rx: sz * 0.04 }));
+    for (let y = 2; y < h; y += 3.2) {
+      parts.push(box(C.woodDark, 0, y, w / 2.4, w, 0.18, 0.15));
+      parts.push(box(C.woodDark, 0, y, -w / 2.4, w, 0.18, 0.15));
+    }
+    parts.push(box(C.wood, 0, h, 0, w + 0.8, 0.3, w + 0.8));
+    parts.push(box(C.woodDark, 0, h + 0.3, w / 2 + 0.3, w + 0.8, 1.0, 0.12));
+    parts.push(part(CONE4, C.roofDark, { y: h + 2.7, sx: w + 1.2, sy: 1.4, sz: w + 1.2, ry: Math.PI / 4 }));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(C.wood, (sx * (w + 0.6)) / 2, h, (sz * (w + 0.6)) / 2, 0.15, 2.0, 0.15));
+    return parts;
+  },
+  barn(p, r) {
+    const { w, d, h } = p;
+    const c = r() < 0.5 ? C.red : C.wood;
+    return [
+      box(c, 0, 0, 0, w, h * 0.62, d),
+      part(ROOF, C.metal, { y: h * 0.62, sx: w + 0.8, sy: h * 0.38, sz: d + 0.6 }),
+      box(C.woodDark, 0, 0, d / 2 + 0.02, w * 0.45, h * 0.5, 0.1),
+      box(C.white, 0, h * 0.25, d / 2 + 0.03, w * 0.45, 0.25, 0.1, { rz: 0.6 }),
+    ];
+  },
+  silo(p) {
+    const { w, h } = p;
+    return [part(CYL10, C.concrete, { y: h / 2, sx: w, sy: h, sz: w }), part(DOME, C.metal, { y: h, sx: w, sy: w * 0.6, sz: w }), box(C.rust, w / 2, 0, 0, 0.2, h, 0.6)];
+  },
+  fueltank(p) {
+    const { w, d } = p;
+    return [
+      part(CYL10, C.fuel, { y: w / 2 + 0.6, rx: Math.PI / 2, sx: w, sy: d, sz: w }),
+      box(C.rust, 0, 0, d * 0.3, w * 0.7, 0.8, 0.5),
+      box(C.rust, 0, 0, -d * 0.3, w * 0.7, 0.8, 0.5),
+      box(C.red, 0, w * 0.6, 0, w * 1.02, 0.4, 0.5),
+    ];
+  },
+  wreck(p, r) {
+    if (p.variant === 1) {
+      // Burnt-out truck: cab, bare bed frame, wheels sunk in the mud.
+      return [
+        box(C.burnt, 0, 0.7, p.d * 0.32, p.w, 1.6, p.d * 0.28),
+        box(0x2f2a25, 0, 0.7, -p.d * 0.15, p.w * 0.95, 0.25, p.d * 0.62),
+        ...[-1, 1].flatMap((s) => [box(C.rust, s * p.w * 0.45, 0.95, -p.d * 0.15, 0.08, 0.6, p.d * 0.6)]),
+        wheel(p.w / 2, 0.4, p.d * 0.3, 0.45), wheel(-p.w / 2, 0.35, p.d * 0.3, 0.45, 0.25), wheel(p.w / 2, 0.4, -p.d * 0.3, 0.45),
+      ];
+    }
+    if (p.variant === 2) {
+      // Overturned jeep.
+      return [
+        box(C.burnt, 0, 0.3, 0, p.w, 0.8, p.d, { rz: 2.6 }),
+        box(0x2f2a25, 0.3, 0.1, p.d * 0.3, p.w * 0.9, 0.12, 0.6, { rz: 2.6 }),
+        wheel(0.6, 1.0, p.d * 0.35, 0.35), wheel(0.6, 1.0, -p.d * 0.35, 0.35),
+      ];
+    }
+    return [
+      box(C.burnt, 0, 0.3, 0, p.w * 0.75, 0.9, p.d * 0.85),
+      box(0x2f2a25, 0, 0, 0, p.w, 0.6, p.d * 0.9),
+      part(CYL6, C.burnt, { x: (r() - 0.5) * 1.5, y: 1.6, z: -0.5, sx: 1.9, sy: 0.7, sz: 1.9, rz: 0.35 }),
+      part(CYL6, 0x1a1816, { x: 1.4, y: 1.0, z: 1.6, sx: 0.18, sy: 3.2, sz: 0.18, rx: Math.PI / 2 - 0.5, rz: 0.4 }),
+    ];
+  },
+  rock(p, r) {
+    return [part(ICO, r() < 0.5 ? C.stoneDark : C.stone, { y: p.h * 0.35, sx: p.w / 2, sy: p.h / 2, sz: p.d / 2, ry: r() * 6 })];
+  },
+  tent(p) {
+    return [part(ROOF, C.canvas, { sx: p.w, sy: p.h, sz: p.d }), box(C.woodDark, 0, 0, p.d / 2 + 0.3, 0.1, p.h * 1.05, 0.1)];
+  },
+  garage(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.concrete, 0, 0, 0, w, h, d),
+      box(C.metal, 0, h, 0, w + 0.6, 0.4, d + 0.6),
+      box(0x3a3d36, 0, 0, d / 2 + 0.02, w * 0.7, h * 0.75, 0.1),
+      box(p.team === 'red' ? C.redTeam : C.blueTeam, 0, h * 0.8, d / 2 + 0.05, w * 0.3, 0.7, 0.06),
+    ];
+  },
+  sandbags(p, r) {
+    const parts = [];
+    const n = Math.max(2, Math.round(p.w / 1.1));
+    for (let row = 0; row < 2; row++) for (let i = 0; i < n - row; i++) {
+      parts.push(part(BOX, C.sand, { x: -p.w / 2 + 0.55 + i * 1.1 + row * 0.55, y: 0.22 + row * 0.42, sx: 1.05, sy: 0.42, sz: 0.62, ry: (r() - 0.5) * 0.15 }));
+    }
+    return parts;
+  },
+  trench(p) {
+    return [box(0x3b2f22, 0, -0.05, 0, p.w, 0.12, p.d), box(C.woodDark, 0, 0, p.d / 2, p.w, 0.35, 0.12), box(C.woodDark, 0, 0, -p.d / 2, p.w, 0.35, 0.12), box(C.sand, 0, 0, p.d / 2 + 0.6, p.w, 0.45, 0.9)];
+  },
+  wire(p) {
+    const parts = [];
+    const n = Math.round(p.w / 3);
+    for (let i = 0; i <= n; i++) {
+      const x = -p.w / 2 + (i * p.w) / n;
+      parts.push(box(C.wire, x, 0, 0, 0.08, 1.1, 0.08, { rz: 0.5 }), box(C.wire, x, 0, 0, 0.08, 1.1, 0.08, { rz: -0.5 }));
+    }
+    for (const y of [0.35, 0.7]) parts.push(box(C.wire, 0, y, 0, p.w, 0.03, 0.03));
+    for (let i = 0; i < n * 2; i++) parts.push(part(TET, C.wire, { x: -p.w / 2 + (i + 0.5) * (p.w / (n * 2)), y: 0.55, sx: 0.25, sy: 0.25, sz: 0.25, ry: i }));
+    return parts;
+  },
+  crates(p, r) {
+    const parts = [];
+    for (let i = 0; i < 4; i++) {
+      const s = 0.9 + r() * 0.4;
+      parts.push(box(r() < 0.5 ? C.wood : 0x5a6040, (i % 2) * 1.1 - 0.5, i > 1 ? s : 0, (r() - 0.5) * 0.6, s, s, s, { ry: r() }));
+    }
+    return parts;
+  },
+  well(p) {
+    return [
+      part(CYL10, C.stone, { y: 0.45, sx: p.w, sy: 0.9, sz: p.w }),
+      part(CYL10, 0x1d2a2c, { y: 0.92, sx: p.w * 0.8, sy: 0.04, sz: p.w * 0.8 }),
+      box(C.wood, -p.w * 0.45, 0, 0, 0.15, 2.4, 0.15), box(C.wood, p.w * 0.45, 0, 0, 0.15, 2.4, 0.15),
+      part(ROOF, C.roofDark, { y: 2.4, sx: p.w * 1.3, sy: 0.7, sz: p.w * 0.9, ry: Math.PI / 2 }),
+      part(CYL6, C.woodDark, { y: 1.9, rz: Math.PI / 2, sx: 0.2, sy: p.w * 0.9, sz: 0.2 }),
+    ];
+  },
+  rubble(p, r) {
+    const parts = [];
+    for (let i = 0; i < 9; i++) {
+      const s = 0.4 + r() * 1.1;
+      parts.push(part(TET, [C.stone, C.stoneDark, C.plaster, C.burnt][i % 4], { x: (r() - 0.5) * p.w, y: s * 0.35, z: (r() - 0.5) * p.d, sx: s * 1.3, sy: s * 0.8, sz: s, ry: r() * 6 }));
+    }
+    parts.push(box(C.woodDark, 0, 0.3, 0, 0.2, 0.2, p.d * 1.1, { rx: 0.3, ry: r() }));
+    return parts;
+  },
+  dugout(p) {
+    const { w, d, h } = p;
+    const parts = [part(ICO, 0x5b4a36, { y: h * 0.4, sx: w * 0.62, sy: h * 0.75, sz: d * 0.65 })];
+    // Log walls and roof.
+    for (let i = 0; i < 4; i++) parts.push(part(CYL6, C.wood, { y: 0.25 + i * 0.4, z: d / 2, rz: Math.PI / 2, sx: 0.4, sy: w, sz: 0.4 }));
+    for (let i = 0; i < 7; i++) parts.push(part(CYL6, C.woodDark, { x: -w / 2 + (i + 0.5) * (w / 7), y: h, rx: Math.PI / 2, sx: 0.38, sy: d * 1.05, sz: 0.38 }));
+    parts.push(box(0x161412, 0, 0.9, d / 2 + 0.05, w * 0.5, 0.35, 0.1));
+    parts.push(box(C.sand, 0, h + 0.15, 0, w * 0.9, 0.35, d * 0.8));
+    return parts;
+  },
+  mgnest(p) {
+    const parts = [];
+    const R = p.w / 2;
+    for (let row = 0; row < 3; row++) for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + row * 0.25;
+      if (a > 1.3 && a < 1.9) continue; // gap at the back
+      parts.push(part(BOX, C.sand, { x: Math.cos(a) * R, y: 0.2 + row * 0.4, z: Math.sin(a) * R, sx: 1, sy: 0.38, sz: 0.6, ry: -a + Math.PI / 2 }));
+    }
+    parts.push(part(CYL6, C.black, { y: 1.35, z: -R * 0.5, rx: Math.PI / 2, sx: 0.12, sy: 1.6, sz: 0.12 }));
+    parts.push(box(C.black, 0, 1.1, -R * 0.1, 0.3, 0.3, 0.6));
+    for (const s of [-1, 1]) parts.push(box(C.black, s * 0.25, 0.4, -R * 0.2, 0.05, 0.8, 0.05, { rz: s * 0.4 }));
+    return parts;
+  },
+  hedgehog() {
+    const beam = (rx, ry, rz) => box(0x3a3632, 0, 0.7, 0, 0.22, 2.2, 0.22, { rx, ry, rz });
+    return [beam(0.95, 0, 0), beam(0, 0, 0.95), beam(0.95, Math.PI / 2, 0.7)];
+  },
+  radio(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.olive, 0, 0, 0, w, h, d),
+      part(ROOF, C.canvas, { y: h, sx: w + 0.4, sy: 0.8, sz: d + 0.4 }),
+      part(CYL6, C.metal, { x: w * 0.7, y: 6, sx: 0.12, sy: 12, sz: 0.12 }),
+      ...[4, 7, 10].map((y) => box(C.metal, w * 0.7, y, 0, 1.4 - y * 0.08, 0.06, 0.06)),
+      box(C.wire, w * 0.7, 0, 1.2, 0.03, 12, 0.03, { rx: -0.1 }),
+      part(DOME, 0xbab8b0, { x: -w * 0.2, y: h + 0.9, z: 0, rx: -1.2, sx: 1.4, sy: 0.4, sz: 1.4 }),
+      box(C.black, w * 0.25, h * 0.4, d / 2 + 0.03, 0.8, 0.6, 0.06),
+    ];
+  },
+  factory(p) {
+    const { w, d, h } = p;
+    const parts = [box(C.brick, 0, 0, 0, w, h * 0.7, d)];
+    // Saw-tooth roof
+    for (let i = 0; i < 4; i++) parts.push(part(ROOF, C.metal, { x: -w / 2 + (i + 0.5) * (w / 4), y: h * 0.7, sx: w / 4, sy: h * 0.3, sz: d, rz: 0.0 }));
+    for (let i = 0; i < 6; i++) parts.push(box(C.glass, -w / 2 + (i + 0.5) * (w / 6), h * 0.35, d / 2 + 0.03, w / 9, h * 0.22, 0.06));
+    for (let i = 0; i < 6; i++) parts.push(box(C.glass, -w / 2 + (i + 0.5) * (w / 6), h * 0.35, -d / 2 - 0.03, w / 9, h * 0.22, 0.06));
+    parts.push(box(C.metal, w * 0.3, 0, d / 2 + 0.05, 5, 4.5, 0.12));
+    parts.push(box(C.burnt, -w * 0.2, h * 0.6, d / 2 + 0.05, 4, 2.4, 0.1)); // shell hole
+    return parts;
+  },
+  chimney(p) {
+    return [part(TAPER, C.brick, { y: p.h / 2, sx: p.w * 1.2, sy: p.h, sz: p.w * 1.2 }), part(CYL8, C.burnt, { y: p.h - 0.4, sx: p.w * 0.95, sy: 0.8, sz: p.w * 0.95 }), box(C.stoneDark, 0, 0, 0, p.w * 1.6, 1.5, p.w * 1.6)];
+  },
+  warehouse(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.concrete, 0, 0, 0, w, h * 0.65, d),
+      part(HALFCYL, C.metal, { y: h * 0.65, rx: Math.PI / 2, rz: Math.PI / 2, sx: w, sy: d + 0.4, sz: h * 0.7 }),
+      box(0x3a3d36, 0, 0, d / 2 + 0.03, w * 0.4, h * 0.55, 0.08),
+      box(0x3a3d36, 0, 0, -d / 2 - 0.03, w * 0.4, h * 0.55, 0.08),
+      box(C.rust, w / 2 + 0.02, h * 0.3, 0, 0.05, 0.6, d * 0.6),
+    ];
+  },
+  watertower(p) {
+    const { w, h } = p;
+    const parts = [];
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(C.metal, sx * w * 0.35, 0, sz * w * 0.35, 0.25, h * 0.7, 0.25, { rz: -sx * 0.05, rx: sz * 0.05 }));
+    for (const y of [h * 0.25, h * 0.5]) parts.push(box(C.metal, 0, y, 0, w * 0.75, 0.1, 0.1, { ry: 0.78 }), box(C.metal, 0, y, 0, w * 0.75, 0.1, 0.1, { ry: -0.78 }));
+    parts.push(part(CYL10, C.rust, { y: h * 0.82, sx: w * 1.2, sy: h * 0.3, sz: w * 1.2 }));
+    parts.push(part(CONE8, C.metal, { y: h * 1.02, sx: w * 1.3, sy: h * 0.12, sz: w * 1.3 }));
+    return parts;
+  },
+  loco(p) {
+    const { w, d } = p;
+    return [
+      box(C.black, 0, 0.6, 0, w * 0.9, 0.6, d),
+      part(CYL10, 0x26282a, { y: 2.2, z: d * 0.12, rx: Math.PI / 2, sx: w * 0.8, sy: d * 0.65, sz: w * 0.8 }),
+      box(0x26282a, 0, 1.2, -d * 0.35, w, 2.9, d * 0.28),
+      box(C.red, 0, 4.1, -d * 0.35, w * 1.05, 0.15, d * 0.3),
+      part(CYL8, C.black, { y: 3.6, z: d * 0.38, sx: 0.6, sy: 1.6, sz: 0.6 }),
+      part(CYL8, C.black, { y: 3.4, z: 0, sx: 0.7, sy: 0.6, sz: 0.7 }),
+      ...[-0.35, -0.1, 0.15, 0.35].flatMap((t) => [wheel(w * 0.45, 0.55, d * t, 0.55, 0.2), wheel(-w * 0.45, 0.55, d * t, 0.55, 0.2)]),
+    ];
+  },
+  wagon(p) {
+    const { w, d, h } = p;
+    const parts = [box(C.black, 0, 0.6, 0, w * 0.9, 0.3, d)];
+    if (p.variant === 1) {
+      parts.push(part(CYL10, 0x55524a, { y: 2.2, rx: Math.PI / 2, sx: w * 0.95, sy: d * 0.85, sz: w * 0.95 }));
+    } else {
+      parts.push(box(C.wood, 0, 0.9, 0, w, h - 0.9, d * 0.95));
+      parts.push(part(HALFCYL, C.metal, { y: h, rx: Math.PI / 2, rz: Math.PI / 2, sx: w, sy: d * 0.95, sz: 0.6 }));
+      parts.push(box(C.woodDark, w / 2 + 0.02, 1.0, 0, 0.05, h - 1.3, 2.2));
+    }
+    for (const t of [-0.32, 0.32]) parts.push(wheel(w * 0.42, 0.45, d * t, 0.45, 0.18), wheel(-w * 0.42, 0.45, d * t, 0.45, 0.18));
+    return parts;
+  },
+  barrels(p, r) {
+    const parts = [];
+    const cols = [0x55603f, 0x7b4a2e, 0x3d4a5a, 0x8a3a2a];
+    for (let i = 0; i < 7; i++) {
+      const row = i < 4 ? 0 : 1;
+      const x = row ? (i - 5) * 0.65 : (i - 1.5) * 0.65;
+      parts.push(part(CYL8, cols[Math.floor(r() * 4)], { x, y: 0.45 + row * 0.9, z: (r() - 0.5) * 0.3, sx: 0.6, sy: 0.9, sz: 0.6 }));
+    }
+    return parts;
+  },
+  windmill(p) {
+    const { w, h } = p;
+    return [
+      part(TAPER, C.white, { y: h * 0.4, sx: w, sy: h * 0.8, sz: w }),
+      part(CONE8, C.roofDark, { y: h * 0.8 + 1.2, sx: w * 0.9, sy: 2.6, sz: w * 0.9 }),
+      box(C.woodDark, 0, 0, w * 0.37, 1.2, 2.2, 0.15),
+      box(0x2a2620, 0, h * 0.45, w * 0.33, 0.7, 0.9, 0.1),
+      box(C.wood, 0, 0, w * 0.45, 2.4, 0.15, 1.2),
+    ];
+  },
+  chapel(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.plaster, 0, 0, 0, w, h * 0.65, d),
+      part(ROOF, C.roof, { y: h * 0.65, sx: w + 0.6, sy: h * 0.35, sz: d + 0.5 }),
+      box(C.plaster, 0, 0, d / 2 - 1.2, 2.4, h * 1.25, 2.4),
+      part(CONE4, C.roofDark, { y: h * 1.25 + 1.1, sx: 2.6, sy: 2.2, sz: 2.6, ry: Math.PI / 4 }),
+      box(C.wood, 0, h * 1.25 + 2.2, d / 2 - 1.2, 0.12, 1.2, 0.12),
+      box(C.wood, 0, h * 1.25 + 2.6, d / 2 - 1.2, 0.6, 0.12, 0.12),
+      box(C.woodDark, 0, 0, d / 2 + 0.03, 1.2, 2.2, 0.08),
+      ...[-1, 1].map((s) => box(0x37414a, s * (w / 2 + 0.02), h * 0.3, 0, 0.06, 1.6, 0.8)),
+    ];
+  },
+  gasstation(p) {
+    const { w, d, h } = p;
+    return [
+      box(C.white, -w * 0.2, 0, -d * 0.2, w * 0.55, h * 0.75, d * 0.55),
+      box(C.glass, -w * 0.2, 0.6, d * 0.08 + 0.02, w * 0.4, 1.5, 0.06),
+      box(C.red, 0, h, 0, w, 0.35, d),
+      ...[[1, 1], [1, -1]].map(([sx, sz]) => box(C.metal, sx * w * 0.42, 0, sz * d * 0.35, 0.25, h, 0.25)),
+      ...[-0.5, 0.5].flatMap((t) => [box(C.red, w * 0.2, 0, t * d * 0.5, 0.6, 1.5, 0.45), box(C.white, w * 0.2, 1.1, t * d * 0.5 + 0.23, 0.4, 0.3, 0.03)]),
+      box(C.metal, w * 0.55, 0, d * 0.55, 0.15, 5, 0.15),
+      box(C.red, w * 0.55, 4.2, d * 0.55, 1.6, 1.0, 0.12),
+    ];
+  },
+  checkpoint(p) {
+    const { w, d } = p;
+    return [
+      box(C.wood, -w * 0.35, 0, 0, 2, 2.3, 2, { rz: 0.05 }),
+      part(ROOF, C.roofDark, { x: -w * 0.35, y: 2.3, sx: 2.4, sy: 0.6, sz: 2.4 }),
+      box(C.white, w * 0.1, 0.95, 0, w * 0.5, 0.15, 0.15, { rz: 0.5 }),
+      box(C.red, w * 0.3, 1.1, 0.01, w * 0.12, 0.17, 0.17, { rz: 0.5 }),
+      box(C.wood, -w * 0.12, 0, 0, 0.25, 1.1, 0.25),
+      ...[0, 1, 2].map((i) => part(BOX, C.sand, { x: w * 0.25 + i * 1.1, y: 0.22, z: d * 0.4, sx: 1.05, sy: 0.42, sz: 0.6 })),
+      part(CYL8, 0x55603f, { x: w * 0.42, y: 0.45, z: -d * 0.35, sx: 0.6, sy: 0.9, sz: 0.6 }),
+    ];
+  },
+  truck(p) {
+    const { w, d } = p;
+    const team = p.team === 'red' ? C.redTeam : C.blueTeam;
+    return [
+      box(C.olive, 0, 0.8, d * 0.33, w, 1.6, d * 0.26),
+      box(C.glass, 0, 1.6, d * 0.46 + 0.02, w * 0.8, 0.55, 0.05),
+      box(C.olive, 0, 0.7, -d * 0.15, w * 0.95, 0.25, d * 0.66),
+      part(HALFCYL, C.canvas, { y: 1.0, z: -d * 0.15, rx: Math.PI / 2, rz: Math.PI / 2, sx: w, sy: d * 0.64, sz: 2.2 }),
+      box(team, 0, 1.3, d * 0.46 + 0.03, 0.4, 0.3, 0.02),
+      wheel(w / 2, 0.45, d * 0.32, 0.45), wheel(-w / 2, 0.45, d * 0.32, 0.45), wheel(w / 2, 0.45, -d * 0.3, 0.45), wheel(-w / 2, 0.45, -d * 0.3, 0.45),
+    ];
+  },
+  radardish(p) {
+    return [box(C.concrete, 0, 0, 0, p.w, 0.6, p.d), part(CYL8, C.metal, { y: 3, sx: 0.5, sy: 5, sz: 0.5 }), box(C.olive, 0, 0.6, 0, 1.6, 1.5, 1.6)];
+  },
+  artillery(p) {
+    // Carriage + trails only; the barrel is a separate animated mesh.
+    const { w, d } = p;
+    return [
+      box(C.olive, 0, 0.7, 0, w * 0.6, 0.5, 1.4),
+      box(C.olive, 0, 1.1, 0.5, w * 0.8, 1.0, 0.12, { rx: -0.2 }),
+      ...[-1, 1].map((s) => box(C.olive, s * 0.5, 0.25, -d * 0.3, 0.2, 0.2, d * 0.65, { ry: s * 0.25 })),
+      wheel(w / 2, 0.6, 0, 0.6, 0.25), wheel(-w / 2, 0.6, 0, 0.6, 0.25),
+      ...[0, 1].map((i) => part(BOX, C.sand, { x: -w * 0.6 + i * 1.2, y: 0.22, z: d * 0.35, sx: 1.05, sy: 0.42, sz: 0.6 })),
+    ];
+  },
+};
+
+function rubbleGeo(p, r) {
+  const parts = [];
+  const n = Math.min(14, 4 + Math.round((p.w * p.d) / 10));
+  const c = ['barn', 'dugout', 'wagon', 'radio'].includes(p.type) ? C.wood : ['fueltank', 'gasstation', 'truck', 'barrels'].includes(p.type) ? C.burnt : p.type === 'factory' || p.type === 'chimney' ? C.brick : C.stone;
+  for (let i = 0; i < n; i++) {
+    const s = 0.5 + r() * 1.4;
+    parts.push(part(TET, i % 3 === 0 ? C.burnt : c, { x: (r() - 0.5) * p.w * 0.8, y: s * 0.3, z: (r() - 0.5) * p.d * 0.8, sx: s * 1.4, sy: s * 0.8, sz: s, ry: r() * 6 }));
+  }
+  if (p.type === 'house' || p.type === 'ruin' || p.type === 'chapel' || p.type === 'factory') parts.push(box(c, -p.w * 0.3, 0, 0, 0.6, p.h * 0.35, p.d * 0.7));
+  return mergeGeometries(parts);
+}
+
+// Sit on the lowest corner so buildings don't float on slopes.
+function baseY(p) {
+  let y = Infinity;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
+    const cx = p.x + (sx * p.w * 0.45 * Math.cos(p.rot) + sz * p.d * 0.45 * Math.sin(p.rot));
+    const cz = p.z + (-sx * p.w * 0.45 * Math.sin(p.rot) + sz * p.d * 0.45 * Math.cos(p.rot));
+    y = Math.min(y, groundAt(cx, cz));
+  }
+  return y - 0.05;
+}
+
+const chunkKey = (x, z) => `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+
+export class PropsView {
+  constructor(scene) {
+    this.scene = scene;
+    this.dead = new Set();
+    this.burning = [];
+    this.animated = [];
+    this.flames = [];
+    this.chunks = new Map(); // key -> { ids: [], mesh }
+    this.worldGeo = new Map(); // prop id -> world-space geometry
+    this.baseYs = new Map();
+
+    const xf = new THREE.Matrix4();
+    for (const p of PROPS) {
+      const r = mulberry32(p.id * 7919 + 13);
+      const geo = mergeGeometries(builders[p.type](p, r));
+      const y = baseY(p);
+      this.baseYs.set(p.id, y);
+      xf.compose(new THREE.Vector3(p.x, y, p.z), new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, p.rot), new THREE.Vector3(1, 1, 1));
+      geo.applyMatrix4(xf);
+      this.worldGeo.set(p.id, geo);
+      const k = chunkKey(p.x, p.z);
+      if (!this.chunks.has(k)) this.chunks.set(k, { ids: [], mesh: null });
+      this.chunks.get(k).ids.push(p.id);
+      if (p.type === 'wreck' && p.burning) this.addFire(p.x, y + p.h * 0.7, p.z, r() < 0.5);
+      this.addAnimated(p, y);
+    }
+    for (const k of this.chunks.keys()) this.rebuildChunk(k);
+
+    this.buildCraters();
+    this.buildRails();
+    this.buildZones();
+    this.buildFlames();
+    this.vegetation = new Vegetation(scene);
+    this.artilleryT = 4;
+  }
+
+  rebuildChunk(k) {
+    const ch = this.chunks.get(k);
+    if (ch.mesh) {
+      this.scene.remove(ch.mesh);
+      ch.mesh.geometry.dispose();
+    }
+    const geos = ch.ids.filter((id) => !this.dead.has(id)).map((id) => this.worldGeo.get(id));
+    if (!geos.length) {
+      ch.mesh = null;
+      return;
+    }
+    ch.mesh = new THREE.Mesh(mergeGeometries(geos), MAT);
+    ch.mesh.castShadow = true;
+    ch.mesh.receiveShadow = true;
+    this.scene.add(ch.mesh);
+  }
+
+  addAnimated(p, y) {
+    const place = (obj, h = 0) => {
+      obj.position.set(p.x, y + h, p.z);
+      obj.rotation.y = p.rot;
+      obj.traverse((o) => {
+        if (o.isMesh) o.castShadow = o.receiveShadow = true;
+      });
+      this.scene.add(obj);
+    };
+    if (p.type === 'windmill') {
+      const hub = new THREE.Group();
+      const sails = new THREE.Mesh(mergeGeometries([0, 1, 2, 3].flatMap((i) => {
+        const a = (i * Math.PI) / 2;
+        return [part(BOX, C.wood, { x: Math.sin(a) * 3.6, y: Math.cos(a) * 3.6, rz: -a, sx: 0.25, sy: 7.2, sz: 0.15 }), part(BOX, C.white, { x: Math.sin(a) * 4.2 + Math.cos(a) * 0.6, y: Math.cos(a) * 4.2 - Math.sin(a) * 0.6, rz: -a, sx: 1.1, sy: 5.2, sz: 0.06 })];
+      })), MAT);
+      sails.position.set(0, p.h * 0.78, p.w * 0.55);
+      hub.add(sails);
+      place(hub);
+      this.animated.push({ obj: hub, update: (t) => (sails.rotation.z = t * 0.6), p });
+    } else if (p.type === 'radardish') {
+      const head = new THREE.Group();
+      const dish = new THREE.Mesh(mergeGeometries([part(DOME, 0xbab8b0, { rx: -Math.PI / 2 + 0.3, sx: 4.2, sy: 1.2, sz: 4.2, z: 0.4 }), part(CYL6, C.metal, { z: 1.1, rx: Math.PI / 2 + 0.3, sx: 0.1, sy: 1.6, sz: 0.1 })]), MAT);
+      head.add(dish);
+      head.position.y = 5.6;
+      const g = new THREE.Group();
+      g.add(head);
+      place(g);
+      this.animated.push({ obj: g, update: (t) => (head.rotation.y = t * 0.8), p });
+    } else if (p.type === 'artillery') {
+      const pivot = new THREE.Group();
+      const barrel = new THREE.Mesh(mergeGeometries([part(CYL8, C.olive, { z: 2, rx: Math.PI / 2, sx: 0.32, sy: 4.4, sz: 0.32 }), part(CYL8, C.olive, { z: 0, rx: Math.PI / 2, sx: 0.6, sy: 1.2, sz: 0.6 }), part(BOX, C.olive, { z: 4.2, sx: 0.5, sy: 0.4, sz: 0.5 })]), MAT);
+      pivot.add(barrel);
+      pivot.position.y = 1.3;
+      pivot.rotation.x = -0.55;
+      const g = new THREE.Group();
+      g.add(pivot);
+      place(g);
+      this.animated.push({ obj: g, kind: 'artillery', barrel, pivot, recoil: 0, p, team: p.team });
+    }
+  }
+
+  addFire(x, y, z, big) {
+    this.burning.push({ x, y, z, t: Math.random() * 2, big });
+    this.flames.push({ x, y, z, big, phase: Math.random() * 10 });
+  }
+
+  buildFlames() {
+    // Flames on burning wrecks: emissive cones that flicker, plus two shared point
+    // lights that follow the nearest fires (a fixed light count avoids shader rebuilds).
+    const geo = mergeGeometries([part(CONE8, 0xffb040, { y: 0.9, sx: 1.4, sy: 1.8, sz: 1.4 }), part(CONE8, 0xff7020, { x: 0.5, y: 0.6, sx: 0.9, sy: 1.2, sz: 0.9 }), part(CONE8, 0xffe080, { y: 0.6, sx: 0.6, sy: 1.0, sz: 0.6 })]);
+    this.flameMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.88 }), Math.max(1, this.flames.length + 16));
+    this.flameMesh.count = 0;
+    this.flameMesh.frustumCulled = false;
+    this.scene.add(this.flameMesh);
+    this.fireLights = [0, 1].map(() => {
+      const l = new THREE.PointLight(0xff9a40, 0, 45, 1.6);
+      this.scene.add(l);
+      return l;
+    });
+  }
+
+  buildCraters() {
+    const geo = new THREE.CircleGeometry(1, 9);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x2e261d, flatShading: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
+    const rimGeo = new THREE.TorusGeometry(1, 0.18, 3, 9);
+    rimGeo.rotateX(-Math.PI / 2);
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x5b4a36, flatShading: true });
+    const holes = new THREE.InstancedMesh(geo, mat, CRATERS.length);
+    const rims = new THREE.InstancedMesh(rimGeo, rimMat, CRATERS.length);
+    const wet = CRATERS.filter((c) => c.water);
+    this.craterWaterMat = new THREE.MeshStandardMaterial({ color: 0x5a6a62, metalness: 0.85, roughness: 0.1, flatShading: true, polygonOffset: true, polygonOffsetFactor: -4 });
+    const water = new THREE.InstancedMesh(geo, this.craterWaterMat, Math.max(1, wet.length));
+    const m = new THREE.Matrix4();
+    CRATERS.forEach((c, i) => {
+      const y = heightAt(c.x, c.z) + 0.06;
+      m.makeScale(c.r, 1, c.r).setPosition(c.x, y, c.z);
+      holes.setMatrixAt(i, m);
+      m.makeScale(c.r, c.r * 0.8, c.r).setPosition(c.x, y, c.z);
+      rims.setMatrixAt(i, m);
+    });
+    wet.forEach((c, i) => {
+      m.makeScale(c.r * 0.72, 1, c.r * 0.72).setPosition(c.x, heightAt(c.x, c.z) + 0.1, c.z);
+      water.setMatrixAt(i, m);
+    });
+    water.count = wet.length;
+    holes.receiveShadow = rims.receiveShadow = true;
+    this.scene.add(holes, rims, water);
+  }
+
+  buildRails() {
+    // Sleepers + two rails along the railway line, merged into one mesh.
+    const parts = [];
+    for (let i = 0; i < RAIL.length - 1; i++) {
+      const [ax, az] = RAIL[i];
+      const [bx, bz] = RAIL[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      const rot = Math.atan2(bx - ax, bz - az);
+      for (let d = 0; d < len; d += 1.4) {
+        const x = ax + ((bx - ax) * d) / len, z = az + ((bz - az) * d) / len;
+        const y = heightAt(x, z);
+        parts.push(part(BOX, C.woodDark, { x, y: y + 0.08, z, ry: rot + Math.PI / 2, sx: 0.25, sy: 0.16, sz: 2.6 }));
+        if (Math.round(d / 1.4) % 3 === 0) {
+          for (const s of [-0.72, 0.72]) parts.push(part(BOX, 0x4a4a46, { x: x + Math.cos(rot) * s, y: y + 0.25, z: z - Math.sin(rot) * s, ry: rot, sx: 0.1, sy: 0.12, sz: 4.3 }));
+        }
+      }
+    }
+    const mesh = new THREE.Mesh(mergeGeometries(parts), MAT);
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+  }
+
+  buildZones() {
+    this.zoneRings = {};
+    for (const pt of POINTS) {
+      const segs = 48;
+      const geos = [];
+      for (let i = 0; i < segs; i += 2) {
+        const a = (i / segs) * Math.PI * 2;
+        const x = pt.x + Math.cos(a) * pt.r;
+        const z = pt.z + Math.sin(a) * pt.r;
+        geos.push(part(BOX, 0xffffff, { x, y: groundAt(x, z) + 0.15, z, sx: 0.5, sy: 0.25, sz: (Math.PI * 2 * pt.r) / segs, ry: -a }));
+      }
+      const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: 0xdddddd, vertexColors: true, transparent: true, opacity: 0.7 }));
+      this.scene.add(mesh);
+      this.zoneRings[pt.id] = mesh;
+    }
+  }
+
+  setDestroyed(ids, fx) {
+    const touched = new Set();
+    for (const id of ids) {
+      if (this.dead.has(id)) continue;
+      this.dead.add(id);
+      const p = PROPS[id];
+      const y = this.baseYs.get(id);
+      touched.add(chunkKey(p.x, p.z));
+      const rubble = new THREE.Mesh(rubbleGeo(p, mulberry32(id + 1)), MAT);
+      rubble.position.set(p.x, y, p.z);
+      rubble.rotation.y = p.rot;
+      rubble.castShadow = rubble.receiveShadow = true;
+      this.scene.add(rubble);
+      // Moving parts go with the building.
+      for (const a of this.animated.filter((a) => a.p === p)) this.scene.remove(a.obj);
+      this.animated = this.animated.filter((a) => a.p !== p);
+      if (fx) {
+        fx.impact({ x: p.x, y: y + 1, z: p.z, kind: 'heavy', r: 'ground' });
+        if (['fueltank', 'barn', 'gasstation', 'truck', 'barrels', 'factory'].includes(p.type)) this.addFire(p.x, y + 1, p.z, true);
+      }
+    }
+    for (const k of touched) this.rebuildChunk(k);
+  }
+
+  update(dt, fx, units, camPos, sound) {
+    this.t = (this.t ?? 0) + dt;
+    // Burning wrecks: periodic smoke puffs (only near the camera).
+    for (const b of this.burning) {
+      b.t -= dt;
+      if (b.t > 0) continue;
+      const d = Math.hypot(b.x - camPos.x, b.z - camPos.z);
+      if (d > quality().drawDistance) {
+        b.t = 1;
+        continue;
+      }
+      b.t = (b.big ? 0.35 : 0.6) / quality().particles;
+      fx.smokePuff(b.x, b.y, b.z, b.big);
+    }
+    this.updateFlames(camPos);
+    for (const a of this.animated) {
+      if (a.update) a.update(this.t);
+      else if (a.kind === 'artillery') {
+        a.recoil = Math.max(0, a.recoil - dt * 1.2);
+        a.barrel.position.z = -a.recoil * 1.2;
+      }
+    }
+    // Base artillery fires a round every so often (pure atmosphere, shells fly off-map).
+    this.artilleryT -= dt;
+    const guns = this.animated.filter((a) => a.kind === 'artillery');
+    if (this.artilleryT <= 0 && guns.length) {
+      this.artilleryT = 5 + Math.random() * 9;
+      const g = guns[Math.floor(Math.random() * guns.length)];
+      g.recoil = 1;
+      const dir = new THREE.Vector3(0, Math.sin(0.55), Math.cos(0.55)).applyAxisAngle(THREE.Object3D.DEFAULT_UP, g.p.rot);
+      const muzzle = g.obj.position.clone().add(new THREE.Vector3(0, 1.3, 0)).addScaledVector(dir, 4.6);
+      fx.muzzleFlash(muzzle, dir, 'heavy');
+      sound?.shot('heavy', muzzle, false);
+    }
+    this.vegetation.update(dt, camPos, units);
+  }
+
+  updateFlames(cam) {
+    let n = 0;
+    const m = new THREE.Matrix4();
+    const near = [];
+    for (const f of this.flames) {
+      const d = Math.hypot(f.x - cam.x, f.z - cam.z);
+      if (d > 600) continue;
+      const flick = 0.75 + 0.25 * Math.sin(this.t * 13 + f.phase) * Math.sin(this.t * 7.3 + f.phase * 2);
+      const s = (f.big ? 1.5 : 1) * flick;
+      m.compose(new THREE.Vector3(f.x, f.y - 0.3, f.z), new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, this.t * 0.7 + f.phase), new THREE.Vector3(s, s * (1 + 0.3 * Math.sin(this.t * 17 + f.phase)), s));
+      if (n < this.flameMesh.instanceMatrix.count) this.flameMesh.setMatrixAt(n++, m);
+      near.push([d, f, flick]);
+    }
+    this.flameMesh.count = n;
+    this.flameMesh.instanceMatrix.needsUpdate = true;
+    near.sort((a, b) => a[0] - b[0]);
+    this.fireLights.forEach((l, i) => {
+      const e = near[i];
+      if (!e || e[0] > 250) {
+        l.intensity = 0;
+        return;
+      }
+      l.position.set(e[1].x, e[1].y + 1.5, e[1].z);
+      l.intensity = (e[1].big ? 70 : 40) * e[2];
+    });
+  }
+
+  // Nearest fire distance (for crackle audio).
+  nearestFire(pos) {
+    let best = Infinity;
+    for (const f of this.flames) best = Math.min(best, Math.hypot(f.x - pos.x, f.z - pos.z));
+    return best;
+  }
+
+  setEnvMap(env) {
+    this.craterWaterMat.envMap = env;
+    this.craterWaterMat.needsUpdate = true;
+    this.vegetation.setEnvMap(env);
+  }
+
+  get stats() {
+    return { chunks: [...this.chunks.values()].filter((c) => c.mesh).length, instances: this.vegetation.drawnInstances, trees: this.vegetation.treeCount };
+  }
+}
+
+export const BASE_FLAG_SPOTS = Object.entries(BASES).flatMap(([team, b]) => [[team, b.x + 12, b.z], [team, b.x - 20, b.z + (team === 'blue' ? 60 : -60)], [team, b.x + 25, b.z + (team === 'blue' ? 60 : -60)]]);

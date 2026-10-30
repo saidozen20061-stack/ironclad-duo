@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ironclad Duo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="hud-root"></div>
+
+    <!-- MAIN MENU -->
+    <section class="screen" id="screen-menu">
+      <div class="menu-panel">
+        <h1 class="title">IRONCLAD<span>DUO</span></h1>
+        <p class="tagline">One drives blind. One sees everything.</p>
+        <label class="callsign">Callsign <input id="input-name" maxlength="16" spellcheck="false" /></label>
+        <button class="btn primary" id="btn-host">Host Game</button>
+        <button class="btn" id="btn-join">Join Game</button>
+        <button class="btn" id="btn-settings">Settings</button>
+        <button class="btn ghost" id="btn-quit">Quit</button>
+        <p class="status" id="menu-status"></p>
+      </div>
+    </section>
+
+    <!-- JOIN DIALOG -->
+    <section class="screen" id="screen-join">
+      <div class="menu-panel narrow">
+        <h2>Join Game</h2>
+        <p class="hint">Enter the 5-letter code your friend sees in their lobby.</p>
+        <input id="input-code" class="code-input" maxlength="5" placeholder="ABCDE" spellcheck="false" autocomplete="off" />
+        <button class="btn primary" id="btn-join-go">Join</button>
+        <button class="btn ghost" id="btn-join-back">Back</button>
+        <p class="status" id="join-status"></p>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="screen" id="screen-settings">
+      <div class="menu-panel wide">
+        <h2>Settings</h2>
+        <div class="settings-grid">
+          <label>Master volume</label>
+          <div class="range"><input type="range" id="set-master" min="0" max="1" step="0.01" /><output></output></div>
+          <label>Voice volume</label>
+          <div class="range"><input type="range" id="set-voice" min="0" max="2" step="0.01" /><output></output></div>
+          <label>Mouse sensitivity</label>
+          <div class="range"><input type="range" id="set-sens" min="0.2" max="3" step="0.05" /><output></output></div>
+          <label>Microphone</label>
+          <div class="row"><select id="set-mic"></select><button class="btn small" id="btn-mic-perm">Allow mic</button></div>
+          <label>Voice mode</label>
+          <div class="row">
+            <label class="toggle"><input type="radio" name="voicemode" value="ptt" /> Push-to-talk</label>
+            <label class="toggle"><input type="radio" name="voicemode" value="open" /> Open mic</label>
+          </div>
+          <label>Push-to-talk key</label>
+          <div class="row"><button class="btn small keybind" id="set-ptt"></button></div>
+          <label>Graphics quality</label>
+          <div class="row seg" id="set-quality">
+            <button data-q="low">Low</button><button data-q="medium">Medium</button><button data-q="high">High</button>
+          </div>
+          <label>Network (TURN)</label>
+          <div class="row turn">
+            <input id="set-turn-url" placeholder="turn:relay.example.com:3478 (optional)" spellcheck="false" autocomplete="off" />
+            <input id="set-turn-user" placeholder="username" spellcheck="false" autocomplete="off" />
+            <input id="set-turn-pass" placeholder="password" type="password" autocomplete="off" />
+          </div>
+        </div>
+        <p class="hint small">Only needed if you can't connect to your friend: a TURN server relays the game when a direct connection is blocked. Both players should enter it.</p>
+        <button class="btn primary" id="btn-settings-back">Back</button>
+      </div>
+    </section>
+
+    <!-- LOBBY -->
+    <section class="screen" id="screen-lobby">
+      <div class="lobby">
+        <header class="lobby-head">
+          <div>
+            <div class="label">Room code</div>
+            <div class="room-code" id="lobby-code">-----</div>
+          </div>
+          <button class="btn small" id="btn-copy-code">Copy</button>
+          <div class="spacer"></div>
+          <button class="btn ghost small" id="btn-lobby-leave">Leave</button>
+        </header>
+        <div class="lobby-body">
+          <div class="lobby-col">
+            <h3>Crew</h3>
+            <div id="lobby-players"></div>
+            <p class="status" id="lobby-voice"></p>
+            <h3>Your role</h3>
+            <div class="role-pick">
+              <button class="role-card" data-role="driver">
+                <b>Driver</b><span>Drives the tank from inside. No outside view, only gauges and a short-range radar.</span>
+              </button>
+              <button class="role-card" data-role="gunner">
+                <b>Gunner</b><span>Sees the battlefield through the gun sight. Aims, fires, and guides the driver.</span>
+              </button>
+            </div>
+          </div>
+          <div class="lobby-col">
+            <h3>Tank <small id="tank-host-note"></small></h3>
+            <div class="tank-pick" id="tank-pick"></div>
+          </div>
+        </div>
+        <footer class="lobby-foot">
+          <p class="status" id="lobby-status"></p>
+          <button class="btn primary big" id="btn-ready">Ready</button>
+        </footer>
+      </div>
+    </section>
+
+    <!-- PAUSE -->
+    <section class="screen dim" id="screen-pause">
+      <div class="menu-panel narrow">
+        <h2>Paused</h2>
+        <p class="hint">The battle keeps going. Your crewmate is still in the tank!</p>
+        <button class="btn primary" id="btn-resume">Resume</button>
+        <button class="btn" id="btn-pause-settings">Settings</button>
+        <button class="btn ghost" id="btn-pause-leave">Leave Match</button>
+      </div>
+    </section>
+
+    <!-- END -->
+    <section class="screen dim" id="screen-end">
+      <div class="menu-panel">
+        <h1 class="result" id="end-result">VICTORY</h1>
+        <div class="end-stats">
+          <div><span>Match time</span><b id="end-time">0:00</b></div>
+          <div><span>Enemies destroyed</span><b id="end-kills">0</b></div>
+          <div><span>Points captured</span><b id="end-caps">0</b></div>
+        </div>
+        <button class="btn primary" id="btn-end-lobby">Return to Lobby</button>
+      </div>
+    </section>
+
+    <!-- QUIT -->
+    <section class="screen" id="screen-quit">
+      <div class="menu-panel narrow">
+        <h2>Dismissed</h2>
+        <p class="hint">You can close this tab now.</p>
+        <button class="btn" id="btn-quit-back">Back to menu</button>
+      </div>
+    </section>
+
+    <div id="toast-root"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
