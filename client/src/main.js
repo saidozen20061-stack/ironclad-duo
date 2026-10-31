@@ -7,6 +7,8 @@ import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking } from './ui/lobbyScreen.js';
 import { voice } from './voice.js';
 import { MatchClient } from './game/matchClient.js';
+import { TANKS, TANK_IDS, MODES, KILL_LIMITS } from '../../shared/constants.js';
+import { PAINT } from './models/paint.js';
 
 const menuScene = new MenuScene();
 setActiveView(menuScene);
@@ -56,6 +58,39 @@ codeInput.addEventListener('keydown', (e) => e.key === 'Enter' && doJoin());
 $('#btn-join-back').addEventListener('click', () => backScreen());
 
 $('#btn-settings').addEventListener('click', () => showScreen('settings'));
+
+// ---------- Solo setup: tank, camo, mode; the match runs locally ----------
+const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20 };
+const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
+function renderSolo() {
+  const pick = (root, items, cur, key) => {
+    $(root).innerHTML = items.map(([id, html]) => `<button data-${key}="${id}" class="${id === cur ? 'sel' : ''}">${html}</button>`).join('');
+  };
+  pick('#solo-tanks', TANK_IDS.map((id) => [id, `${TANKS[id].name} <small>${TANKS[id].class}</small>`]), solo.tank, 'tank');
+  pick('#solo-camo', Object.entries(PAINT).map(([id, p]) => [id, `<i class="swatch" style="background:linear-gradient(135deg, ${hex(p.colors[0])} 50%, ${hex(p.colors[1])} 50%)"></i>${p.name}`]), solo.paint, 'paint');
+  pick('#solo-modes', Object.entries(MODES).map(([id, m]) => [id, m.name]), solo.mode, 'mode');
+  $('#solo-kills').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small${k === solo.killLimit ? ' on' : ''}" data-kills="${k}">${k}</button>`).join('')}`;
+  $('#solo-kills').style.display = solo.mode === 'tdm' ? '' : 'none';
+  menuScene.setShowcase(solo.tank, solo.paint);
+}
+$('#screen-solo').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.tank) solo.tank = solo.paint = b.dataset.tank; // a new tank starts in its own camo
+  else if (b.dataset.paint) solo.paint = b.dataset.paint;
+  else if (b.dataset.mode) solo.mode = b.dataset.mode;
+  else if (b.dataset.kills) solo.killLimit = Number(b.dataset.kills);
+  else return;
+  renderSolo();
+});
+$('#btn-solo').addEventListener('click', () => {
+  commitName();
+  menuScene.setCrews({ crews: [], players: [], mode: 'flags' });
+  showScreen('solo');
+  renderSolo();
+});
+$('#btn-solo-back').addEventListener('click', () => backScreen());
+$('#btn-solo-go').addEventListener('click', () => net.startSolo({ ...solo }));
 $('#btn-quit').addEventListener('click', () => {
   leaveRoom();
   window.close(); // only works for script-opened tabs; otherwise show a farewell screen
@@ -66,7 +101,7 @@ $('#btn-quit-back').addEventListener('click', () => goMenu());
 onScreenChange((name) => {
   if (name === 'settings') onSettingsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
-  if (name === 'lobby') menuScene.setMode('lobby');
+  if (name === 'lobby' || name === 'solo') menuScene.setMode('lobby');
 });
 
 initSettingsScreen();
@@ -168,8 +203,8 @@ function endMatchClient() {
 net.on('matchStart', (msg) => {
   endMatchClient();
   const crew = msg.crews.find((c) => c.driver === net.id || c.gunner === net.id);
-  const role = crew.driver === net.id ? 'driver' : 'gunner';
-  voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
+  const role = msg.solo ? 'solo' : crew.driver === net.id ? 'driver' : 'gunner';
+  if (!msg.solo) voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
   match = new MatchClient({ role, tank: crew.tank, crew, info: msg, onPause: () => showScreen('pause') });
   clearHistory();
   hideScreens();
@@ -194,10 +229,15 @@ net.on('matchEnd', (msg) => {
   $('#end-caps').textContent = mine[3];
   $('#end-board').innerHTML = match?.scoreboardHtml(msg.crews) ?? '';
   match?.onMatchEnd?.(msg);
+  $('#btn-end-lobby').textContent = net.mode === 'solo' ? 'Back to Menu' : 'Return to Lobby';
   showScreen('end', { remember: false });
 });
 
-$('#btn-end-lobby').addEventListener('click', () => net.send({ t: 'toLobby' }));
+$('#btn-end-lobby').addEventListener('click', () => {
+  if (net.mode !== 'solo') return net.send({ t: 'toLobby' });
+  leaveRoom();
+  goMenu();
+});
 
 // Pause menu
 function resume() {

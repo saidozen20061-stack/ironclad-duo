@@ -50,7 +50,7 @@ export class UnitsView {
       const kind = kindOf(u.type);
       m = { kind, type: u.type, team: u.team, dead: false, pose: { y: 0, quat: new THREE.Quaternion(), up: new THREE.Vector3() }, last: { x: u.x, z: u.z }, h: u.h };
       if (kind === 'tank') {
-        m.handles = buildTank(u.type, u.team);
+        m.handles = buildTank(u.type, u.team, this.paintFor?.(u) ?? u.type);
         // Own copy of the track material so this tank's tracks scroll on their own.
         const tm = trackMaterial();
         m.trackTex = trackTex.clone();

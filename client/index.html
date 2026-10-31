@@ -21,6 +21,7 @@
         <label class="callsign">Callsign <input id="input-name" maxlength="16" spellcheck="false" /></label>
         <button class="btn primary" id="btn-host">Host Game</button>
         <button class="btn" id="btn-join">Join Game</button>
+        <button class="btn" id="btn-solo">Solo</button>
         <button class="btn" id="btn-settings">Settings</button>
         <button class="btn ghost" id="btn-quit">Quit</button>
         <p class="status" id="menu-status"></p>
@@ -28,6 +29,22 @@
     </section>
 
     <!-- JOIN DIALOG -->
+    <section class="screen" id="screen-solo">
+      <div class="menu-panel solo-panel">
+        <h2>Solo</h2>
+        <p class="hint">One player, the whole tank: drive with WASD, aim with the mouse from a third-person camera.</p>
+        <label class="field-label">Tank</label>
+        <div class="solo-pick" id="solo-tanks"></div>
+        <label class="field-label">Camo</label>
+        <div class="solo-pick" id="solo-camo"></div>
+        <label class="field-label">Game mode</label>
+        <div class="solo-pick" id="solo-modes"></div>
+        <div class="kill-pick" id="solo-kills"></div>
+        <button class="btn primary" id="btn-solo-go">Start</button>
+        <button class="btn ghost" id="btn-solo-back">Back</button>
+      </div>
+    </section>
+
     <section class="screen" id="screen-join">
       <div class="menu-panel narrow">
         <h2>Join Game</h2>

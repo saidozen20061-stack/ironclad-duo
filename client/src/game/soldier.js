@@ -146,6 +146,7 @@ export class SoldierView {
   }
 
   placePing() {
+    if (this.noPing) return; // solo
     if (this.paused || !this.me || this.me.pingCd > 0) {
       if (this.me?.pingCd > 0) this.showBanner(`PING READY IN ${Math.ceil(this.me.pingCd)}s`);
       return;

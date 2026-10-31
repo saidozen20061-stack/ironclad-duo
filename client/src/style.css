@@ -403,3 +403,16 @@ input, select {
 .cap-hud .bunker i { height: 8px; background: #0c0e0a; border-radius: 4px; overflow: hidden; }
 .cap-hud .bunker u { display: block; height: 100%; background: #7fd36a; transition: width 0.3s; }
 .cap-hud .bunker u.low { background: var(--danger); }
+
+/* ---------- Solo setup ---------- */
+.solo-panel { width: min(640px, 94vw); }
+.solo-panel .field-label { display: block; margin: 10px 0 4px; font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+.solo-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.solo-pick button { font: 600 13px var(--ui); color: var(--ink); background: rgba(0, 0, 0, 0.3); border: 1px solid #2f3626; border-radius: 4px; padding: 6px 10px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.solo-pick button small { color: var(--ink-dim); font-weight: 500; }
+.solo-pick button.sel { border-color: var(--accent); background: rgba(217, 164, 65, 0.15); color: var(--accent); }
+.solo-pick .swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #000; }
+#solo-kills { margin-top: 8px; }
+#btn-solo-go { margin-top: 14px; }
+/* Solo third person: a small crosshair instead of the full gun-sight reticle. */
+.hud.solo.third .g-sight { width: 110px; height: 110px; opacity: 0.85; }

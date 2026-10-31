@@ -28,6 +28,9 @@ Everything (terrain, buildings, trees, tanks, soldiers, sounds) is generated in 
 
 The host's browser runs the battle (all the AI units), so the player with the fastest computer and best connection should host. If the host leaves, the match ends for everyone. Other players can leave and the match carries on.
 
+### Solo
+Click **Solo** in the main menu, pick a tank, a camo and a mode, and play alone (no room code, no internet needed once the page is loaded). You drive with **WASD** from a third-person camera; the turret follows the mouse, **left click** fires, **hold right click** for the gun sight (scroll = 2×/6×), **middle mouse** = machine gun, **1/2** = AP/HE, hold **R** while stopped to repair. Turretless tank destroyers only aim inside their gun arc, so turn the hull. No voice chat or pings.
+
 ### Game modes
 - **Flag Capture**: hold A, B and C. Flags lower and rise as they're captured; the team with fewer flags bleeds tickets. Works with crews on both teams or all crews on Blue against the NPC army.
 - **Team Deathmatch**: crews fight crews (NPC armies still fight around them). Player tank kill = 3 points, NPC tank = 1. First to the host's kill limit (10/20/30) or most points when time runs out. A team with fewer crews gets more AI tanks.

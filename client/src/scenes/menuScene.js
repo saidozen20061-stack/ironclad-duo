@@ -261,10 +261,11 @@ export class MenuScene {
     this.setShowcase('medium');
   }
 
-  setShowcase(type) {
-    if (this.showcase?.type === type) return;
+  setShowcase(type, paint = type) {
+    if (this.showcase?.type === type && this.showcase.paint === paint) return;
     if (this.showcase) this.scene.remove(this.showcase.group);
-    this.showcase = buildTank(type, 'blue');
+    this.showcase = buildTank(type, 'blue', paint);
+    this.showcase.paint = paint;
     this.scene.add(this.showcase.group);
   }
 

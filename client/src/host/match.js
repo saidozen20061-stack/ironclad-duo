@@ -308,6 +308,7 @@ export class Match {
       const off = t.spec.size.width / 2 + 1.6;
       b.foot = {};
       for (const [role, side] of [['driver', 1], ['gunner', -1]]) {
+        if (!c.seats[role]) continue; // nobody in that seat (solo, or the player left)
         let x = t.x + lx * off * side, z = t.z + lz * off * side;
         for (let k = 0; k < 8 && footBlocked(x, z, this.propDead); k++) {
           x = t.x + Math.cos(k) * (off + 2);

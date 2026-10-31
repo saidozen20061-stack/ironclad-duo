@@ -281,7 +281,28 @@ export class Net {
     return Promise.resolve();
   }
 
+  // Solo: the simulation worker runs right here, no PeerJS / room. One player drives and
+  // shoots; their crew's gunner seat stays empty so only one soldier bails out.
+  startSolo({ tank, paint, mode, killLimit }) {
+    this.leave();
+    this.mode = 'solo';
+    this.id = 1;
+    const me = { id: 1, crew: 0, role: 'driver', send: (msg) => this.deliver(msg) };
+    const crew = { id: 0, team: 'blue', tank, driver: 1, gunner: 1 };
+    const room = { players: [me], matchInfo: { mode, killLimit, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
+    this.solo = new SimProxy(room);
+    this.solo.playerLeft(0, 'gunner');
+    this.deliver({ t: 'matchStart', solo: true, paint, ...room.matchInfo, names: { 1: this.name } });
+  }
+
   send(msg) {
+    if (this.mode === 'solo') {
+      if (msg.t === 'leave') return this.leave();
+      if (!this.solo || ['hello', 'hb', 'toLobby', 'signal'].includes(msg.t)) return;
+      // Gun inputs act as the gunner seat, everything else (drive, bail-out, on foot) as the driver.
+      const role = ['aim', 'trigger', 'shell'].includes(msg.t) ? 'gunner' : 'driver';
+      return this.solo.onMessage({ crew: 0, role }, msg);
+    }
     switch (msg.t) {
       case 'hello':
         this.name = msg.name || this.name;
@@ -390,6 +411,8 @@ export class Net {
   leave() {
     clearInterval(this.heartbeat);
     if (this.mode === 'host') this.host?.shutdown();
+    if (this.mode === 'solo') this.solo?.dispose();
+    this.solo = null;
     if (this.mode === 'guest') {
       try {
         if (this.conn?.open) this.conn.send({ t: 'leave' });

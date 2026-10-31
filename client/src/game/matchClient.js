@@ -17,6 +17,7 @@ import { AmbientWar } from './ambient.js';
 import { SoundScape } from './sound.js';
 import { showTutorial } from './tutorial.js';
 import { SoldierView } from './soldier.js';
+import { SoloView } from './solo.js';
 import { nearGarage } from '../../../shared/foot.js';
 import { escapeHtml } from '../ui/screens.js';
 
@@ -79,12 +80,14 @@ export class MatchClient {
       const p = this.points.find((q) => q.id === id);
       return p?.owner === 'blue' ? '#5fa0e0' : p?.owner === 'red' ? '#e0645a' : '#e6e1cf';
     };
-    if (role === 'gunner') this.ensureWorld();
+    this.solo = role === 'solo';
+    if (role === 'gunner' || this.solo) this.ensureWorld();
     this.view = this.makeTankView();
 
     // Voice: who's talking + how to talk.
     this.voiceEl = document.createElement('div');
     this.voiceEl.className = 'voice-hud';
+    if (role === 'solo') this.voiceEl.style.display = 'none'; // no voice chat in solo
     this.hud.appendChild(this.voiceEl);
     const mateId = this.crew.driver === net.id ? this.crew.gunner : this.crew.driver;
     const renderVoice = (sp) => {
@@ -119,7 +122,7 @@ export class MatchClient {
     this.choiceEl.className = 'bail-choice';
     this.choiceEl.innerHTML = `
       <h2>TANK DESTROYED</h2>
-      <p>Pick together. If you disagree, the driver's choice wins.</p>
+      <p>${role === 'solo' ? 'Wait for a new tank, or bail out and fight on.' : "Pick together. If you disagree, the driver's choice wins."}</p>
       <div class="bail-opts">
         <button data-pick="tank"><b>1</b>RESPAWN WITH TANK<small>New tank at Blue base after 15 s</small></button>
         <button data-pick="foot"><b>2</b>GO ON FOOT<small>Bail out next to the wreck and keep fighting</small></button>
@@ -149,6 +152,8 @@ export class MatchClient {
     if (this.world) return;
     this.world = new World();
     this.units = new UnitsView(this.world.scene);
+    // Solo: the player's tank wears the camo picked in the setup screen.
+    this.units.paintFor = (u) => (this.solo && u.crew === this.crew.id && u.player ? this.info.paint : null);
     this.fx = new FX(this.world.scene);
     this.props = new PropsView(this.world.scene);
     this.tracks = new TrackMarks(this.world.scene, this.fx);
@@ -161,7 +166,10 @@ export class MatchClient {
   makeTankView() {
     const tank = this.tank;
     let v;
-    if (this.role === 'gunner') {
+    if (this.solo) {
+      v = new SoloView({ world: this.world, units: this.units, tank, hud: this.hud, keys: this.keys });
+      v.deadProps = this.props.dead;
+    } else if (this.role === 'gunner') {
       v = new GunnerView({ world: this.world, units: this.units, tank, hud: this.hud, keys: this.keys });
       v.deadProps = this.props.dead;
     } else v = new DriverView({ tank, hud: this.hud, keys: this.keys });
@@ -250,7 +258,8 @@ export class MatchClient {
     this.view.dispose();
     if (on) {
       this.ensureWorld();
-      this.view = new SoldierView({ world: this.world, units: this.units, props: this.props, sound: this.sound, hud: this.hud, keys: this.keys, role: this.role, team: this.team });
+      this.view = new SoldierView({ world: this.world, units: this.units, props: this.props, sound: this.sound, hud: this.hud, keys: this.keys, role: this.solo ? 'driver' : this.role, team: this.team });
+      this.view.noPing = this.solo;
       this.view.pointColor = this.pointColor;
       const mate = this.view.drawExtraMinimap;
       this.view.drawExtraMinimap = (ctx, toMap) => {
@@ -267,11 +276,13 @@ export class MatchClient {
     this.choiceEl.classList.toggle('show', on);
     if (!on) return;
     this.choiceEl.querySelector('.bail-timer i').style.width = `${(crew.left / FOOT.choiceTime) * 100}%`;
-    const mine = crew.picks?.[this.role];
+    const mine = crew.picks?.[this.solo ? 'driver' : this.role];
     const other = crew.picks?.[this.role === 'driver' ? 'gunner' : 'driver'];
     for (const b of this.choiceEl.querySelectorAll('button')) b.classList.toggle('sel', b.dataset.pick === mine);
     const name = (p) => (p === 'foot' ? 'GO ON FOOT' : p === 'tank' ? 'RESPAWN WITH TANK' : '…');
-    this.choiceEl.querySelector('.bail-picks').innerHTML = `You: <b>${name(mine)}</b> · ${this.role === 'driver' ? 'Gunner' : 'Driver'}: <b>${name(other)}</b> · ${Math.ceil(crew.left)}s`;
+    this.choiceEl.querySelector('.bail-picks').innerHTML = this.solo
+      ? `You: <b>${name(mine)}</b> · ${Math.ceil(crew.left)}s`
+      : `You: <b>${name(mine)}</b> · ${this.role === 'driver' ? 'Gunner' : 'Driver'}: <b>${name(other)}</b> · ${Math.ceil(crew.left)}s`;
   }
 
   onSnapshot(msg) {

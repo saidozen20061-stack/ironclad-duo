@@ -404,15 +404,15 @@ function mergeParts(root, pivots) {
 // One built + merged template per type and team; units get cheap clones sharing its geometry.
 const templates = new Map();
 
-export function buildTank(type = 'medium', team = 'blue') {
-  const key = `${type}|${team}`;
-  if (!templates.has(key)) templates.set(key, makeTank(type, team));
+export function buildTank(type = 'medium', team = 'blue', paint = type) {
+  const key = `${type}|${team}|${paint}`;
+  if (!templates.has(key)) templates.set(key, makeTank(type, team, paint));
   const group = templates.get(key).group.clone();
   const find = (name) => group.getObjectByName(name);
   return { group, turret: find('turret'), gun: find('gun'), muzzle: find('muzzle'), type, team };
 }
 
-function makeTank(type, team) {
+function makeTank(type, team, paint) {
   const colors = TEAM_COLORS[team] ?? TEAM_COLORS.blue;
   const handles = BUILDERS[type](colors);
   // Swap the plain hull colours for this class's paint scheme (tracks, tyres, guns' black parts stay).
@@ -422,7 +422,7 @@ function makeTank(type, team) {
   handles.group.traverse((o) => {
     if (!o.isMesh || (o.material !== hullMat && o.material !== darkMat)) return;
     bakePaintCoords(o, handles.group);
-    o.material = paintMaterial(type, team, o.material === hullMat ? 1 : 0.62);
+    o.material = paintMaterial(paint, team, o.material === hullMat ? 1 : 0.62);
   });
   // Team marking: a coloured stripe on the turret
   const spec = TANKS[type];

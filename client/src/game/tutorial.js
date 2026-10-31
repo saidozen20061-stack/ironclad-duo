@@ -10,6 +10,12 @@ const HINTS = {
     'Took damage? Stop and hold R to repair the worst module. Tracks out = you can\'t move.',
     `Talk to your gunner: hold ${keyLabel(settings.pttKey)} (or use open mic in Settings).`,
   ],
+  solo: [
+    'SOLO: you drive and shoot. W/S throttle · A/D steer · Shift boost · Space brake.',
+    'Mouse aims the turret where the camera looks. Left click fires. Hold right click for the gun sight.',
+    'The orange circle is where the gun really points — wait for it to turn green before firing.',
+    'Took damage? Stop and hold R to repair the worst module. 1 / 2 switch AP / HE, middle mouse = machine gun.',
+  ],
   gunner: [
     'You are the GUNNER. You see everything — the driver sees almost nothing. Guide them!',
     'Click to take the gun. Mouse aims, left click fires, scroll zooms (2×/6×).',
