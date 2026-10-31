@@ -447,3 +447,6 @@ function makeTank(type, team) {
   mergeParts(handles.group, [handles.group, handles.turret, handles.gun]);
   return handles;
 }
+
+// The (shared) track material, so the unit view can swap in a scrolling copy per tank.
+export const trackMaterial = () => mat(0x2b2b27);

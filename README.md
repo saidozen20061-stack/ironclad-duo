@@ -17,18 +17,23 @@ Everything (terrain, buildings, trees, tanks, soldiers, sounds) is generated in 
 
 ---
 
-## How to play with a friend (anywhere in the world)
+## How to play with friends (2–10 players, anywhere in the world)
 
-1. Both open the game link in **Chrome, Edge or Firefox** on a computer.
-2. Type a callsign. One of you clicks **Host Game** and gets a **5-letter room code**.
-3. The other clicks **Join Game** and types the code.
-4. In the lobby each player picks **Driver** or **Gunner**; the host picks one of nine vehicles:
-   - **Jackal** (recon tank: tiny, fastest tracks, 20mm) · **Hornet** (light, 30mm autocannon) · **Strider** (six-wheeled armored car, top road speed, 75mm AP/HE)
-   - **Wasp** (twin 25mm autocannons, aims steeply) · **Warden** (medium, AP/HE + machine gun) · **Viper** (tank destroyer: no turret, the gun swings only 12°, long 105mm)
-   - **Mauler** (assault howitzer, lobbed 165mm with a huge blast) · **Bastion** (heavy, 152mm) · **Colossus** (super-heavy: very slow, thickest armor, 128mm + MG)
-5. Both click **Ready**. Allow the microphone when the browser asks, then talk with **V** (push-to-talk) or switch to open mic in Settings.
+1. Everyone opens the game link in **Chrome, Edge or Firefox** on a computer.
+2. Type a callsign. One player clicks **Host Game** and gets a **5-letter room code**.
+3. The others click **Join Game** and type the code (up to 10 players = 5 tank crews).
+4. In the garage lobby, click a free **Driver** or **Gunner** seat to join a crew. Each crew picks its own tank (9 classes, each with its own camo) and the host sets each crew's team (click the BLUE/RED badge, or **Auto-balance teams**).
+5. The host picks the **game mode**; everyone else clicks **Ready**, then the host clicks **Start Match**.
+6. Voice: hold **V** to talk to your crewmate, hold **B** to talk to your whole team. Allow the microphone when the browser asks.
 
-The host's browser runs the battle (all the AI units), so the player with the faster computer and the better internet connection should host. Keep the game tab open; minimising it is fine.
+The host's browser runs the battle (all the AI units), so the player with the fastest computer and best connection should host. If the host leaves, the match ends for everyone. Other players can leave and the match carries on.
+
+### Game modes
+- **Flag Capture**: hold A, B and C. Flags lower and rise as they're captured; the team with fewer flags bleeds tickets. Works with crews on both teams or all crews on Blue against the NPC army.
+- **Team Deathmatch**: crews fight crews (NPC armies still fight around them). Player tank kill = 3 points, NPC tank = 1. First to the host's kill limit (10/20/30) or most points when time runs out. A team with fewer crews gets more AI tanks.
+- **Fortress Defence**: all crews are Blue and hold the fortified Blue base (walls, gates, towers, bunkers, trenches, hull-down berms, a repair/ammo depot and the command bunker) against 10 waves: infantry, light tanks, heavies, artillery barrages and a boss wave. Park in the depot to repair and rearm fast. Lose the command bunker and the game is over.
+
+When your tank is destroyed you can wait for a new tank or bail out and fight **on foot** (in every mode). Hold **Tab** for the scoreboard.
 
 ### Driver controls
 | Key | Action |

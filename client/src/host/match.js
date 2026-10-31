@@ -792,6 +792,14 @@ export class Match {
     }
     this.events.push(ev);
     if (p.splash > 1 && p.splashDamage > 0) this.splash(hit.x, hit.y, hit.z, p.splash, p.splashDamage, p.owner, hit.unit, hit.prop);
+    // Infantry near a big blast hit the dirt.
+    if (p.splash >= 3) {
+      for (const u of this.units) {
+        if (u.kind !== 'inf' || u.dead || !u.ai) continue;
+        const d = Math.hypot(u.x - hit.x, u.z - hit.z);
+        if (d < p.splash * 2.5 && d > 0.5) u.ai.proneT = Math.max(u.ai.proneT, 2.5 + Math.random() * 2);
+      }
+    }
   }
 
   splash(x, y, z, radius, amount, owner, skipUnit = null, skipProp = null) {
@@ -800,7 +808,7 @@ export class Match {
       const d = Math.hypot(u.x - x, u.pose.y + 1 - y, u.z - z) - u.radius * 0.5;
       // Infantry are far more vulnerable to blast than armor; cover helps them.
       const mul = u.kind === 'inf' ? (u.ai?.inCover ? 0.8 : 1.6) : 0.6;
-      if (d < radius) this.damage(u, amount * (1 - Math.max(0, d) / radius) * mul, { owner });
+      if (d < radius) this.damage(u, amount * (1 - Math.max(0, d) / radius) * mul, { owner, blast: [x, z] });
     }
     for (const pr of propsNear(x, z, radius + 10)) {
       if (pr === skipProp || this.propDead.has(pr.id) || !Number.isFinite(pr.maxHp)) continue;
@@ -841,7 +849,11 @@ export class Match {
         // Nobody at the controls: skip the vote.
         for (const r of ['driver', 'gunner']) if (!victimCrew.seats[r]) victimCrew.bail.picks[r] = 'tank';
       }
-      this.events.push({ k: 'k', u: u.id, by: p.owner, team: u.team, type: u.type });
+      const kill = { k: 'k', u: u.id, by: p.owner, team: u.team, type: u.type };
+      // Where it came from, for the death animation: blast centre or shot direction.
+      if (p.blast) [kill.bx, kill.bz] = [r2(p.blast[0]), r2(p.blast[1])];
+      else if (p.vx !== undefined) [kill.dx, kill.dz] = [r2(p.vx), r2(p.vz)];
+      this.events.push(kill);
       const shooter = this.units.find((x) => x.id === p.owner);
       const killerCrew = this.crewOf(shooter);
       if (killerCrew && u.team !== shooter.team) killerCrew.stats.kills++;

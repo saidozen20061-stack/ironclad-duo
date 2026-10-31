@@ -85,7 +85,7 @@ const BLACK = 0x1b1c1d;
 const DARK = 0x101112;
 const GREY = 0x2c2e30;
 export const M4_SIGHT_Y = 0.085;
-function m4Parts(x = 0, y = 0, z = 0, k = 1) {
+export function m4Parts(x = 0, y = 0, z = 0, k = 1) {
   const P = (geo, col, px, py, pz, rx, ry, rz, sx, sy, sz) => part(geo, col, x + px * k, y + py * k, z + pz * k, rx, ry, rz, sx * k, sy * k, sz * k);
   const out = [
     P(BOX, BLACK, 0, 0, 0.02, 0, 0, 0, 0.05, 0.06, 0.26), // upper receiver
@@ -187,3 +187,6 @@ export function buildATGun(team) {
   });
   return { group, turret, gun, crew };
 }
+
+// Shared with the animated character rig (rig.js).
+export { part, TEAM, BOX, HEAD, HELMET, TUBE };

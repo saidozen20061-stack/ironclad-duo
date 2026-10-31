@@ -300,6 +300,7 @@ export class MatchClient {
     const driver = this.view instanceof DriverView;
     const gunner = this.view instanceof GunnerView;
     if (this.view.isFoot) this.view.onEvent(ev);
+    this.units?.onEvent(ev, this.buffer.latest?.units ?? new Map());
     switch (ev.k) {
       case 'f': {
         // Our own soldier's shots already played locally.
@@ -480,7 +481,8 @@ export class MatchClient {
       const killerUnit = units?.get(ev.by);
       const crewLabel = (u) => (u?.crew != null ? this.crewName(u.crew) : null);
       const victim = ev.u === myId ? 'Our tank' : ours(ev.u) ? 'Our crewman' : crewLabel(victimUnit) ?? this.unitName(ev.team, ev.type);
-      const killer = ev.by === myId ? 'Our tank' : ours(ev.by) ? 'Our crew' : crewLabel(killerUnit) ?? (killerUnit?.team === this.team ? 'Friendly fire' : 'Enemy fire');
+      const side = killerUnit?.team === ev.team ? 'Friendly fire' : killerUnit?.team === this.team ? 'Our side' : 'Enemy fire';
+      const killer = ev.by === myId ? 'Our tank' : ours(ev.by) ? 'Our crew' : crewLabel(killerUnit) ?? side;
       html = `<span>${escapeHtml(killer)}</span> ▸ <b>${escapeHtml(victim)}</b>`;
     }
     const row = document.createElement('div');

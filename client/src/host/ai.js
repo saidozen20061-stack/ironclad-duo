@@ -67,6 +67,10 @@ function chooseObjective(match, u) {
   return best?.id ?? 'B';
 }
 
+// Infantry pose code sent to clients in the `ty` field: stance in the low two bits
+// (0 stand, 1 crouch / kneel, 2 prone) plus action flags for the animation rig.
+export const POSE = { CROUCH: 1, PRONE: 2, RELOAD: 4, WOUNDED: 8, SIGNAL: 16, COVER: 32, DRAG: 64, THROW: 128 };
+
 // ---------- Unit classes for non-tank NPCs ----------
 
 let nextId = 100000;
@@ -87,7 +91,8 @@ export class Infantry {
     this.dead = false;
     this.radius = 0.5;
     this.pose = { y: groundAt(x, z) };
-    this.ai = { state: 'move', objective: null, think: rand(0, 0.5), target: null, cover: null, cd: rand(0.5, 2), stuck: 0 };
+    this.ai = { state: 'move', objective: null, think: rand(0, 0.5), target: null, cover: null, cd: rand(0.5, 2), stuck: 0, shots: 0, reloadT: 0, proneT: 0, signalT: 0, throwT: 0, grenades: type === 'rifle' ? 2 : 0 };
+    this.squad = null;
   }
 }
 
@@ -202,14 +207,31 @@ export class ArmyAI {
 
   spawnSquadAt(team, cx, cz, n, objective = chooseObjective(this.match, { team, kind: 'inf', x: cx, z: cz })) {
     const out = [];
+    const squad = { members: out, leader: null };
     for (let i = 0; i < n; i++) {
       const type = i === 0 || (i === 3 && Math.random() < 0.5) ? 'rocket' : 'rifle';
       const u = new Infantry(team, type, cx + rand(-6, 6), cz + rand(-6, 6));
       u.ai.objective = objective;
+      u.squad = squad;
       this.match.units.push(u);
       out.push(u);
     }
+    squad.leader = out.find((u) => u.type === 'rifle') ?? out[0];
     return out;
+  }
+
+  // Wedge formation behind the leader; returns this member's slot in world space.
+  formationSlot(u) {
+    const sq = u.squad;
+    if (!sq) return null;
+    if (!sq.leader || sq.leader.dead) sq.leader = sq.members.find((m) => !m.dead) ?? null;
+    const L = sq.leader;
+    if (!L || L === u) return null;
+    const i = sq.members.filter((m) => !m.dead && m !== L).indexOf(u) + 1;
+    const row = Math.ceil(i / 2), side = i % 2 ? 1 : -1;
+    const lx = side * 3.2 * row, lz = -2.8 * row; // local: x left, z forward
+    const c = Math.cos(L.h), sn = Math.sin(L.h);
+    return { x: L.x + lx * c + lz * sn, z: L.z - lx * sn + lz * c };
   }
 
   spawnTankAt(team, type, x, z, h, objective = null) {
@@ -296,10 +318,21 @@ export class ArmyAI {
       if (ai.target && (ai.target.dead || !m.units.includes(ai.target))) ai.target = null;
       ai.target = this.findTarget(u, w.range, w.kind === 'rocket' ? 'armor' : 'soft');
       if (!ai.target && m.mode === 'fortress' && u.team === 'red' && w.kind === 'rocket') ai.target = this.structureTarget(u, 90);
+      const prevTarget = ai.lastTarget;
+      ai.lastTarget = ai.target;
       if (u.hp < 35 && ai.state !== 'retreat') {
         ai.state = 'retreat';
         ai.cover = null;
+        this.callForDrag(u);
       } else if (ai.state === 'retreat' && u.hp >= 35) ai.state = 'move';
+      // Squad leaders wave their squad on when they spot a new enemy.
+      if (u.squad?.leader === u && ai.target && ai.target !== prevTarget && ai.signalT <= 0) ai.signalT = 1.6;
+      // Riflemen lob a grenade at infantry in throwing range now and then.
+      const t0 = ai.target;
+      if (t0 && t0.kind === 'inf' && ai.grenades > 0 && ai.throwT <= 0 && ai.reloadT <= 0 && Math.random() < 0.07) {
+        const d = Math.hypot(t0.x - u.x, t0.z - u.z);
+        if (d > 12 && d < 32) this.throwGrenade(u, t0, d);
+      }
       if (ai.state !== 'retreat') {
         const objPt = m.points.find((p) => p.id === ai.objective);
         if (!objPt || (objPt.owner === u.team && Math.random() < 0.08)) ai.objective = chooseObjective(m, u);
@@ -319,9 +352,33 @@ export class ArmyAI {
       }
     }
 
+    ai.reloadT = Math.max(0, ai.reloadT - dt);
+    ai.proneT = Math.max(0, ai.proneT - dt);
+    ai.signalT = Math.max(0, ai.signalT - dt);
+    ai.throwT = Math.max(0, ai.throwT - dt);
+    // Being dragged to safety by a squadmate: just follow along.
+    if (ai.draggedBy) {
+      const b = ai.draggedBy;
+      if (b.dead || b.ai.drag !== u || u.dead) {
+        ai.draggedBy = null;
+        if (!b.dead) b.ai.drag = null;
+      } else {
+        u.x = b.x + Math.sin(b.h + Math.PI) * 0.9;
+        u.z = b.z + Math.cos(b.h + Math.PI) * 0.9;
+        u.h = b.h + Math.PI;
+        u.pose.y = groundAt(u.x, u.z);
+        u.ty = POSE.PRONE | POSE.WOUNDED;
+        return;
+      }
+    }
+
     // Movement
     let goal = null;
-    if (ai.state === 'move') goal = nextWaypoint('inf', ai.objective, u.x, u.z, 2);
+    // Squads move as a wedge behind their leader instead of a single file.
+    const slot = ai.state === 'move' ? this.formationSlot(u) : null;
+    if (ai.drag) goal = nextWaypoint('inf', u.team, u.x, u.z, 2);
+    else if (slot && Math.hypot(slot.x - u.x, slot.z - u.z) < 30) goal = slot;
+    else if (ai.state === 'move') goal = nextWaypoint('inf', ai.objective, u.x, u.z, 2);
     else if (ai.state === 'retreat') goal = nextWaypoint('inf', u.team, u.x, u.z, 2);
     else if (ai.state === 'cover' && ai.cover) goal = ai.cover;
     else if (ai.state === 'hold' && !ai.holdSpot) {
@@ -342,7 +399,13 @@ export class ArmyAI {
       const dx = goal.x - u.x, dz = goal.z - u.z;
       const d = Math.hypot(dx, dz);
       if (d > 0.8) {
-        const sp = u.spec.speed * (ai.state === 'retreat' || ai.state === 'cover' ? 1.25 : 1) * (heightAt(u.x, u.z) < WATER_LEVEL ? 0.45 : 1);
+        let sp = u.spec.speed * (ai.state === 'retreat' || ai.state === 'cover' ? 1.25 : 1) * (heightAt(u.x, u.z) < WATER_LEVEL ? 0.45 : 1);
+        if (ai.proneT > 0) sp *= 0.3; // crawling
+        if (u.hp < 50) sp *= 0.75; // limping
+        if (ai.drag) sp = 1.3; // hauling a wounded squadmate
+        // Formation: catch up to the slot, and the leader slows down for stragglers.
+        if (slot) sp *= Math.min(1.35, 0.8 + d * 0.05);
+        if (u.squad?.leader === u && ai.state === 'move' && this.squadLag(u) > 7) sp *= 0.55;
         const step = Math.min(d, sp * dt);
         let nx = u.x + (dx / d) * step, nz = u.z + (dz / d) * step;
         // Separation from squadmates so they don't stack.
@@ -364,7 +427,8 @@ export class ArmyAI {
           }
         }
         if (nx !== u.x || nz !== u.z) {
-          u.h = Math.atan2(nx - u.x, nz - u.z);
+          // The dragger walks backwards, facing the casualty.
+          u.h = Math.atan2(nx - u.x, nz - u.z) + (ai.drag ? Math.PI : 0);
           u.x = nx;
           u.z = nz;
           u.pose.y = groundAt(u.x, u.z);
@@ -373,26 +437,79 @@ export class ArmyAI {
       } else if (ai.state === 'cover') ai.inCover = true;
     }
     if (ai.state !== 'cover') ai.inCover = false;
-    u.ty = !moving && (ai.state === 'engage' || ai.inCover || ai.state === 'hold') ? 1 : 0;
+    // Stance + action flags for the animation rig.
+    let stance = !moving && (ai.state === 'engage' || ai.inCover || ai.state === 'hold') ? POSE.CROUCH : 0;
+    if (moving && ai.state === 'cover') stance = POSE.CROUCH; // running to cover, head down
+    if (ai.proneT > 0) stance = POSE.PRONE;
+    u.ty = stance | (ai.reloadT > 0 ? POSE.RELOAD : 0) | (u.hp < 50 ? POSE.WOUNDED : 0) | (ai.signalT > 0 ? POSE.SIGNAL : 0) | (ai.inCover ? POSE.COVER : 0) | (ai.drag ? POSE.DRAG : 0) | (ai.throwT > 0 ? POSE.THROW : 0);
+    if (!ai.target) u.gp *= 0.9;
 
     // Shooting: only when not sprinting to cover / retreating.
     const t = ai.target;
-    if (t && !t.dead && ai.state !== 'retreat' && ai.cd <= 0 && (!moving || ai.state === 'engage')) {
+    if (t && !t.dead && ai.state !== 'retreat' && !ai.drag && ai.cd <= 0 && ai.reloadT <= 0 && ai.throwT <= 0 && (!moving || ai.state === 'engage')) {
       u.h = Math.atan2(t.x - u.x, t.z - u.z);
       const d = Math.hypot(t.x - u.x, t.z - u.z);
       if (d <= w.range) {
         ai.cd = w.interval * rand(0.8, 1.4);
         // Wall defenders stand on the firing step behind the parapet.
         const step = ai.objective === 'fortress' && ai.holdSpot && Math.hypot(ai.holdSpot.x - u.x, ai.holdSpot.z - u.z) < 1.5 ? 1.4 : 0;
-        const ox = u.x, oy = u.pose.y + (u.ty ? 1.0 : 1.5) + step, oz = u.z;
+        const ox = u.x, oy = u.pose.y + ((u.ty & 3) === POSE.PRONE ? 0.35 : u.ty & 3 ? 1.0 : 1.5) + step, oz = u.z;
         const ty = unitHeight(t) - 0.2;
         const pitch = ballisticPitch(d, ty - oy, w.speed);
         const yaw = Math.atan2(t.x - ox, t.z - oz);
         // Accuracy degrades with range; rockets are slow so they lead a little.
         const dir = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
         m.fire(u, { kind: w.kind, damage: w.damage, speed: w.speed, splash: w.splash ?? 0, splashDamage: w.splashDamage ?? 0, spread: w.spread * (1 + d / 120) }, new Vector3(ox, oy, oz), dir);
+        u.gp = pitch;
+        // Magazine change every few shots (rockets reload by their long interval).
+        if (w.kind === 'rifle' && ++ai.shots % 6 === 0) ai.reloadT = 2.2;
       }
     }
+  }
+
+  squadLag(leader) {
+    let worst = 0;
+    for (const m of leader.squad.members) {
+      if (m === leader || m.dead || m.ai.state !== 'move') continue;
+      const s = this.formationSlot(m);
+      if (s) worst = Math.max(worst, Math.hypot(s.x - m.x, s.z - m.z));
+    }
+    return worst;
+  }
+
+  // A badly wounded soldier gets dragged back by the nearest healthy squadmate.
+  callForDrag(u) {
+    if (!u.squad) return;
+    let best = null;
+    let bestD = 18;
+    for (const m of u.squad.members) {
+      if (m === u || m.dead || m.hp < 50 || m.ai.drag || m.ai.draggedBy || m.type !== 'rifle') continue;
+      const d = Math.hypot(m.x - u.x, m.z - u.z);
+      if (d < bestD) {
+        bestD = d;
+        best = m;
+      }
+    }
+    if (!best || Math.random() < 0.4) return;
+    best.ai.drag = u;
+    u.ai.draggedBy = best;
+    setTimeout(() => {
+      if (best.ai.drag === u) best.ai.drag = null;
+      if (u.ai.draggedBy === best) u.ai.draggedBy = null;
+    }, 12000);
+  }
+
+  throwGrenade(u, t, d) {
+    const ai = u.ai;
+    ai.grenades--;
+    ai.throwT = 0.9;
+    ai.cd = Math.max(ai.cd, 1.4);
+    u.h = Math.atan2(t.x - u.x, t.z - u.z);
+    // Lob: 45° throw, speed for the range (a little short/long at random).
+    const v = Math.sqrt((d * rand(0.85, 1.1) * 9.81) / Math.sin(Math.PI / 2));
+    const p = Math.PI / 4;
+    const dir = new Vector3(Math.sin(u.h) * Math.cos(p), Math.sin(p), Math.cos(u.h) * Math.cos(p));
+    this.match.fire(u, { kind: 'grenade', damage: 20, speed: v, splash: 7, splashDamage: 110, spread: 0.03 }, new Vector3(u.x, u.pose.y + 1.6, u.z), dir);
   }
 
   infBlocked(x, z) {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createNoise2D, fbm, mulberry32 } from '../../../shared/noise.js';
 import { buildTank } from '../models/tanks.js';
-import { buildSoldier } from '../models/infantry.js';
+import { SoldierRig, idleUpdate } from '../models/rig.js';
 import { quality } from '../settings.js';
 
 // Slowly rotating low-poly battlefield behind the menus. In lobby mode the camera
@@ -277,6 +277,7 @@ export class MenuScene {
     if (key === this.lineupKey) return;
     this.lineupKey = key;
     this.lineup.clear();
+    this.rigs = [];
     this.crewCount = Math.max(1, used.length);
     used.forEach((c, i) => {
       const x = (i - (used.length - 1) / 2) * 11;
@@ -290,10 +291,11 @@ export class MenuScene {
       for (const [role, dx] of [['driver', -1.6], ['gunner', 1.6]]) {
         const n = name(c[role]);
         if (!n) continue;
-        const s = buildSoldier(team(c), 'crew');
+        const s = new SoldierRig(team(c), 'crew');
         s.group.position.set(x + dx, 0.2, 4.2);
         s.group.rotation.y = Math.PI * 0.02 * dx;
         this.lineup.add(s.group);
+        this.rigs.push(s);
         const label = labelSprite(n);
         label.position.set(x + dx, 2.55, 4.2);
         label.scale.set(3.2, 0.8, 1);
@@ -347,6 +349,8 @@ export class MenuScene {
       this.showcase.gun.rotation.x = -0.05 - Math.sin(this.t * 0.3) * 0.05;
     }
     for (const [i, e] of this.extras.entries()) e.turret.rotation.y = Math.sin(this.t * 0.3 + i) * 0.8;
+    // Crews in the garage breathe and look around.
+    if (inLobby) for (const r of this.rigs ?? []) idleUpdate(r, dt);
     for (const m of this.smoke) {
       const u = (m.userData.phase + this.t * 0.04) % 1;
       m.position.set(m.userData.x + u * 18, m.userData.base + 2 + u * 45, m.userData.z + u * 6);
