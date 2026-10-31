@@ -67,7 +67,15 @@ class LocalHost {
     if (!this.peer) throw lastErr;
     this.peer.on('connection', (conn) => this.accept(conn));
     // Keep the broker connection alive so the friend can still find us.
-    this.peer.on('disconnected', () => !this.closed && this.peer.reconnect());
+    // (A peer that's being torn down also reports 'disconnected': don't revive it.)
+    this.peer.on('disconnected', () => {
+      if (this.closed || this.peer.destroyed) return;
+      try {
+        this.peer.reconnect();
+      } catch {
+        // already destroyed in the meantime
+      }
+    });
     this.peer.on('error', (err) => console.warn('peer error', err?.type, err));
 
     this.room = this.manager.create(this.code);
