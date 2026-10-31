@@ -142,7 +142,7 @@ export class ArmyAI {
       if (this.tankT[team] <= 0) {
         this.tankT[team] = MATCH.waveInterval * 1.6;
         // Blue's player tank counts towards the blue armour cap.
-        const cap = MATCH.caps.tank - (team === 'blue' ? 1 : 0);
+        const cap = MATCH.caps.tank - m.playerTanks(team);
         if (tanks < cap) this.spawnTank(team);
         if (tanks < cap - 2) this.spawnTank(team);
       }

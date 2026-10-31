@@ -83,8 +83,8 @@ class LocalHost {
 
   accept(conn) {
     conn.on('open', () => {
-      if (this.closed || this.room.players.length >= 2 || this.room.phase !== 'lobby') {
-        conn.send({ t: 'error', msg: this.room.phase !== 'lobby' ? 'That match is already running.' : 'That room is full.' });
+      if (this.closed || this.room.full || this.room.phase !== 'lobby') {
+        conn.send({ t: 'error', msg: this.room.phase !== 'lobby' ? 'That match is already running.' : 'That room is full (10 players).' });
         setTimeout(() => conn.close(), 500);
         return;
       }
@@ -146,26 +146,83 @@ class LocalHost {
 }
 
 // The match simulation lives in a worker; this forwards inputs in and snapshots out.
+// Snapshots are tailored per player before they go on the wire:
+//  - only unit rows that changed since that player's last packet are sent (+ removals),
+//    with a full keyframe every few seconds;
+//  - units far from the player's crew are refreshed at a quarter of the tick rate;
+//  - shot/impact events far away are dropped.
+const FAR = 350; // m: beyond this, units update at 5 Hz
+const EVENT_RANGE = 750; // m: shots / impacts further away aren't sent
+const KEYFRAME = 60; // ticks between full unit lists
+
 class SimProxy {
   constructor(room) {
     this.room = room;
     this.over = false;
+    this.views = new Map(); // player -> { last: Map(id -> row), n }
     this.worker = new Worker(new URL('./host/simWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => {
       const msg = e.data;
       if (msg.t === 'matchEnd') this.over = true;
-      room.broadcast(msg);
+      if (msg.t === 's') this.sendSnapshot(msg);
+      else room.broadcast(msg);
     };
     this.worker.onerror = (e) => console.error('simulation worker error', e.message ?? e);
-    this.worker.postMessage({ type: 'start', tank: room.tank });
+    const info = room.matchInfo;
+    this.worker.postMessage({ type: 'start', crews: info.crews, mode: info.mode, killLimit: info.killLimit });
   }
+
+  sendSnapshot(msg) {
+    const { crews, focus, u, ev, ...common } = msg;
+    const ids = new Set();
+    for (const a of u) ids.add(a[0]);
+    for (const p of this.room.players) {
+      let v = this.views.get(p);
+      if (!v) this.views.set(p, (v = { last: new Map(), n: 0 }));
+      const f = focus[p.crew];
+      const full = v.n++ % KEYFRAME === 0;
+      const slow = msg.tick % 4 !== 0;
+      const rows = [];
+      for (const a of u) {
+        const prev = v.last.get(a[0]);
+        if (!full && prev && same(prev, a)) continue;
+        // Far away and only moving: wait for the 5 Hz slot (state changes like death go now).
+        if (!full && prev && slow && f && prev[9] === a[9] && Math.hypot(a[3] / 10 - f[0], a[4] / 10 - f[1]) > FAR) continue;
+        rows.push(a);
+        v.last.set(a[0], a);
+      }
+      const rm = [];
+      for (const id of v.last.keys()) if (!ids.has(id)) rm.push(id);
+      for (const id of rm) v.last.delete(id);
+      const out = { ...common, me: crews[p.crew], u: rows };
+      if (rm.length) out.rm = rm;
+      if (full) out.full = 1;
+      if (ev) {
+        const near = f ? ev.filter((e) => (e.k !== 'f' && e.k !== 'i') || e.o === crews[p.crew]?.id || Math.hypot(e.x - f[0], e.z - f[1]) < EVENT_RANGE) : ev;
+        if (near.length) out.ev = near;
+      }
+      p.send(out);
+    }
+  }
+
   onMessage(player, msg) {
     if (msg.t === 'toLobby') return;
-    this.worker.postMessage({ type: 'input', role: player.role, msg });
+    this.worker.postMessage({ type: 'input', crew: player.crew, role: player.role, msg });
   }
+
+  playerLeft(crew, role) {
+    this.worker.postMessage({ type: 'left', crew, role });
+  }
+
   dispose() {
     this.worker.terminate();
   }
+}
+
+function same(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 function openPeer(id) {

@@ -439,10 +439,10 @@ export class GunnerView {
     for (const u of states.values()) {
       if (u.id === self.id || u.dead) continue;
       // Enemies only show once they're close enough to be spotted.
-      if (u.team !== 'blue' && Math.hypot(u.x - self.x, u.z - self.z) > 400) continue;
+      if (u.team !== (this.team ?? 'blue') && Math.hypot(u.x - self.x, u.z - self.z) > 400) continue;
       const [px, py] = toMap(u.x, u.z);
       if (px < 0 || px > S || py < 0 || py > S) continue;
-      ctx.fillStyle = u.team === 'blue' ? '#7fd36a' : '#ff5a4a';
+      ctx.fillStyle = u.team === (this.team ?? 'blue') ? '#7fd36a' : '#ff5a4a';
       ctx.beginPath();
       ctx.arc(px, py, 3, 0, Math.PI * 2);
       ctx.fill();

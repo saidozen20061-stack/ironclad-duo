@@ -1,8 +1,11 @@
-import { ROOM_CODE_LETTERS, ROOM_CODE_LENGTH, MAX_NAME_LENGTH, ROLES, TANK_IDS } from '../../../shared/constants.js';
+import { ROOM_CODE_LETTERS, ROOM_CODE_LENGTH, MAX_NAME_LENGTH, ROLES, TANK_IDS, MAX_CREWS, MAX_PLAYERS, MODES, KILL_LIMITS } from '../../../shared/constants.js';
 
 // Lobby logic, run inside the HOST player's browser. A Player's transport is just a
-// function: the host's own client gets messages delivered locally, the guest's go
-// over the WebRTC data channel.
+// function: the host's own client gets messages delivered locally, guests' go over
+// their WebRTC data channels (star setup: everyone talks to the host).
+//
+// A room holds up to 5 tank crews; each crew is a driver seat + a gunner seat, a team
+// and a tank. Players click a free seat to join a crew.
 
 let nextPlayerId = 1;
 
@@ -16,6 +19,7 @@ export class Player {
     this.id = nextPlayerId++;
     this.sendFn = sendFn;
     this.name = 'Tanker';
+    this.crew = null; // crew index or null
     this.role = null;
     this.ready = false;
     this.room = null;
@@ -31,46 +35,76 @@ export class Room {
     this.manager = manager;
     this.players = [];
     this.hostId = null;
-    this.tank = 'medium';
+    this.crews = Array.from({ length: MAX_CREWS }, (_, id) => ({ id, team: id % 2 ? 'red' : 'blue', tank: 'medium', driver: null, gunner: null }));
+    this.mode = 'flags';
+    this.killLimit = 20;
     this.phase = 'lobby'; // 'lobby' | 'match'
     this.match = null;
   }
 
-  other(player) {
-    return this.players.find((p) => p !== player) ?? null;
+  get full() {
+    return this.players.length >= MAX_PLAYERS;
+  }
+
+  byId(id) {
+    return this.players.find((p) => p.id === id) ?? null;
   }
 
   broadcast(msg, except = null) {
     for (const p of this.players) if (p !== except) p.send(msg);
   }
 
+  occupied() {
+    return this.crews.filter((c) => c.driver != null || c.gunner != null);
+  }
+
   add(player) {
     this.players.push(player);
     player.room = this;
-    player.role = null;
     player.ready = false;
     if (this.hostId == null) this.hostId = player.id;
-    // Auto-pick the free role so a fresh lobby is one click from ready.
-    const taken = new Set(this.players.map((p) => p.role).filter(Boolean));
-    player.role = ROLES.find((r) => !taken.has(r)) ?? null;
+    // Auto-seat: complete a half-filled crew first, otherwise start a new one.
+    const half = this.crews.find((c) => (c.driver == null) !== (c.gunner == null));
+    const crew = half ?? this.crews.find((c) => c.driver == null && c.gunner == null);
+    if (crew) this.place(player, crew, crew.driver == null ? 'driver' : 'gunner');
     this.sync();
+  }
+
+  place(player, crew, role) {
+    this.unseat(player);
+    crew[role] = player.id;
+    player.crew = crew.id;
+    player.role = role;
+  }
+
+  unseat(player) {
+    for (const c of this.crews) {
+      if (c.driver === player.id) c.driver = null;
+      if (c.gunner === player.id) c.gunner = null;
+    }
+    player.crew = null;
+    player.role = null;
   }
 
   remove(player, reason = 'left') {
     const idx = this.players.indexOf(player);
     if (idx < 0) return;
     this.players.splice(idx, 1);
+    const crew = player.crew;
+    const role = player.role;
+    this.unseat(player);
     player.room = null;
-    const wasMatch = this.phase === 'match';
     if (this.players.length === 0) {
       this.endMatch();
       this.manager.delete(this.code);
       return;
     }
     if (this.hostId === player.id) this.hostId = this.players[0].id;
-    if (wasMatch) this.endMatch();
-    for (const p of this.players) p.ready = false;
-    this.broadcast({ t: 'peerLeft', name: player.name, reason, duringMatch: wasMatch });
+    const duringMatch = this.phase === 'match';
+    // Guests leaving mid-match free their seat; the match carries on without them.
+    if (duringMatch) this.match?.playerLeft?.(crew, role);
+    else for (const p of this.players) if (p.crew === crew) p.ready = false;
+    this.broadcast({ t: 'peerLeft', name: player.name, reason, duringMatch: false, id: player.id });
     this.sync();
   }
 
@@ -79,9 +113,11 @@ export class Room {
       t: 'lobby',
       code: this.code,
       hostId: this.hostId,
-      tank: this.tank,
       phase: this.phase,
-      players: this.players.map((p) => ({ id: p.id, name: p.name, role: p.role, ready: p.ready })),
+      mode: this.mode,
+      killLimit: this.killLimit,
+      crews: this.crews,
+      players: this.players.map((p) => ({ id: p.id, name: p.name, crew: p.crew, role: p.role, ready: p.ready })),
     };
   }
 
@@ -89,46 +125,91 @@ export class Room {
     this.broadcast(this.lobbyState());
   }
 
-  setRole(player, role) {
+  isHost(player) {
+    return player.id === this.hostId;
+  }
+
+  unready(crew) {
+    for (const p of this.players) if (p.crew === crew.id) p.ready = false;
+  }
+
+  seat(player, crewId, role) {
     if (this.phase !== 'lobby') return;
-    if (role !== null && !ROLES.includes(role)) return;
-    if (role && this.players.some((p) => p !== player && p.role === role)) {
-      player.send({ t: 'error', msg: 'That role is already taken.' });
+    const crew = this.crews[crewId];
+    if (!crew || !ROLES.includes(role)) return;
+    if (crew[role] != null && crew[role] !== player.id) {
+      player.send({ t: 'error', msg: 'That seat is taken.' });
       return;
     }
-    player.role = role;
-    for (const p of this.players) p.ready = false;
+    const old = this.crews[player.crew];
+    this.place(player, crew, role);
+    player.ready = false;
+    if (old) this.unready(old);
+    this.unready(crew);
     this.sync();
   }
 
-  setTank(player, tank) {
-    if (this.phase !== 'lobby' || player.id !== this.hostId || !TANK_IDS.includes(tank)) return;
-    this.tank = tank;
-    for (const p of this.players) p.ready = false;
+  setCrewTank(player, crewId, tank) {
+    const crew = this.crews[crewId];
+    if (this.phase !== 'lobby' || !crew || !TANK_IDS.includes(tank)) return;
+    if (player.crew !== crewId && !this.isHost(player)) return;
+    crew.tank = tank;
+    this.unready(crew);
+    this.sync();
+  }
+
+  setCrewTeam(player, crewId, team) {
+    const crew = this.crews[crewId];
+    if (this.phase !== 'lobby' || !crew || !this.isHost(player) || (team !== 'blue' && team !== 'red')) return;
+    crew.team = team;
+    this.sync();
+  }
+
+  // Alternate the occupied crews between Blue and Red.
+  autoBalance(player) {
+    if (this.phase !== 'lobby' || !this.isHost(player)) return;
+    this.occupied().forEach((c, i) => (c.team = i % 2 ? 'red' : 'blue'));
+    this.sync();
+  }
+
+  setMode(player, mode, killLimit) {
+    if (this.phase !== 'lobby' || !this.isHost(player)) return;
+    if (mode in MODES) this.mode = mode;
+    if (KILL_LIMITS.includes(killLimit)) this.killLimit = killLimit;
     this.sync();
   }
 
   setReady(player, ready) {
     if (this.phase !== 'lobby') return;
-    if (ready && !player.role) {
-      player.send({ t: 'error', msg: 'Pick a role before readying up.' });
-      return;
-    }
+    const crew = this.crews[player.crew];
+    if (ready && !crew) return player.send({ t: 'error', msg: 'Take a seat in a crew first.' });
+    if (ready && (crew.driver == null || crew.gunner == null)) return player.send({ t: 'error', msg: 'Your crew needs both a driver and a gunner.' });
     player.ready = !!ready;
     this.sync();
-    this.tryStart();
   }
 
-  tryStart() {
-    if (this.players.length !== 2) return;
-    if (!this.players.every((p) => p.ready && p.role)) return;
-    if (this.players[0].role === this.players[1].role) return;
+  // Why the host can't start yet, or null when everything is set.
+  startProblem() {
+    const crews = this.occupied();
+    if (!crews.length) return 'No crews yet.';
+    if (this.players.some((p) => p.crew == null)) return 'Everyone needs a seat.';
+    if (crews.some((c) => c.driver == null || c.gunner == null)) return 'Every crew needs a driver and a gunner.';
+    if (this.players.some((p) => !p.ready && p.id !== this.hostId)) return 'Waiting for everyone to ready up…';
+    return null;
+  }
+
+  start(player) {
+    if (this.phase !== 'lobby' || !this.isHost(player)) return;
+    const problem = this.startProblem();
+    if (problem) return player.send({ t: 'error', msg: problem });
+    const crews = this.occupied().map((c) => ({ ...c, team: this.mode === 'fortress' ? 'blue' : c.team }));
     this.phase = 'match';
+    this.matchInfo = { mode: this.mode, killLimit: this.killLimit, crews };
     this.manager.onMatchStart?.(this);
     this.broadcast({
       t: 'matchStart',
-      tank: this.tank,
-      roles: Object.fromEntries(this.players.map((p) => [p.id, p.role])),
+      ...this.matchInfo,
+      names: Object.fromEntries(this.players.map((p) => [p.id, p.name])),
     });
     this.sync();
   }
@@ -195,7 +276,7 @@ export class RoomManager {
         const r = this.rooms.get(code);
         if (!r) return player.send({ t: 'error', msg: `No room with code ${code || '(empty)'}.` }), true;
         if (r === room) return true;
-        if (r.players.length >= 2) return player.send({ t: 'error', msg: 'That room is full.' }), true;
+        if (r.full) return player.send({ t: 'error', msg: 'That room is full (10 players).' }), true;
         if (r.phase !== 'lobby') return player.send({ t: 'error', msg: 'That match is already running.' }), true;
         room?.remove(player);
         r.add(player);
@@ -207,21 +288,33 @@ export class RoomManager {
         room?.remove(player);
         player.send({ t: 'left' });
         return true;
-      case 'role':
-        room?.setRole(player, msg.role ?? null);
+      case 'seat':
+        room?.seat(player, Number(msg.crew), msg.role);
         return true;
-      case 'tank':
-        room?.setTank(player, msg.tank);
+      case 'crewTank':
+        room?.setCrewTank(player, Number(msg.crew), msg.tank);
+        return true;
+      case 'crewTeam':
+        room?.setCrewTeam(player, Number(msg.crew), msg.team);
+        return true;
+      case 'balance':
+        room?.autoBalance(player);
+        return true;
+      case 'mode':
+        room?.setMode(player, msg.mode, Number(msg.killLimit));
         return true;
       case 'ready':
         room?.setReady(player, msg.ready);
+        return true;
+      case 'start':
+        room?.start(player);
         return true;
       case 'toLobby':
         if (room && room.phase === 'match' && room.match?.over) room.returnToLobby();
         return true;
       case 'signal':
-        // WebRTC voice signaling relay; payload is opaque to the server.
-        room?.other(player)?.send({ t: 'signal', from: player.id, data: msg.data });
+        // WebRTC voice signaling relay to one player; payload is opaque to the host.
+        room?.byId(msg.to)?.send({ t: 'signal', from: player.id, data: msg.data });
         return true;
       default:
         return false;

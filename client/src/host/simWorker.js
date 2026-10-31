@@ -8,9 +8,11 @@ self.onmessage = (e) => {
   const d = e.data;
   if (d.type === 'start') {
     match?.dispose();
-    match = new Match({ tank: d.tank, broadcast: (msg) => self.postMessage(msg) });
+    match = new Match({ crews: d.crews, mode: d.mode, killLimit: d.killLimit, broadcast: (msg) => self.postMessage(msg) });
   } else if (d.type === 'input') {
-    match?.onMessage({ role: d.role }, d.msg);
+    match?.onMessage({ crew: d.crew, role: d.role }, d.msg);
+  } else if (d.type === 'left') {
+    match?.playerLeft(d.crew, d.role);
   } else if (d.type === 'stop') {
     match?.dispose();
     match = null;

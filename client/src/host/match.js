@@ -24,6 +24,7 @@ class Tank {
     this.type = type;
     this.spec = TANKS[type];
     this.player = player;
+    this.crewId = null;
     this.x = x;
     this.z = z;
     this.h = h;
@@ -76,11 +77,12 @@ class Tank {
 // A crew member on foot. Movement is reported by the player's client (it predicts it
 // locally); the host checks it, runs the weapons and takes the damage.
 class CrewSoldier {
-  constructor(role, x, z, h) {
+  constructor(role, x, z, h, crew) {
     this.id = nextId++;
     this.kind = 'inf';
     this.crew = role;
-    this.team = 'blue';
+    this.crewId = crew.id;
+    this.team = crew.team;
     this.type = 'crew';
     this.spec = { ...UNITS.crew, size: { ...UNITS.crew.size } };
     this.x = x;
@@ -103,35 +105,70 @@ class CrewSoldier {
   }
 }
 
+// One player crew: their tank, the bail-out / on-foot state, ping and scoreboard stats.
+class Crew {
+  constructor(info, tank) {
+    this.id = info.id;
+    this.team = info.team;
+    this.tankType = info.tank;
+    this.tank = tank;
+    this.seats = { driver: true, gunner: true };
+    // 'tank' (in or waiting for a tank), 'choice' (just destroyed), 'foot' (bailed out).
+    this.bail = { mode: 'tank', until: 0, picks: {}, foot: {} };
+    this.ping = null;
+    this.pingReadyAt = 0;
+    this.stats = { kills: 0, deaths: 0, caps: 0 };
+  }
+}
+
 export class Match {
   constructor(room) {
     this.room = room;
+    this.mode = room.mode ?? 'flags';
+    this.killLimit = room.killLimit ?? 20;
     this.time = 0;
+    this.tickNo = 0;
     this.units = [];
     this.projectiles = [];
     this.events = [];
     this.over = false;
-    this.ping = null;
-    this.pingReadyAt = 0;
     // Per-match prop damage (the shared PROPS layout itself is never mutated).
     this.propHp = new Map();
     this.propDead = new Set();
     this.propsDirty = true;
-    this.stats = { kills: 0, captures: 0 };
-
-    this.stats.startedAt = 0;
     this.tickets = { blue: MATCH.tickets, red: MATCH.tickets };
+    this.score = { blue: 0, red: 0 }; // team deathmatch points
     this.bleedT = MATCH.bleedInterval;
     this.points = POINTS.map((p) => ({ id: p.id, owner: null, progress: 0, contested: false }));
-    this.capturedByUs = new Set();
-    // Crew state after the tank dies: 'tank' (in or waiting for a tank), 'choice', 'foot'.
-    this.crew = { mode: 'tank', until: 0, picks: {}, foot: {} };
 
-    const b = BASES.blue;
-    this.tank = this.addTank(new Tank('blue', room.tank, b.x, b.z + 45, b.heading, { player: true }));
+    // Player crews, spread out side by side at their team's base.
+    this.crews = new Map();
+    const infos = room.crews ?? [{ id: 0, team: 'blue', tank: room.tank ?? 'medium' }];
+    for (const team of ['blue', 'red']) {
+      const mine = infos.filter((c) => c.team === team);
+      const b = BASES[team];
+      const fwd = team === 'blue' ? 1 : -1;
+      mine.forEach((info, k) => {
+        const x = b.x + (k - (mine.length - 1) / 2) * 16;
+        const t = this.addTank(new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
+        t.crewId = info.id;
+        this.crews.set(info.id, new Crew(info, t));
+      });
+    }
     this.army = new ArmyAI(this);
 
     this.interval = setInterval(() => this.tick(), 1000 / TICK_RATE);
+  }
+
+  // Player tanks per team (the AI fills the rest of the armour cap).
+  playerTanks(team) {
+    let n = 0;
+    for (const c of this.crews.values()) if (c.team === team) n++;
+    return n;
+  }
+
+  crewOf(u) {
+    return u?.crewId != null ? this.crews.get(u.crewId) : null;
   }
 
   addTank(t) {
@@ -147,13 +184,34 @@ export class Match {
     clearInterval(this.interval);
   }
 
+  // A guest left mid-match: their seat goes quiet, the crew's tank stays in the battle.
+  playerLeft(crewId, role) {
+    const c = this.crews.get(crewId);
+    if (!c || !role) return;
+    c.seats[role] = false;
+    const t = c.tank;
+    if (role === 'driver') t.drive = { th: 0, st: 0, boost: false, brake: true };
+    else t.trigger = { main: false, coax: false };
+    const s = c.bail.foot[role];
+    if (s) s.input = { fire: false, ads: false, moving: false };
+    c.bail.picks[role] ??= 'tank';
+  }
+
+  setPing(c, x, z) {
+    if (this.time < c.pingReadyAt) return;
+    c.ping = { x, z, t0: this.time, id: (c.ping?.id ?? 0) + 1 };
+    c.pingReadyAt = this.time + PING.cooldown;
+  }
+
   // ---------- Input ----------
   onMessage(player, msg) {
-    const t = this.tank;
-    if (msg.t === 'bail') return this.onBailPick(player.role, msg.pick);
+    const c = this.crews.get(player.crew);
+    if (!c) return;
+    const t = c.tank;
+    if (msg.t === 'bail') return this.onBailPick(c, player.role, msg.pick);
     // Dev-only test hook: destroy our own tank.
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
-    if (this.crew.mode === 'foot') return this.onFootMessage(player.role, msg);
+    if (c.bail.mode === 'foot') return this.onFootMessage(c, player.role, msg);
     if (player.role === 'driver' && msg.t === 'drive') {
       t.drive.th = Math.max(-1, Math.min(1, Number(msg.th) || 0));
       t.drive.st = Math.max(-1, Math.min(1, Number(msg.st) || 0));
@@ -169,10 +227,7 @@ export class Match {
         t.trigger.coax = !!msg.coax;
         if (msg.main) t.fireQueued = true;
       } else if (msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
-        if (this.time >= this.pingReadyAt) {
-          this.ping = { x: msg.x, z: msg.z, t0: this.time, id: (this.ping?.id ?? 0) + 1 };
-          this.pingReadyAt = this.time + PING.cooldown;
-        }
+        this.setPing(c, msg.x, msg.z);
       } else if (msg.t === 'shell' && (msg.shell === 'AP' || msg.shell === 'HE') && t.spec.weapon.shells) {
         if (t.shell !== msg.shell) {
           t.shell = msg.shell;
@@ -187,12 +242,25 @@ export class Match {
   tick() {
     if (this.over) return this.broadcast();
     this.time += DT;
-    const t = this.tank;
+    this.tickNo++;
+    for (const c of this.crews.values()) this.tickCrew(c);
+    this.army.update(DT);
+    this.modeTick?.();
+    // Remove NPC corpses / wrecks after a while.
+    this.units = this.units.filter((u) => u.player || !u.dead || this.time - u.diedAt < (u.kind === 'tank' ? 30 : 30));
+    this.updateProjectiles();
+    this.updateCapture();
+    this.updateTickets();
+    this.broadcast();
+  }
+
+  tickCrew(c) {
+    const t = c.tank;
     if (t.dead) {
-      const c = this.crew;
-      if (c.mode === 'choice') {
-        if ((c.picks.driver && c.picks.gunner) || this.time >= c.until) this.resolveBail();
-      } else if (c.mode === 'foot') this.updateFoot();
+      const b = c.bail;
+      if (b.mode === 'choice') {
+        if ((b.picks.driver && b.picks.gunner) || this.time >= b.until) this.resolveBail(c);
+      } else if (b.mode === 'foot') this.updateFoot(c);
       else if (this.time >= t.respawnAt) {
         t.respawn();
         this.events.push({ k: 'spawn', u: t.id });
@@ -202,61 +270,48 @@ export class Match {
       this.aimTurret(t);
       this.updateWeapons(t);
     }
-    this.army.update(DT);
-    // Remove NPC corpses / wrecks after a while.
-    this.units = this.units.filter((u) => u.player || !u.dead || this.time - u.diedAt < (u.kind === 'tank' ? 30 : 6));
-    this.updateProjectiles();
-    this.updateCapture();
-    this.updateTickets();
-    // Ping expires after its lifetime or once the tank reaches it.
-    if (this.ping) {
-      const near = this.crew.mode === 'foot' ? Object.values(this.crew.foot).filter((s) => !s.dead) : [this.tank];
-      const reached = near.some((u) => Math.hypot(u.x - this.ping.x, u.z - this.ping.z) < PING.reachRadius);
-      if (reached || this.time - this.ping.t0 > PING.lifetime) this.ping = null;
+    // Ping expires after its lifetime or once the crew reaches it.
+    if (c.ping) {
+      const near = c.bail.mode === 'foot' ? Object.values(c.bail.foot).filter((s) => !s.dead) : [t];
+      const reached = near.some((u) => Math.hypot(u.x - c.ping.x, u.z - c.ping.z) < PING.reachRadius);
+      if (reached || this.time - c.ping.t0 > PING.lifetime) c.ping = null;
     }
-    this.broadcast();
   }
 
   // ---------- Bail out / on foot ----------
-  onBailPick(role, pick) {
-    if (this.crew.mode !== 'choice' || (pick !== 'tank' && pick !== 'foot')) return;
-    this.crew.picks[role] = pick;
+  onBailPick(c, role, pick) {
+    if (c.bail.mode !== 'choice' || (pick !== 'tank' && pick !== 'foot')) return;
+    c.bail.picks[role] = pick;
   }
 
   // Both should agree; if they don't, the driver's pick wins (default: wait for a tank).
-  resolveBail() {
-    const c = this.crew;
-    if ((c.picks.driver ?? 'tank') === 'foot') {
-      const t = this.tank;
+  resolveBail(c) {
+    const b = c.bail;
+    if ((b.picks.driver ?? 'tank') === 'foot') {
+      const t = c.tank;
       // Bail out on both sides of the wreck.
       const lx = Math.cos(t.h), lz = -Math.sin(t.h);
       const off = t.spec.size.width / 2 + 1.6;
-      c.foot = {};
+      b.foot = {};
       for (const [role, side] of [['driver', 1], ['gunner', -1]]) {
         let x = t.x + lx * off * side, z = t.z + lz * off * side;
         for (let k = 0; k < 8 && footBlocked(x, z, this.propDead); k++) {
           x = t.x + Math.cos(k) * (off + 2);
           z = t.z + Math.sin(k) * (off + 2);
         }
-        const s = new CrewSoldier(role, x, z, t.h);
-        c.foot[role] = s;
+        const s = new CrewSoldier(role, x, z, t.h, c);
+        b.foot[role] = s;
         this.units.push(s);
       }
       t.respawnAt = Infinity;
-      c.mode = 'foot';
-    } else c.mode = 'tank';
-    c.picks = {};
+      b.mode = 'foot';
+    } else b.mode = 'tank';
+    b.picks = {};
   }
 
-  onFootMessage(role, msg) {
-    const s = this.crew.foot[role];
-    if (msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
-      if (this.time >= this.pingReadyAt) {
-        this.ping = { x: msg.x, z: msg.z, t0: this.time, id: (this.ping?.id ?? 0) + 1 };
-        this.pingReadyAt = this.time + PING.cooldown;
-      }
-      return;
-    }
+  onFootMessage(c, role, msg) {
+    const s = c.bail.foot[role];
+    if (msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) return this.setPing(c, msg.x, msg.z);
     if (!s || s.dead) return;
     if (msg.t === 'foot') {
       if (Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
@@ -287,15 +342,15 @@ export class Match {
         this.fire(s, { kind: 'grenade', damage: g.damage, speed: g.speed, splash: g.splash, splashDamage: g.splashDamage, spread: 0 }, eye, dir);
       }
     } else if (msg.t === 'garage') {
-      // Everyone still standing has to be at the garage.
-      const alive = Object.values(this.crew.foot).filter((u) => !u.dead);
-      if (alive.every((u) => nearGarage(u.x, u.z))) this.endFoot();
+      // Everyone still standing has to be at their team's garage.
+      const alive = Object.values(c.bail.foot).filter((u) => !u.dead);
+      if (alive.every((u) => nearGarage(u.x, u.z, c.team))) this.endFoot(c);
     }
   }
 
-  updateFoot() {
+  updateFoot(c) {
     const r = FOOT.rifle;
-    const crew = Object.values(this.crew.foot);
+    const crew = Object.values(c.bail.foot);
     for (const s of crew) {
       if (s.dead) continue;
       s.cd = Math.max(0, s.cd - DT);
@@ -310,7 +365,7 @@ export class Match {
         }
       }
       // Ammo resupply at the base garages.
-      if (nearGarage(s.x, s.z)) {
+      if (nearGarage(s.x, s.z, c.team)) {
         s.reserve = r.reserve;
         s.grenades = FOOT.grenades;
       }
@@ -325,15 +380,15 @@ export class Match {
         } else if (s.reserve > 0) s.reloading = r.reload;
       }
     }
-    // Both down: the crew waits for a fresh tank at base.
-    if (crew.every((s) => s.dead)) this.endFoot();
+    // Both down (or nobody left at the controls): the crew waits for a fresh tank at base.
+    if (crew.every((s) => s.dead || !c.seats[s.crew])) this.endFoot(c);
   }
 
-  endFoot() {
-    this.units = this.units.filter((u) => !u.crew || u.dead);
-    this.crew.foot = {};
-    this.crew.mode = 'tank';
-    const t = this.tank;
+  endFoot(c) {
+    this.units = this.units.filter((u) => u.crewId !== c.id || u.kind === 'tank' || u.dead);
+    c.bail.foot = {};
+    c.bail.mode = 'tank';
+    const t = c.tank;
     t.respawnAt = this.time + 15;
     t.drive = { th: 0, st: 0, boost: false, brake: false };
     t.trigger = { main: false, coax: false };
@@ -764,13 +819,19 @@ export class Match {
       u.dead = true;
       u.v = 0;
       u.diedAt = this.time;
-      if (u.player) {
+      const victimCrew = this.crewOf(u);
+      if (victimCrew) victimCrew.stats.deaths++;
+      if (u.player && victimCrew) {
         u.respawnAt = this.time + 15;
-        this.crew = { mode: 'choice', until: this.time + FOOT.choiceTime, picks: {}, foot: {} };
+        victimCrew.bail = { mode: 'choice', until: this.time + FOOT.choiceTime, picks: {}, foot: {} };
+        // Nobody at the controls: skip the vote.
+        for (const r of ['driver', 'gunner']) if (!victimCrew.seats[r]) victimCrew.bail.picks[r] = 'tank';
       }
       this.events.push({ k: 'k', u: u.id, by: p.owner, team: u.team, type: u.type });
       const shooter = this.units.find((x) => x.id === p.owner);
-      if ((shooter?.player || shooter?.crew) && u.team !== shooter.team) this.stats.kills++;
+      const killerCrew = this.crewOf(shooter);
+      if (killerCrew && u.team !== shooter.team) killerCrew.stats.kills++;
+      if (shooter && u.team !== shooter.team) this.onKill?.(u, shooter);
       const cost = u.player ? MATCH.deathCost.player : MATCH.deathCost[u.kind] ?? 1;
       this.tickets[u.team] = Math.max(0, this.tickets[u.team] - cost);
     }
@@ -781,13 +842,13 @@ export class Match {
     for (const pt of this.points) {
       const def = POINTS.find((p) => p.id === pt.id);
       const weight = { blue: 0, red: 0 };
-      let usInside = false;
+      const crewsInside = new Set();
       for (const u of this.units) {
         if (u.dead || u.kind === 'atgun') continue;
         if (Math.abs(u.x - def.x) > def.r || Math.abs(u.z - def.z) > def.r) continue;
         if (Math.hypot(u.x - def.x, u.z - def.z) > def.r) continue;
         weight[u.team] += u.player ? MATCH.capWeight.player : MATCH.capWeight[u.kind] ?? 1;
-        if (u.player || u.crew) usInside = true;
+        if (u.crewId != null) crewsInside.add(u.crewId);
       }
       pt.contested = weight.blue > 0 && weight.red > 0;
       if (pt.contested || (weight.blue === 0 && weight.red === 0)) continue;
@@ -804,12 +865,16 @@ export class Match {
       if (!pt.owner && Math.abs(pt.progress) >= 1) {
         pt.owner = team;
         this.events.push({ k: 'cap', id: pt.id, team });
-        if (team === 'blue' && usInside) this.stats.captures++;
+        for (const id of crewsInside) {
+          const c = this.crews.get(id);
+          if (c?.team === team) c.stats.caps++;
+        }
       }
     }
   }
 
   updateTickets() {
+    if (this.mode !== 'flags') return;
     this.bleedT -= DT;
     if (this.bleedT <= 0) {
       this.bleedT = MATCH.bleedInterval;
@@ -820,66 +885,105 @@ export class Match {
     }
     const timeUp = this.time >= MATCH.duration;
     if (this.tickets.blue <= 0 || this.tickets.red <= 0 || timeUp) {
-      const blueWins = this.tickets.red <= 0 || (timeUp && this.tickets.blue > this.tickets.red);
-      this.over = true;
-      this.room.broadcast({ t: 'matchEnd', victory: blueWins, time: this.time, kills: this.stats.kills, captures: this.stats.captures, tickets: this.tickets });
+      this.endMatch(this.tickets.red <= 0 || (timeUp && this.tickets.blue > this.tickets.red) ? 'blue' : 'red');
     }
   }
 
+  endMatch(winner, reason = '') {
+    if (this.over) return;
+    this.over = true;
+    this.room.broadcast({ t: 'matchEnd', winner, reason, time: this.time, mode: this.mode, crews: this.scoreboard(), tickets: this.tickets, score: this.score });
+  }
+
+  scoreboard() {
+    return [...this.crews.values()].map((c) => [c.id, c.stats.kills, c.stats.deaths, c.stats.caps]);
+  }
+
   // ---------- Networking ----------
-  crewSnapshot() {
-    const c = this.crew;
-    const out = { mode: c.mode };
-    if (c.mode === 'choice') {
-      out.left = r2(Math.max(0, c.until - this.time));
-      out.picks = c.picks;
+  crewSnapshot(c) {
+    const b = c.bail;
+    const out = { mode: b.mode };
+    if (b.mode === 'choice') {
+      out.left = r2(Math.max(0, b.until - this.time));
+      out.picks = b.picks;
     }
-    if (c.mode === 'foot') {
+    if (b.mode === 'foot') {
       out.foot = {};
-      for (const [role, s] of Object.entries(c.foot)) {
+      for (const [role, s] of Object.entries(b.foot)) {
         out.foot[role] = { id: s.id, hp: Math.round(s.hp), dead: s.dead, x: r2(s.x), z: r2(s.z), mag: s.mag, res: s.reserve, gren: s.grenades, rl: r2(s.reloading) };
       }
     }
     return out;
   }
 
+  meSnapshot(c) {
+    const t = c.tank;
+    return {
+      id: t.id,
+      crewId: c.id,
+      team: c.team,
+      v: r2(t.v),
+      boost: r2(t.boost),
+      reload: r2(t.reload),
+      reloadTotal: t.reloadTotal,
+      mag: t.mag,
+      shell: t.shell,
+      coax: t.coaxBelt,
+      coaxReload: r2(t.coaxReload),
+      dead: t.dead,
+      respawnIn: t.dead ? r2(t.respawnAt - this.time) : 0,
+      hp: Math.round(t.hp),
+      drive: t.drive,
+      mods: Object.fromEntries(Object.entries(t.mods).map(([k, v]) => [k, r2(v)])),
+      burning: t.burning > 0,
+      repair: t.repair && { mod: t.repair.mod, p: r2(t.repair.t / t.repair.total) },
+      ping: c.ping && { id: c.ping.id, x: r2(c.ping.x), z: r2(c.ping.z), age: r2(this.time - c.ping.t0) },
+      pingCd: r2(Math.max(0, c.pingReadyAt - this.time)),
+      crew: this.crewSnapshot(c),
+    };
+  }
+
+  // Where a crew is "looking from" (for network level-of-detail on the host).
+  crewFocus(c) {
+    const alive = c.bail.mode === 'foot' ? Object.values(c.bail.foot).find((s) => !s.dead) : null;
+    const u = alive ?? c.tank;
+    return [Math.round(u.x), Math.round(u.z)];
+  }
+
   broadcast() {
-    const t = this.tank;
+    // Compact, quantised unit rows: positions in dm, angles in mrad, hp in %.
+    // [id, team, type, x, z, h, ty, gp, hp, dead, crew+1, jumpCm]
+    const u = this.units.map((u) => {
+      const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], Math.round(u.x * 10), Math.round(u.z * 10), Math.round(u.h * 1000), Math.round(u.ty * 1000), Math.round(u.gp * 1000), Math.round((u.hp / u.spec.hp) * 100), u.dead ? 1 : 0, u.crewId != null ? u.crewId + 1 : 0];
+      if (u.crew) a.push(Math.round(u.jy * 100));
+      return a;
+    });
+    const crews = {};
+    const focus = {};
+    const pings = [];
+    for (const c of this.crews.values()) {
+      crews[c.id] = this.meSnapshot(c);
+      focus[c.id] = this.crewFocus(c);
+      if (c.ping) pings.push([c.id, TEAM_CODE[c.team], Math.round(c.ping.x), Math.round(c.ping.z)]);
+    }
     const snap = {
       t: 's',
       time: r3(this.time),
-      me: {
-        id: t.id,
-        v: r2(t.v),
-        boost: r2(t.boost),
-        reload: r2(t.reload),
-        reloadTotal: t.reloadTotal,
-        mag: t.mag,
-        shell: t.shell,
-        coax: t.coaxBelt,
-        coaxReload: r2(t.coaxReload),
-        dead: t.dead,
-        respawnIn: t.dead ? r2(t.respawnAt - this.time) : 0,
-        hp: Math.round(t.hp),
-        drive: t.drive,
-        mods: Object.fromEntries(Object.entries(t.mods).map(([k, v]) => [k, r2(v)])),
-        burning: t.burning > 0,
-        repair: t.repair && { mod: t.repair.mod, p: r2(t.repair.t / t.repair.total) },
-        ping: this.ping && { id: this.ping.id, x: r2(this.ping.x), z: r2(this.ping.z), age: r2(this.time - this.ping.t0) },
-        pingCd: r2(Math.max(0, this.pingReadyAt - this.time)),
-        crew: this.crewSnapshot(),
-      },
-      u: this.units.map((u) => {
-        const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], r2(u.x), r2(u.z), r3(u.h), r3(u.ty), r3(u.gp), r2(u.hp / u.spec.hp), u.dead ? 1 : 0, u.player ? 1 : 0];
-        if (u.crew) a.push(r2(u.jy));
-        return a;
-      }),
+      tick: this.tickNo,
+      crews,
+      focus,
+      u,
+      pings,
       pts: this.points.map((p) => [p.id, p.owner ? TEAM_CODE[p.owner] : -1, r2(p.progress), p.contested ? 1 : 0]),
       tk: [this.tickets.blue, this.tickets.red],
+      sc: [this.score.blue, this.score.red],
       left: Math.max(0, Math.round(MATCH.duration - this.time)),
     };
+    // Scoreboard once a second.
+    if (this.tickNo % TICK_RATE === 0) snap.sb = this.scoreboard();
+    this.modeSnapshot?.(snap);
     // Full destroyed-prop list on change and periodically (covers late joins / lost events).
-    if (this.propsDirty || Math.round(this.time * TICK_RATE) % 40 === 0) {
+    if (this.propsDirty || this.tickNo % 40 === 0) {
       snap.pd = [...this.propDead];
       this.propsDirty = false;
     }

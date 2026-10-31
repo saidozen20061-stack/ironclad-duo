@@ -4,9 +4,10 @@ import { PROPS, propsNear, circleHitsProp } from './props.js';
 import { heightAt, WATER_LEVEL, PLAY_LIMIT } from './map.js';
 
 export const GARAGES = PROPS.filter((p) => p.type === 'garage' && p.team === 'blue');
+export const TEAM_GARAGES = { blue: GARAGES, red: PROPS.filter((p) => p.type === 'garage' && p.team === 'red') };
 
-export function nearGarage(x, z) {
-  return GARAGES.some((g) => Math.hypot(g.x - x, g.z - z) < FOOT.garageRadius);
+export function nearGarage(x, z, team = 'blue') {
+  return TEAM_GARAGES[team].some((g) => Math.hypot(g.x - x, g.z - z) < FOOT.garageRadius);
 }
 
 export function footBlocked(x, z, dead) {

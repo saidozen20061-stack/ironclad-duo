@@ -1,9 +1,9 @@
-import { TANKS, TANK_IDS } from '../../../shared/constants.js';
+import { TANKS, TANK_IDS, MODES, KILL_LIMITS } from '../../../shared/constants.js';
 import { net } from '../net.js';
 import { PAINT } from '../models/paint.js';
 import { $, $$, escapeHtml, toast, setStatus } from './screens.js';
 
-// Renders lobby state pushed by the server. All mutations go through the server.
+// Renders lobby state pushed by the host. All mutations go through the host.
 
 export const lobby = {
   state: null,
@@ -12,6 +12,10 @@ export const lobby = {
   },
   get isHost() {
     return this.state?.hostId === net.id;
+  },
+  get myCrew() {
+    const me = this.me;
+    return me?.crew != null ? this.state.crews[me.crew] : null;
   },
   speaking: new Map(), // playerId -> bool, filled in by voice chat
 };
@@ -30,73 +34,121 @@ function buildTankCards() {
       .map(([k, v]) => `<label>${STAT_LABELS[k]}</label><div class="bar"><i style="width:${v * 20}%"></i></div>`)
       .join('');
     btn.innerHTML = `<div class="cls">${t.class}</div><b>${t.name}</b><span>${t.blurb}</span><div class="wpn">${t.weapon.label}</div><div class="paint">Paint: ${PAINT[id]?.name ?? 'Standard'}</div><div class="bars">${bars}</div>`;
-    btn.addEventListener('click', () => net.send({ t: 'tank', tank: id }));
+    btn.addEventListener('click', () => {
+      const crew = lobby.myCrew;
+      if (crew) net.send({ t: 'crewTank', crew: crew.id, tank: id });
+      else toast('Take a seat in a crew first.');
+    });
     root.appendChild(btn);
   }
 }
 
+function buildModeCards() {
+  const root = $('#mode-pick');
+  root.innerHTML = Object.entries(MODES)
+    .map(([id, m]) => `<button class="mode-card" data-mode="${id}"><b>${m.name}</b><span>${m.blurb}</span></button>`)
+    .join('');
+  for (const b of $$('.mode-card')) b.addEventListener('click', () => net.send({ t: 'mode', mode: b.dataset.mode }));
+  $('#kill-pick').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small" data-kills="${k}">${k}</button>`).join('')}`;
+  for (const b of $$('[data-kills]')) b.addEventListener('click', () => net.send({ t: 'mode', killLimit: Number(b.dataset.kills) }));
+}
+
 export function initLobbyScreen({ onLeave }) {
   buildTankCards();
-  for (const card of $$('.role-card')) {
-    card.addEventListener('click', () => {
-      const role = card.dataset.role;
-      net.send({ t: 'role', role: lobby.me?.role === role ? null : role });
-    });
-  }
+  buildModeCards();
+  // Seat and team buttons are re-rendered, so listen on the container.
+  $('#lobby-crews').addEventListener('click', (e) => {
+    const seat = e.target.closest('[data-seat]');
+    if (seat) return net.send({ t: 'seat', crew: Number(seat.dataset.crew), role: seat.dataset.seat });
+    const team = e.target.closest('[data-team-toggle]');
+    if (team && lobby.isHost) {
+      const crew = lobby.state.crews[Number(team.dataset.teamToggle)];
+      net.send({ t: 'crewTeam', crew: crew.id, team: crew.team === 'blue' ? 'red' : 'blue' });
+    }
+  });
+  $('#btn-balance').addEventListener('click', () => net.send({ t: 'balance' }));
   $('#btn-ready').addEventListener('click', () => net.send({ t: 'ready', ready: !lobby.me?.ready }));
+  $('#btn-start').addEventListener('click', () => net.send({ t: 'start' }));
   $('#btn-lobby-leave').addEventListener('click', onLeave);
   $('#btn-copy-code').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(lobby.state?.code ?? '');
       toast('Room code copied');
     } catch {
-      toast('Copy failed — read the code out to your friend.', { error: true });
+      toast('Copy failed — read the code out to your friends.', { error: true });
     }
   });
+}
+
+function seatHtml(s, crew, role) {
+  const p = s.players.find((q) => q.id === crew[role]);
+  const label = role === 'driver' ? 'Driver' : 'Gunner';
+  if (!p) return `<button class="seat free" data-crew="${crew.id}" data-seat="${role}"><small>${label}</small><span>Take seat</span></button>`;
+  const you = p.id === net.id ? ' you' : '';
+  const tags = `${p.id === s.hostId ? '<i class="tag host">Host</i>' : ''}${p.ready || p.id === s.hostId ? '<i class="tag ready">Ready</i>' : ''}`;
+  const speaking = lobby.speaking.get(p.id) ? ' on' : '';
+  return `<div class="seat${you}"><small>${label}</small><span><i class="speak-dot${speaking}" data-speak="${p.id}"></i>${escapeHtml(p.name)}${p.id === net.id ? ' (you)' : ''}</span>${tags}</div>`;
 }
 
 export function renderLobby() {
   const s = lobby.state;
   if (!s) return;
   $('#lobby-code').textContent = s.code;
-
-  const rows = s.players.map((p) => {
-    const tags = [
-      p.id === s.hostId ? '<span class="tag host">Host</span>' : '',
-      p.role ? `<span class="tag role">${p.role}</span>` : '<span class="tag">No role</span>',
-      p.ready ? '<span class="tag ready">Ready</span>' : '',
-    ].join('');
-    const you = p.id === net.id ? ' (you)' : '';
-    const speaking = lobby.speaking.get(p.id) ? ' on' : '';
-    return `<div class="player-row"><i class="speak-dot${speaking}" data-speak="${p.id}"></i><span class="name">${escapeHtml(p.name)}${you}</span>${tags}</div>`;
-  });
-  if (s.players.length < 2) rows.push('<div class="player-row empty">Waiting for your crewmate… share the room code.</div>');
-  $('#lobby-players').innerHTML = rows.join('');
-
   const me = lobby.me;
-  for (const card of $$('.role-card')) {
-    const role = card.dataset.role;
-    const holder = s.players.find((p) => p.role === role);
-    card.classList.toggle('sel', me?.role === role);
-    card.classList.toggle('taken', !!holder && holder.id !== net.id);
-  }
+  const fortress = s.mode === 'fortress';
 
-  for (const card of $$('.tank-card')) {
-    card.classList.toggle('sel', card.dataset.tank === s.tank);
-    card.disabled = !lobby.isHost;
+  $('#lobby-crews').innerHTML = s.crews
+    .map((c) => {
+      const used = c.driver != null || c.gunner != null;
+      const t = TANKS[c.tank];
+      const team = fortress ? 'blue' : c.team;
+      const mine = me?.crew === c.id ? ' mine' : '';
+      return `<div class="crew-card ${team}${used ? '' : ' empty'}${mine}">
+        <header><b>Tank ${c.id + 1}</b>
+          <button class="team-badge ${team}" data-team-toggle="${c.id}" ${lobby.isHost && !fortress ? '' : 'disabled'}>${team === 'blue' ? 'BLUE' : 'RED'}</button>
+          <span class="crew-tank">${t.name} · ${t.class} · <em>${PAINT[c.tank]?.name ?? ''}</em></span></header>
+        <div class="seats">${seatHtml(s, c, 'driver')}${seatHtml(s, c, 'gunner')}</div>
+      </div>`;
+    })
+    .join('');
+  const unseated = s.players.filter((p) => p.crew == null);
+  if (unseated.length) $('#lobby-crews').insertAdjacentHTML('beforeend', `<p class="hint small">Not in a crew: ${unseated.map((p) => escapeHtml(p.name)).join(', ')}</p>`);
+
+  for (const b of $$('.mode-card')) {
+    b.classList.toggle('sel', b.dataset.mode === s.mode);
+    b.disabled = !lobby.isHost;
   }
-  $('#tank-host-note').textContent = lobby.isHost ? '(you choose)' : '(host chooses)';
+  $('#kill-pick').style.display = s.mode === 'tdm' ? '' : 'none';
+  for (const b of $$('[data-kills]')) {
+    b.classList.toggle('on', Number(b.dataset.kills) === s.killLimit);
+    b.disabled = !lobby.isHost;
+  }
+  $('#mode-host-note').textContent = lobby.isHost ? '(you choose)' : '(host chooses)';
+  $('#host-tools').style.display = lobby.isHost && !fortress ? '' : 'none';
+
+  const crew = lobby.myCrew;
+  for (const card of $$('.tank-card')) {
+    card.classList.toggle('sel', card.dataset.tank === crew?.tank);
+    card.disabled = !crew;
+  }
+  $('#tank-host-note').textContent = crew ? `(Tank ${crew.id + 1})` : '(join a crew first)';
 
   const ready = $('#btn-ready');
+  ready.style.display = lobby.isHost ? 'none' : '';
   ready.textContent = me?.ready ? 'Ready ✓' : 'Ready';
   ready.classList.toggle('on', !!me?.ready);
+  $('#btn-start').style.display = lobby.isHost ? '' : 'none';
 
+  // Same rules as the host's start check.
+  const used = s.crews.filter((c) => c.driver != null || c.gunner != null);
   let status = '';
-  if (s.players.length < 2) status = 'Need 2 players.';
-  else if (!s.players.every((p) => p.role)) status = 'Both players need a role.';
-  else if (!s.players.every((p) => p.ready)) status = 'Waiting for both players to ready up…';
-  else status = 'Starting…';
-  setStatus('lobby-status', status);
+  if (s.players.some((p) => p.crew == null)) status = 'Everyone needs a seat.';
+  else if (used.some((c) => c.driver == null || c.gunner == null)) status = 'Every crew needs a driver and a gunner.';
+  else if (s.players.some((p) => !p.ready && p.id !== s.hostId)) status = 'Waiting for everyone to ready up…';
+  else status = lobby.isHost ? 'All set — start the match!' : 'Waiting for the host to start…';
+  const players = `${s.players.length}/10 players · ${used.length} crew${used.length === 1 ? '' : 's'}`;
+  setStatus('lobby-status', `${players} — ${status}`);
+  $('#btn-start').disabled = !status.startsWith('All set');
 }
 
 export function setSpeaking(id, on) {

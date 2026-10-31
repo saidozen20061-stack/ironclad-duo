@@ -89,27 +89,25 @@
         </header>
         <div class="lobby-body">
           <div class="lobby-col">
-            <h3>Crew</h3>
-            <div id="lobby-players"></div>
+            <h3>Tank crews <small>click a free seat to join a crew</small></h3>
+            <div id="lobby-crews" class="crew-list"></div>
             <p class="status" id="lobby-voice"></p>
-            <h3>Your role</h3>
-            <div class="role-pick">
-              <button class="role-card" data-role="driver">
-                <b>Driver</b><span>Drives the tank from inside. No outside view, only gauges and a short-range radar.</span>
-              </button>
-              <button class="role-card" data-role="gunner">
-                <b>Gunner</b><span>Sees the battlefield through the gun sight. Aims, fires, and guides the driver.</span>
-              </button>
-            </div>
           </div>
           <div class="lobby-col">
-            <h3>Tank <small id="tank-host-note"></small></h3>
+            <h3>Game mode <small id="mode-host-note"></small></h3>
+            <div class="mode-pick" id="mode-pick"></div>
+            <div class="kill-pick" id="kill-pick"></div>
+            <div class="host-tools" id="host-tools">
+              <button class="btn small" id="btn-balance">Auto-balance teams</button>
+            </div>
+            <h3>Your crew's tank <small id="tank-host-note"></small></h3>
             <div class="tank-pick" id="tank-pick"></div>
           </div>
         </div>
         <footer class="lobby-foot">
           <p class="status" id="lobby-status"></p>
           <button class="btn primary big" id="btn-ready">Ready</button>
+          <button class="btn primary big" id="btn-start">Start Match</button>
         </footer>
       </div>
     </section>
@@ -118,7 +116,7 @@
     <section class="screen dim" id="screen-pause">
       <div class="menu-panel narrow">
         <h2>Paused</h2>
-        <p class="hint">The battle keeps going. Your crewmate is still in the tank!</p>
+        <p class="hint">The battle keeps going. Your crew is still out there!</p>
         <button class="btn primary" id="btn-resume">Resume</button>
         <button class="btn" id="btn-pause-settings">Settings</button>
         <button class="btn ghost" id="btn-pause-leave">Leave Match</button>
@@ -129,11 +127,13 @@
     <section class="screen dim" id="screen-end">
       <div class="menu-panel">
         <h1 class="result" id="end-result">VICTORY</h1>
+        <p class="hint" id="end-reason"></p>
         <div class="end-stats">
           <div><span>Match time</span><b id="end-time">0:00</b></div>
-          <div><span>Enemies destroyed</span><b id="end-kills">0</b></div>
+          <div><span>Your crew's kills</span><b id="end-kills">0</b></div>
           <div><span>Points captured</span><b id="end-caps">0</b></div>
         </div>
+        <div id="end-board" class="scoreboard static"></div>
         <button class="btn primary" id="btn-end-lobby">Return to Lobby</button>
       </div>
     </section>

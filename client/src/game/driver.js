@@ -273,7 +273,7 @@ export class DriverView {
       rep.querySelector('u').style.width = '0%';
     }
 
-    this.radar.update(dt, self, states);
+    this.radar.update(dt, self, states, this.team ?? 'blue');
     this.radar.draw(self, self.ty);
     this.drawGauges(me, input);
     this.drawStatus(self, me);

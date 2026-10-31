@@ -6,6 +6,16 @@ export const MAX_NAME_LENGTH = 16;
 
 export const ROLES = ['driver', 'gunner'];
 
+// Up to 5 tank crews (10 players) per room.
+export const MAX_CREWS = 5;
+export const MAX_PLAYERS = MAX_CREWS * 2;
+export const MODES = {
+  flags: { name: 'Flag Capture', blurb: 'Hold A, B and C. The team with fewer flags bleeds tickets.' },
+  tdm: { name: 'Team Deathmatch', blurb: 'Crews fight crews. Player tank = 3 pts, NPC tank = 1.' },
+  fortress: { name: 'Fortress Defence', blurb: 'All crews defend the Blue fortress against 10 waves.' },
+};
+export const KILL_LIMITS = [10, 20, 30];
+
 export const TICK_RATE = 20; // server simulation ticks per second
 
 const deg = (d) => (d * Math.PI) / 180;

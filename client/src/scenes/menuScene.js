@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createNoise2D, fbm, mulberry32 } from '../../../shared/noise.js';
 import { buildTank } from '../models/tanks.js';
+import { buildSoldier } from '../models/infantry.js';
 import { quality } from '../settings.js';
 
 // Slowly rotating low-poly battlefield behind the menus. In lobby mode the camera
@@ -112,7 +113,9 @@ function buildProps(noise, rand) {
     house.rotation.y = rand() * Math.PI;
     g.add(house);
   }
-  // Sandbag walls around the showcase
+  // Sandbag walls around the showcase (hidden in the lobby, where the garage stands)
+  const bags = new THREE.Group();
+  g.add(bags);
   const bagGeo = new THREE.BoxGeometry(1.1, 0.45, 0.6);
   for (let ring = 0; ring < 22; ring++) {
     const a = (ring / 22) * Math.PI * 2;
@@ -122,10 +125,72 @@ function buildProps(noise, rand) {
       b.position.set(Math.cos(a) * 16, 0.22 + row * 0.42, Math.sin(a) * 16);
       b.rotation.y = -a + Math.PI / 2 + row * 0.1;
       b.castShadow = b.receiveShadow = true;
-      g.add(b);
+      bags.add(b);
     }
   }
+  g.userData.ring = bags;
   return g;
+}
+
+// Open-fronted vehicle garage the lobby crews line up in.
+function buildGarage() {
+  const g = new THREE.Group();
+  const wall = new THREE.MeshStandardMaterial({ color: 0x6f6a5c, flatShading: true });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3d413a, flatShading: true });
+  const floor = new THREE.MeshStandardMaterial({ color: 0x55524a, flatShading: true });
+  const W = 64, D = 22, H = 10;
+  const add = (geo, mat, x, y, z, ry = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+  add(new THREE.BoxGeometry(W, 0.2, D), floor, 0, 0.1, -D / 2 + 9);
+  add(new THREE.BoxGeometry(W, H, 0.6), wall, 0, H / 2, -D + 9);
+  for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.6, H, D), wall, sx * W / 2, H / 2, -D / 2 + 9);
+  for (const sx of [-1, 1]) {
+    const roof = add(new THREE.BoxGeometry(W / 2 + 1, 0.35, D + 1), steel, sx * W / 4, H + 1.4, -D / 2 + 9);
+    roof.rotation.z = -sx * 0.12;
+  }
+  for (let i = 0; i <= 8; i++) add(new THREE.BoxGeometry(0.4, H, 0.4), steel, -W / 2 + (W / 8) * i, H / 2, 8.6);
+  // Let the low sun in under the roof and hang a few work lamps.
+  g.traverse((o) => {
+    if (o.isMesh && o.position.y > H) o.castShadow = false;
+  });
+  for (const x of [-22, 0, 22]) {
+    const lamp = new THREE.PointLight(0xffe2b0, 60, 40, 1.4);
+    lamp.position.set(x, H - 1, 0);
+    g.add(lamp);
+  }
+  // Painted bay lines on the floor, one per crew.
+  const line = new THREE.MeshStandardMaterial({ color: 0xd9c46a, flatShading: true });
+  for (let i = 0; i <= 5; i++) add(new THREE.BoxGeometry(0.25, 0.05, 14), line, (i - 2.5) * 11, 0.22, -2);
+  g.visible = false;
+  return g;
+}
+
+// Canvas-text sprite for names above the lobby crews.
+function labelSprite(text, color = '#f4e8c8') {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 30px Rajdhani, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(text, 128, 32);
+  ctx.fillStyle = color;
+  ctx.fillText(text, 128, 32);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(4, 1, 1);
+  sp.renderOrder = 10;
+  return sp;
 }
 
 export class MenuScene {
@@ -153,7 +218,15 @@ export class MenuScene {
 
     this.scene.add(buildTerrain(noise));
     for (const m of buildForest(noise, rand)) this.scene.add(m);
-    this.scene.add(buildProps(noise, rand));
+    const props = buildProps(noise, rand);
+    this.ring = props.userData.ring;
+    this.scene.add(props);
+    this.garage = buildGarage();
+    this.scene.add(this.garage);
+    this.lineup = new THREE.Group();
+    this.scene.add(this.lineup);
+    this.lineupKey = '';
+    this.crewCount = 1;
 
     // Background tanks fighting at a distance.
     this.extras = [];
@@ -195,6 +268,40 @@ export class MenuScene {
     this.scene.add(this.showcase.group);
   }
 
+  // Lobby: every crew's tank in its garage bay, crew standing in front with names above.
+  setCrews(state) {
+    const used = state.crews.filter((c) => c.driver != null || c.gunner != null);
+    const name = (id) => state.players.find((p) => p.id === id)?.name ?? null;
+    const team = (c) => (state.mode === 'fortress' ? 'blue' : c.team);
+    const key = JSON.stringify(used.map((c) => [c.id, c.tank, team(c), name(c.driver), name(c.gunner)]));
+    if (key === this.lineupKey) return;
+    this.lineupKey = key;
+    this.lineup.clear();
+    this.crewCount = Math.max(1, used.length);
+    used.forEach((c, i) => {
+      const x = (i - (used.length - 1) / 2) * 11;
+      const tank = buildTank(c.tank, team(c));
+      tank.group.position.set(x, 0.2, -2);
+      tank.turret.rotation.y = (i % 2 ? 1 : -1) * 0.25;
+      this.lineup.add(tank.group);
+      const tag = labelSprite(`TANK ${c.id + 1}`, team(c) === 'blue' ? '#8fc4f5' : '#f39a90');
+      tag.position.set(x, 5.2, -2);
+      this.lineup.add(tag);
+      for (const [role, dx] of [['driver', -1.6], ['gunner', 1.6]]) {
+        const n = name(c[role]);
+        if (!n) continue;
+        const s = buildSoldier(team(c), 'crew');
+        s.group.position.set(x + dx, 0.2, 4.2);
+        s.group.rotation.y = Math.PI * 0.02 * dx;
+        this.lineup.add(s.group);
+        const label = labelSprite(n);
+        label.position.set(x + dx, 2.55, 4.2);
+        label.scale.set(3.2, 0.8, 1);
+        this.lineup.add(label);
+      }
+    });
+  }
+
   setMode(mode) {
     this.mode = mode;
   }
@@ -211,12 +318,19 @@ export class MenuScene {
     const b = this.blend * this.blend * (3 - 2 * this.blend);
 
     const angle = this.t * 0.05;
-    const radius = 85 - b * 72;
-    const height = 32 - b * 27;
+    const radius = 85;
+    // Wide orbit in the menu; in the lobby, a slow drift in front of the garage bays.
+    const orbit = new THREE.Vector3(Math.cos(angle) * radius, 32, Math.sin(angle) * radius);
+    const span = this.crewCount * 11;
+    const front = new THREE.Vector3(Math.sin(this.t * 0.15) * 3, 6 + span * 0.08, 14 + span * 0.55);
+    this.camera.position.lerpVectors(orbit, front, b);
     // In the main menu the battlefield sits right-of-centre, clear of the menu panel.
-    const look = new THREE.Vector3(0, 2 + b * -0.8, 0);
-    this.camera.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
+    const look = new THREE.Vector3(0, 2 - b * 0.4, -b * 1.5);
     this.camera.lookAt(look);
+    const inLobby = this.blend > 0.5;
+    this.garage.visible = inLobby;
+    this.lineup.visible = inLobby;
+    this.ring.visible = !inLobby;
     if (b < 0.99) {
       const shift = (1 - b) * 0.16 * (this.camera.aspect > 1 ? 1 : 0);
       this.camera.setViewOffset(1000, 1000, -shift * 1000, 0, 1000, 1000);
@@ -226,6 +340,9 @@ export class MenuScene {
 
     // Showcase turret sweeps lazily.
     if (this.showcase) {
+      this.showcase.group.position.z = inLobby ? -2 : 0;
+      // Before anyone is seated, the lobby keeps the single showcase tank.
+      this.showcase.group.visible = !inLobby || !this.lineup.children.length;
       this.showcase.turret.rotation.y = Math.sin(this.t * 0.4) * 0.6;
       this.showcase.gun.rotation.x = -0.05 - Math.sin(this.t * 0.3) * 0.05;
     }

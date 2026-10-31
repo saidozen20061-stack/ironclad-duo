@@ -99,17 +99,25 @@ net.on('joined', () => {
   showScreen('lobby', { remember: false });
 });
 
+// Voice links: our crewmate plus everyone on our team (all crews are Blue in Fortress).
+function rosterFrom(crews, mode, myId) {
+  const mine = crews.find((c) => c.driver === myId || c.gunner === myId);
+  if (!mine) return null;
+  const team = mode === 'fortress' ? null : mine.team;
+  const ids = crews.filter((c) => !team || c.team === team).flatMap((c) => [c.driver, c.gunner]).filter((id) => id != null);
+  return { crewmate: mine.driver === myId ? mine.gunner : mine.driver, team: ids };
+}
+
 net.on('lobby', (msg) => {
   lobby.state = msg;
-  menuScene.setShowcase(msg.tank);
+  menuScene.setCrews(msg);
   renderLobby();
-  voice.syncPeers(msg);
+  if (msg.phase === 'lobby') voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
 });
 
 voice.onChange((sp) => {
   setSpeaking(net.id, sp.local);
-  const other = lobby.state?.players.find((p) => p.id !== net.id);
-  if (other) setSpeaking(other.id, sp.remote);
+  for (const p of lobby.state?.players ?? []) if (p.id !== net.id) setSpeaking(p.id, !!sp.remote.get(p.id));
   setStatus('lobby-voice', voice.hint());
 });
 
@@ -129,7 +137,7 @@ net.on('peerLeft', (msg) => {
     toast(`${msg.name} ${why}. Match ended — back to the lobby.`, { error: true, ms: 6000 });
     returnToLobbyView();
   } else {
-    toast(`${msg.name} ${why} the lobby.`);
+    toast(match ? `${msg.name} ${why}. Their seat is empty now.` : `${msg.name} ${why} the lobby.`);
   }
 });
 
@@ -159,8 +167,10 @@ function endMatchClient() {
 
 net.on('matchStart', (msg) => {
   endMatchClient();
-  const role = msg.roles[net.id];
-  match = new MatchClient({ role, tank: msg.tank, onPause: () => showScreen('pause') });
+  const crew = msg.crews.find((c) => c.driver === net.id || c.gunner === net.id);
+  const role = crew.driver === net.id ? 'driver' : 'gunner';
+  voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
+  match = new MatchClient({ role, tank: crew.tank, crew, info: msg, onPause: () => showScreen('pause') });
   clearHistory();
   hideScreens();
   setActiveView(match);
@@ -172,14 +182,18 @@ net.on('toLobby', () => {
 });
 
 net.on('matchEnd', (msg) => {
-  match?.onMatchEnd?.(msg);
+  const victory = msg.winner === (match?.team ?? 'blue');
+  const mine = msg.crews.find((c) => c[0] === match?.crew.id) ?? [0, 0, 0, 0];
   const res = $('#end-result');
-  res.textContent = msg.victory ? 'VICTORY' : 'DEFEAT';
-  res.className = `result ${msg.victory ? 'win' : 'lose'}`;
+  res.textContent = victory ? 'VICTORY' : 'DEFEAT';
+  res.className = `result ${victory ? 'win' : 'lose'}`;
+  $('#end-reason').textContent = msg.reason ?? '';
   const secs = Math.floor(msg.time);
   $('#end-time').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-  $('#end-kills').textContent = msg.kills;
-  $('#end-caps').textContent = msg.captures;
+  $('#end-kills').textContent = mine[1];
+  $('#end-caps').textContent = mine[3];
+  $('#end-board').innerHTML = match?.scoreboardHtml(msg.crews) ?? '';
+  match?.onMatchEnd?.(msg);
   showScreen('end', { remember: false });
 });
 

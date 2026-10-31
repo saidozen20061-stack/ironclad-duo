@@ -18,13 +18,20 @@ import { SoundScape } from './sound.js';
 import { showTutorial } from './tutorial.js';
 import { SoldierView } from './soldier.js';
 import { nearGarage } from '../../../shared/foot.js';
+import { escapeHtml } from '../ui/screens.js';
 
 // Glue for a running match: receives server snapshots, routes events to effects,
 // and drives the role-specific view (driver cockpit or gunner sight).
 export class MatchClient {
-  constructor({ role, tank, onPause }) {
+  constructor({ role, tank, crew, info, onPause }) {
     this.role = role;
     this.tank = tank;
+    this.crew = crew ?? { id: 0, team: 'blue', tank };
+    this.team = this.crew.team;
+    this.info = info ?? { mode: 'flags', crews: [this.crew], names: {} };
+    this.mode = this.info.mode;
+    this.names = this.info.names ?? {};
+    this.crewList = this.info.crews ?? [this.crew];
     this.onPause = onPause;
     this.paused = false;
     this.lastUnlock = 0;
@@ -40,12 +47,24 @@ export class MatchClient {
     // Capture points + tickets + timer, top centre for both roles.
     this.capEl = document.createElement('div');
     this.capEl.className = 'cap-hud';
+    const tdm = this.mode === 'tdm';
     this.capEl.innerHTML = `
-      <div class="tix blue"><small>BLUE</small><b>500</b></div>
+      <div class="tix blue"><small>BLUE${tdm ? ' KILLS' : ''}</small><b>${tdm ? 0 : 500}</b></div>
       ${POINTS.map((p) => `<div class="cap" data-pt="${p.id}"><span>${p.id}</span></div>`).join('')}
-      <div class="tix red"><small>RED</small><b>500</b></div>
-      <div class="clock">20:00</div>`;
+      <div class="tix red"><small>RED${tdm ? ' KILLS' : ''}</small><b>${tdm ? 0 : 500}</b></div>
+      <div class="clock">20:00</div>${tdm ? `<div class="goal">First to ${this.info.killLimit}</div>` : ''}`;
     this.hud.appendChild(this.capEl);
+
+    // Scoreboard (hold Tab) and floating names over other player crews.
+    this.boardEl = document.createElement('div');
+    this.boardEl.className = 'scoreboard';
+    this.hud.appendChild(this.boardEl);
+    this.stats = this.crewList.map((c) => [c.id, 0, 0, 0]);
+    this.tagsEl = document.createElement('div');
+    this.tagsEl.className = 'name-tags';
+    this.hud.appendChild(this.tagsEl);
+    this.tagEls = new Map();
+    this.teamPings = [];
     this.points = POINTS.map((p) => ({ id: p.id, owner: null, progress: 0, contested: false }));
 
     // Point colours feed the radar, minimap and in-world flags.
@@ -60,11 +79,15 @@ export class MatchClient {
     this.voiceEl = document.createElement('div');
     this.voiceEl.className = 'voice-hud';
     this.hud.appendChild(this.voiceEl);
-    const partner = role === 'driver' ? 'Gunner' : 'Driver';
+    const mateId = this.crew.driver === net.id ? this.crew.gunner : this.crew.driver;
     const renderVoice = (sp) => {
+      // You, your crewmate, then whoever on the team is talking right now.
+      const others = [...sp.remote].filter(([id, on]) => on && id !== mateId).map(([id]) => id);
+      const chan = sp.local ? `<span class="chan ${sp.channel}">${sp.channel === 'team' ? 'TEAM' : 'CREW'}</span>` : '';
       this.voiceEl.innerHTML = `
-        <div class="voice-row"><i class="speak-dot${sp.local ? ' on' : ''}"></i>You <small>${role}</small></div>
-        <div class="voice-row"><i class="speak-dot${sp.remote ? ' on' : ''}"></i>${partner}</div>
+        <div class="voice-row"><i class="speak-dot${sp.local ? ' on' : ''}"></i>You <small>${role}</small>${chan}</div>
+        ${mateId != null ? `<div class="voice-row"><i class="speak-dot${sp.remote.get(mateId) ? ' on' : ''}"></i>${escapeHtml(this.names[mateId] ?? 'Crewmate')}<span class="chan crew">CREW</span></div>` : ''}
+        ${others.map((id) => `<div class="voice-row"><i class="speak-dot on"></i>${escapeHtml(this.names[id] ?? 'Teammate')}<span class="chan">TEAM</span></div>`).join('')}
         <div class="voice-hint">${voice.hint()}</div>`;
     };
     renderVoice(voice.speaking);
@@ -137,7 +160,81 @@ export class MatchClient {
     } else v = new DriverView({ tank, hud: this.hud, keys: this.keys });
     if (v.radar) v.radar.pointColor = this.pointColor;
     v.pointColor = this.pointColor;
+    v.drawExtraMinimap = (ctx, toMap) => this.drawTeamPings(ctx, toMap);
+    v.team = this.team;
     return v;
+  }
+
+  // Other crews' pings on our team: cyan rings on the minimap (our own crew's ping is yellow).
+  drawTeamPings(ctx, toMap) {
+    for (const [, x, z] of this.teamPings) {
+      const [px, py] = toMap(x, z);
+      ctx.strokeStyle = '#4fe0e8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(Math.max(6, Math.min(194, px)), Math.max(6, Math.min(194, py)), 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  crewName(id) {
+    const c = this.crewList.find((q) => q.id === id);
+    if (!c) return `Tank ${id + 1}`;
+    const n = [c.driver, c.gunner].map((p) => this.names[p]).filter(Boolean);
+    return `Tank ${id + 1}${n.length ? ` (${n.join(' & ')})` : ''}`;
+  }
+
+  scoreboardHtml(stats = this.stats) {
+    const row = (c) => {
+      const st = stats.find((q) => q[0] === c.id) ?? [c.id, 0, 0, 0];
+      const n = [c.driver, c.gunner].map((p) => escapeHtml(this.names[p] ?? '—')).join(' & ');
+      return `<tr class="${c.id === this.crew.id ? 'mine' : ''}"><td>Tank ${c.id + 1}<small>${n}</small></td><td>${st[1]}</td><td>${st[2]}</td><td>${st[3]}</td></tr>`;
+    };
+    return ['blue', 'red']
+      .map((team) => {
+        const crews = this.crewList.filter((c) => c.team === team);
+        const body = crews.length ? crews.map(row).join('') : '<tr><td colspan="4">NPC army only</td></tr>';
+        return `<div class="${team}"><h4>${team === 'blue' ? 'BLUE' : 'RED'}</h4><table><tr><th>Crew</th><th>Kills</th><th>Deaths</th><th>Caps</th></tr>${body}</table></div>`;
+      })
+      .join('');
+  }
+
+  // Names over other player crews' tanks / soldiers in view.
+  updateTags(states) {
+    if (!this.world || !(this.view instanceof GunnerView || this.view.isFoot)) {
+      this.tagsEl.style.display = 'none';
+      return;
+    }
+    this.tagsEl.style.display = '';
+    const cam = this.view.camera;
+    const seen = new Set();
+    const v = new THREE.Vector3();
+    for (const u of states.values()) {
+      if (u.crew == null || u.dead || u.crew === this.crew.id) continue;
+      const d = Math.hypot(u.x - cam.position.x, u.z - cam.position.z);
+      if (d > 450) continue;
+      const m = this.units.get(u.id);
+      v.set(u.x, (m?.pose.y ?? 0) + (TANKS[u.type] ? TANKS[u.type].size.height + 1.6 : 2.3), u.z).project(cam);
+      if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;
+      seen.add(u.id);
+      let el = this.tagEls.get(u.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = `name-tag ${u.team}`;
+        this.tagsEl.appendChild(el);
+        this.tagEls.set(u.id, el);
+      }
+      el.textContent = this.crewName(u.crew);
+      el.style.left = `${((v.x + 1) / 2) * 100}%`;
+      el.style.top = `${((1 - v.y) / 2) * 100}%`;
+      el.style.opacity = d > 300 ? 0.6 : 1;
+    }
+    for (const [id, el] of this.tagEls) {
+      if (!seen.has(id)) {
+        el.remove();
+        this.tagEls.delete(id);
+      }
+    }
   }
 
   // Swap between the tank view (driver / gunner) and the on-foot soldier view.
@@ -146,8 +243,13 @@ export class MatchClient {
     this.view.dispose();
     if (on) {
       this.ensureWorld();
-      this.view = new SoldierView({ world: this.world, units: this.units, props: this.props, sound: this.sound, hud: this.hud, keys: this.keys, role: this.role });
+      this.view = new SoldierView({ world: this.world, units: this.units, props: this.props, sound: this.sound, hud: this.hud, keys: this.keys, role: this.role, team: this.team });
       this.view.pointColor = this.pointColor;
+      const mate = this.view.drawExtraMinimap;
+      this.view.drawExtraMinimap = (ctx, toMap) => {
+        mate(ctx, toMap);
+        this.drawTeamPings(ctx, toMap);
+      };
     } else this.view = this.makeTankView();
     this.view.resize(window.innerWidth, window.innerHeight);
     if (this.paused) this.view.setPaused?.(true);
@@ -176,6 +278,12 @@ export class MatchClient {
     // Full destroyed-prop list (no effects: these may be old news, e.g. after joining).
     if (msg.pd && this.props) this.props.setDestroyed(msg.pd.filter((id) => !this.props.dead.has(id)), null);
     if (msg.pts) this.updateCapture(msg);
+    if (msg.sb) {
+      this.stats = msg.sb;
+      if (this.boardEl.classList.contains('show')) this.boardEl.innerHTML = this.scoreboardHtml();
+    }
+    // Pings from the other crews on our team.
+    this.teamPings = (msg.pings ?? []).filter((p) => p[0] !== this.crew.id && (p[1] === 0 ? 'blue' : 'red') === this.team).map((p) => [p[0], p[2], p[3]]);
     for (const ev of msg.ev ?? []) this.onEvent(ev);
   }
 
@@ -218,8 +326,8 @@ export class MatchClient {
         break;
       case 'cap':
         this.addFeed(ev);
-        if (ev.team && (gunner || this.view.isFoot)) this.view.showBanner(`${ev.team === 'blue' ? 'WE' : 'ENEMY'} CAPTURED ${ev.id}`);
-        if (ev.team && driver) this.view.flash?.(`${ev.team === 'blue' ? 'WE' : 'ENEMY'} CAPTURED ${ev.id}`);
+        if (ev.team && (gunner || this.view.isFoot)) this.view.showBanner(`${ev.team === this.team ? 'WE' : 'ENEMY'} CAPTURED ${ev.id}`);
+        if (ev.team && driver) this.view.flash?.(`${ev.team === this.team ? 'WE' : 'ENEMY'} CAPTURED ${ev.id}`);
         break;
       case 'mod':
       case 'fixed': {
@@ -281,8 +389,9 @@ export class MatchClient {
       el.style.background = `conic-gradient(${col} ${Math.abs(progress) * 360}deg, rgba(20,22,16,0.85) 0)`;
       if (changed) this.recolorPoint(id, newOwner);
     }
-    this.capEl.querySelector('.tix.blue b').textContent = msg.tk[0];
-    this.capEl.querySelector('.tix.red b').textContent = msg.tk[1];
+    const tally = this.mode === 'tdm' ? msg.sc : msg.tk;
+    this.capEl.querySelector('.tix.blue b').textContent = tally[0];
+    this.capEl.querySelector('.tix.red b').textContent = tally[1];
     const m = Math.floor(msg.left / 60);
     this.capEl.querySelector('.clock').textContent = `${m}:${String(msg.left % 60).padStart(2, '0')}`;
   }
@@ -304,16 +413,22 @@ export class MatchClient {
     const ours = (id) => id === myId || crewIds.includes(id);
     // Infantry die constantly; only report what matters to the crew.
     if (ev.k === 'k' && ev.type in UNITS && ev.type !== 'atgun' && ev.type !== 'crew' && !ours(ev.by)) return;
+    // Our team is shown blue in the feed, the enemy red (whichever side we're on).
+    const rel = (team) => (team ? (team === this.team ? 'blue' : 'red') : '');
     let html;
-    let cls = ev.team ?? '';
+    let cls = rel(ev.team);
     if (ev.k === 'cap') {
       const name = POINTS.find((p) => p.id === ev.id)?.name ?? ev.id;
       html = ev.team ? `<b>${ev.team === 'blue' ? 'Blue' : 'Red'}</b> captured <b>${ev.id}</b> · ${name}` : `<b>${ev.id}</b> neutralised`;
-      cls = ev.team ?? ev.prev ?? '';
+      cls = rel(ev.team ?? ev.prev);
     } else {
-      const victim = ev.u === myId ? 'Our tank' : ev.type === 'crew' ? 'Our crewman' : this.unitName(ev.team, ev.type);
-      const killer = ev.by === myId ? 'Our tank' : ours(ev.by) ? 'Our crew' : 'Enemy fire';
-      html = `<span>${killer}</span> ▸ <b>${victim}</b>`;
+      const units = this.buffer.latest?.units;
+      const victimUnit = units?.get(ev.u);
+      const killerUnit = units?.get(ev.by);
+      const crewLabel = (u) => (u?.crew != null ? this.crewName(u.crew) : null);
+      const victim = ev.u === myId ? 'Our tank' : ours(ev.u) ? 'Our crewman' : crewLabel(victimUnit) ?? this.unitName(ev.team, ev.type);
+      const killer = ev.by === myId ? 'Our tank' : ours(ev.by) ? 'Our crew' : crewLabel(killerUnit) ?? (killerUnit?.team === this.team ? 'Friendly fire' : 'Enemy fire');
+      html = `<span>${escapeHtml(killer)}</span> ▸ <b>${escapeHtml(victim)}</b>`;
     }
     const row = document.createElement('div');
     row.className = `feed-row ${cls}`;
@@ -361,11 +476,17 @@ export class MatchClient {
       this.units.update(states, dt);
     }
     this.fx?.update(dt);
+    const board = this.keys.has('Tab') && !this.paused;
+    if (board !== this.boardEl.classList.contains('show')) {
+      this.boardEl.classList.toggle('show', board);
+      if (board) this.boardEl.innerHTML = this.scoreboardHtml();
+    }
     if (this.choiceEl.classList.contains('show')) {
       if (this.keys.took('Digit1')) net.send({ t: 'bail', pick: 'tank' });
       if (this.keys.took('Digit2')) net.send({ t: 'bail', pick: 'foot' });
     }
     if (this.me) this.view.update(dt, states, this.me);
+    if (this.units) this.updateTags(states);
     // Audio: listener follows the crew member's head.
     const self = this.me && states.get(this.view.isFoot ? this.view.myId ?? this.me.id : this.me.id);
     if (self) {
@@ -382,7 +503,7 @@ export class MatchClient {
       this.sound.updateAmbient(dt, { river: Math.max(0, Math.abs(self.z - riverZ(self.x)) - RIVER_HALF_WIDTH), fire, trees });
       // Edge of the battlefield warning.
       const edge = Math.max(Math.abs(self.x), Math.abs(self.z));
-      this.edgeEl.classList.toggle('show', !self.dead && edge > PLAY_LIMIT - 45 && !nearGarage(self.x, self.z));
+      this.edgeEl.classList.toggle('show', !self.dead && edge > PLAY_LIMIT - 45 && !nearGarage(self.x, self.z, this.team));
     }
     this.sound.updateRadio(dt);
     // The driver has no view of the sky but still hears the distant war.
@@ -442,5 +563,7 @@ export class MatchClient {
     this.voiceEl.remove();
     this.capEl.remove();
     this.choiceEl.remove();
+    this.boardEl.remove();
+    this.tagsEl.remove();
   }
 }

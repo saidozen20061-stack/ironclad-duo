@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { FOOT } from '../../../shared/constants.js';
 import { groundAt, heightAt, WATER_LEVEL } from '../../../shared/map.js';
-import { footBlocked, nearGarage, GARAGES } from '../../../shared/foot.js';
+import { footBlocked, nearGarage, TEAM_GARAGES } from '../../../shared/foot.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
 import { settings } from '../settings.js';
@@ -36,7 +36,8 @@ const HUD_HTML = `
 `;
 
 export class SoldierView {
-  constructor({ world, units, props, sound, hud, keys, role }) {
+  constructor({ world, units, props, sound, hud, keys, role, team = 'blue' }) {
+    this.team = team;
     this.isFoot = true;
     this.world = world;
     this.units = units;
@@ -220,7 +221,7 @@ export class SoldierView {
       if (k.took('KeyR')) net.send({ t: 'reload' });
       if (k.took('KeyG')) net.send({ t: 'grenade' });
       if (k.took('KeyQ')) this.placePing();
-      if (k.took('KeyE') && nearGarage(this.pos.x, this.pos.z)) net.send({ t: 'garage' });
+      if (k.took('KeyE') && nearGarage(this.pos.x, this.pos.z, this.team)) net.send({ t: 'garage' });
     }
     const sprint = control && k.has('ShiftLeft') && fwd > 0 && !this.crouch && !this.ads;
     if (sprint) this.fire = false;
@@ -338,7 +339,7 @@ export class SoldierView {
     const mateName = this.mateRole === 'driver' ? 'Driver' : 'Gunner';
     $('.f-mate').innerHTML = mate ? `${mateName} <b class="${mate.dead ? 'down' : ''}">${mate.dead ? 'DOWN' : `${mate.hp} HP`}</b>` : '';
     let gd = Infinity;
-    for (const g of GARAGES) gd = Math.min(gd, Math.hypot(g.x - this.pos.x, g.z - this.pos.z));
+    for (const g of TEAM_GARAGES[this.team]) gd = Math.min(gd, Math.hypot(g.x - this.pos.x, g.z - this.pos.z));
     $('.f-garage').textContent = `Base garage ${Math.round(gd)} m`;
 
     $('.f-mag').textContent = mine.mag;
@@ -354,7 +355,7 @@ export class SoldierView {
     // Garage prompt: everyone still alive has to be there.
     let prompt = '';
     if (!mine.dead && gd < FOOT.garageRadius) {
-      const mateThere = !mate || mate.dead || nearGarage(mate.x, mate.z);
+      const mateThere = !mate || mate.dead || nearGarage(mate.x, mate.z, this.team);
       prompt = mateThere ? '<b>E</b> Get a new tank' : `Wait for the ${mateName.toLowerCase()} at the garage`;
     }
     $('.f-prompt').innerHTML = prompt;
