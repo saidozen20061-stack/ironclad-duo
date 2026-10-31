@@ -52,6 +52,14 @@ export const PROP_TYPES = {
   truck: { solid: true, hp: 300, cover: true },
   radardish: { solid: true, hp: Infinity },
   artillery: { solid: true, hp: Infinity, cover: true },
+  // Fortress Defence (only placed in that mode, see setFortress)
+  fwall: { solid: true, hp: 2200, cover: true },
+  fgate: { solid: true, hp: 1400, cover: true, navOpen: true },
+  ftower: { solid: true, hp: 3000, cover: true },
+  fbunker: { solid: true, hp: 2500, cover: true },
+  hulldown: { solid: true, hp: Infinity, cover: true },
+  depot: { solid: false, hp: Infinity, cover: true },
+  command: { solid: true, hp: 6000, cover: true },
 };
 
 export const ROADS = [
@@ -402,16 +410,82 @@ export function fieldAt(x, z) {
 const CELL = 50;
 const grid = new Map();
 const key = (i, j) => i * 1000 + j;
-for (const p of PROPS) {
+function gridCells(p, fn) {
   const r = Math.hypot(p.w, p.d) / 2;
   const i0 = Math.floor((p.x - r + HALF) / CELL), i1 = Math.floor((p.x + r + HALF) / CELL);
   const j0 = Math.floor((p.z - r + HALF) / CELL), j1 = Math.floor((p.z + r + HALF) / CELL);
-  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-    const k = key(i, j);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) fn(key(i, j));
+}
+function gridInsert(p) {
+  gridCells(p, (k) => {
     if (!grid.has(k)) grid.set(k, []);
     grid.get(k).push(p);
+  });
+}
+for (const p of PROPS) gridInsert(p);
+
+// ---------- Fortress Defence: the fortified Blue base ----------
+// Added to PROPS only for that mode (same order on host and clients, so ids match) and
+// removed again afterwards. North faces the enemy; the south side is the map edge.
+export const FORT = {
+  center: { x: 0, z: -600 },
+  north: -550,
+  half: 110,
+  depot: { x: -62, z: -576, w: 18, d: 14 },
+  command: null, // the command bunker prop while the fortress exists
+  // Spots for defending NPC infantry inside the walls.
+  spots: [],
+};
+let fortProps = null;
+
+function buildFortress() {
+  const start = PROPS.length;
+  const { north: N, half: H } = FORT;
+  const wall = (x, z, rot) => add('fwall', x, z, rot, 10, 2.6, 2.6, { fort: true });
+  // North wall with a central gate flanked by towers.
+  for (const sx of [-1, 1]) for (let x = 22; x <= 102; x += 10) wall(sx * x, N, 0);
+  add('fgate', 0, N, 0, 14, 1.8, 2.8, { fort: true });
+  for (const x of [-14, 14, -H, H]) add('ftower', x, N, 0, 6, 6, 8.5, { fort: true });
+  // East and west walls with side gates.
+  for (const sx of [-1, 1]) {
+    for (let z = N - 8; z >= -588; z -= 10) wall(sx * H, z, Math.PI / 2);
+    add('fgate', sx * H, -600, Math.PI / 2, 14, 1.8, 2.8, { fort: true });
+    for (let z = -612; z >= -682; z -= 10) wall(sx * H, z, Math.PI / 2);
+    for (const z of [-592, -608]) add('ftower', sx * H, z, 0, 5, 5, 7, { fort: true });
+  }
+  // Bunkers behind the north wall, command bunker at the heart, repair/ammo depot.
+  for (const x of [-60, 60]) add('fbunker', x, N - 15, 0, 8, 5, 2.8, { fort: true });
+  for (const sx of [-1, 1]) add('fbunker', sx * (H - 14), -640, Math.PI / 2, 8, 5, 2.8, { fort: true });
+  FORT.command = add('command', 0, -626, 0, 14, 10, 4.2, { fort: true });
+  const d = FORT.depot;
+  add('depot', d.x, d.z, 0, d.w, d.d, 5, { fort: true });
+  // Outside the north wall: hull-down berms, a trench line and wire.
+  for (const x of [-80, -40, 40, 80]) add('hulldown', x, N + 13, 0, 8, 2.2, 1.3, { fort: true });
+  for (const sx of [-1, 1]) for (let x = 20; x <= 100; x += 20) add('trench', sx * x, N + 30, 0, 18, 2, 0.5, { fort: true });
+  for (const sx of [-1, 1]) for (let x = 25; x <= 105; x += 20) add('wire', sx * x, N + 45, 0, 18, 1, 1.2, { fort: true });
+  FORT.spots = [];
+  for (let x = -95; x <= 95; x += 12) if (Math.abs(x) > 12) FORT.spots.push({ x, z: N - 5 });
+  for (const sx of [-1, 1]) for (let z = -515; z >= -680; z -= 14) if (Math.abs(z + 600) > 10) FORT.spots.push({ x: sx * (H - 5), z });
+  for (const x of [-60, 60]) FORT.spots.push({ x, z: N - 21 });
+  return PROPS.slice(start);
+}
+
+// Turn the fortress on or off (host: before building the nav grid; clients: before the world).
+export function setFortress(on) {
+  if (!!on === !!fortProps) return;
+  if (on) {
+    fortProps = buildFortress();
+    for (const p of fortProps) gridInsert(p);
+  } else {
+    for (const p of fortProps) gridCells(p, (k) => grid.set(k, (grid.get(k) ?? []).filter((q) => q !== p)));
+    PROPS.length -= fortProps.length;
+    fortProps = null;
+    FORT.command = null;
   }
 }
+
+export const fortressOn = () => !!fortProps;
+export const inDepot = (x, z) => Math.abs(x - FORT.depot.x) < FORT.depot.w / 2 + 2 && Math.abs(z - FORT.depot.z) < FORT.depot.d / 2 + 2;
 
 export function propsNear(x, z, r = 0) {
   const out = new Set();

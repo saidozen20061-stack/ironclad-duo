@@ -38,7 +38,8 @@ function buildCosts(cls) {
   // Solid props block their footprint (slightly inflated for tanks).
   const pad = cls === 'tank' ? 2.5 : 0.4;
   for (const p of PROPS) {
-    if (!p.solid) continue;
+    // Gates count as open: attackers path through them and have to blast them down.
+    if (!p.solid || p.type === 'fgate') continue;
     const r = Math.hypot(p.w, p.d) / 2 + pad;
     const [i0, j0] = cellOf(p.x - r, p.z - r);
     const [i1, j1] = cellOf(p.x + r, p.z + r);
@@ -132,15 +133,23 @@ function flowField(cost, tx, tz, radius) {
   return dist;
 }
 
-const t0 = Date.now();
-const COSTS = { tank: buildCosts('tank'), inf: buildCosts('inf') };
 const TARGETS = [...POINTS.map((p) => ({ key: p.id, x: p.x, z: p.z, r: p.r * 0.6 })), ...Object.entries(BASES).map(([k, b]) => ({ key: k, x: b.x, z: b.z, r: 40 }))];
-const FIELDS = {};
-for (const cls of ['tank', 'inf']) {
-  FIELDS[cls] = {};
-  for (const t of TARGETS) FIELDS[cls][t.key] = flowField(COSTS[cls], t.x, t.z, t.r);
+let COSTS = null;
+let FIELDS = null;
+export let NAV_BUILD_MS = 0;
+
+// (Re)build costs and flow fields from the current PROPS (again after the fortress is added).
+export function buildNav() {
+  const t0 = Date.now();
+  COSTS = { tank: buildCosts('tank'), inf: buildCosts('inf') };
+  FIELDS = {};
+  for (const cls of ['tank', 'inf']) {
+    FIELDS[cls] = {};
+    for (const t of TARGETS) FIELDS[cls][t.key] = flowField(COSTS[cls], t.x, t.z, t.r);
+  }
+  NAV_BUILD_MS = Date.now() - t0;
 }
-export const NAV_BUILD_MS = Date.now() - t0;
+buildNav();
 
 export function passable(cls, x, z) {
   const [i, j] = cellOf(x, z);
@@ -152,6 +161,7 @@ export function passable(cls, x, z) {
 // couple of cells ahead for smoother steering. Returns null if unreachable / arrived.
 export function nextWaypoint(cls, key, x, z, lookahead = 2) {
   const dist = FIELDS[cls][key];
+  if (!dist) return null; // not a nav target (e.g. fortress wall defenders hold position)
   let [i, j] = cellOf(x, z);
   if (i < 0 || j < 0 || i >= N || j >= N) return null;
   // If standing in a blocked/unreached cell, step to the best neighbour anyway.
@@ -178,6 +188,6 @@ export function nextWaypoint(cls, key, x, z, lookahead = 2) {
 
 export function distanceTo(cls, key, x, z) {
   const [i, j] = cellOf(x, z);
-  if (i < 0 || j < 0 || i >= N || j >= N) return INF;
+  if (i < 0 || j < 0 || i >= N || j >= N || !FIELDS[cls][key]) return INF;
   return FIELDS[cls][key][idx(i, j)];
 }

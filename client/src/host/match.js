@@ -4,7 +4,9 @@ import { footBlocked, nearGarage } from '../../../shared/foot.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
 import { tankPose, muzzlePose, planePitchAlong, wrapAngle } from '../../../shared/tank.js';
-import { PROPS, PROP_TYPES, propsNear, circleHitsProp, segmentHitsProp } from '../../../shared/props.js';
+import { PROPS, PROP_TYPES, propsNear, circleHitsProp, segmentHitsProp, setFortress } from '../../../shared/props.js';
+import { buildNav } from './nav.js';
+import { installMode } from './modes.js';
 
 const DT = 1 / TICK_RATE;
 const GRAVITY = 9.81;
@@ -141,6 +143,10 @@ export class Match {
     this.bleedT = MATCH.bleedInterval;
     this.points = POINTS.map((p) => ({ id: p.id, owner: null, progress: 0, contested: false }));
 
+    // Fortress Defence adds walls etc. to the map; the nav grid has to know about them.
+    setFortress(this.mode === 'fortress');
+    if (this.mode === 'fortress') buildNav();
+
     // Player crews, spread out side by side at their team's base.
     this.crews = new Map();
     const infos = room.crews ?? [{ id: 0, team: 'blue', tank: room.tank ?? 'medium' }];
@@ -156,6 +162,7 @@ export class Match {
       });
     }
     this.army = new ArmyAI(this);
+    installMode(this);
 
     this.interval = setInterval(() => this.tick(), 1000 / TICK_RATE);
   }
@@ -211,6 +218,12 @@ export class Match {
     if (msg.t === 'bail') return this.onBailPick(c, player.role, msg.pick);
     // Dev-only test hook: destroy our own tank.
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
+    // Dev-only: finish the current Fortress wave (or skip the break).
+    if (import.meta.env?.DEV && msg.t === 'debugWave' && this.fort) {
+      if (this.fort.phase === 'break') this.fort.until = this.time;
+      else for (const u of this.fort.alive) this.damage(u, 1e6, { owner: 0 });
+      return;
+    }
     if (c.bail.mode === 'foot') return this.onFootMessage(c, player.role, msg);
     if (player.role === 'driver' && msg.t === 'drive') {
       t.drive.th = Math.max(-1, Math.min(1, Number(msg.th) || 0));
@@ -269,6 +282,7 @@ export class Match {
       this.driveTank(t);
       this.aimTurret(t);
       this.updateWeapons(t);
+      this.modeCrewTick?.(c);
     }
     // Ping expires after its lifetime or once the crew reaches it.
     if (c.ping) {

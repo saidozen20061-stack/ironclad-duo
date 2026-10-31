@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TANKS, UNITS, FOOT } from '../../../shared/constants.js';
 import { POINTS, groundAt, riverZ, RIVER_HALF_WIDTH, PLAY_LIMIT } from '../../../shared/map.js';
-import { PROPS, TREE_NOISE } from '../../../shared/props.js';
+import { PROPS, TREE_NOISE, setFortress } from '../../../shared/props.js';
 import { net } from '../net.js';
 import { voice } from '../voice.js';
 import { SnapshotBuffer } from './snapshots.js';
@@ -32,6 +32,8 @@ export class MatchClient {
     this.mode = this.info.mode;
     this.names = this.info.names ?? {};
     this.crewList = this.info.crews ?? [this.crew];
+    // Fortress Defence puts walls, towers and bunkers on the map (before any world is built).
+    setFortress(this.mode === 'fortress');
     this.onPause = onPause;
     this.paused = false;
     this.lastUnlock = 0;
@@ -53,7 +55,12 @@ export class MatchClient {
       ${POINTS.map((p) => `<div class="cap" data-pt="${p.id}"><span>${p.id}</span></div>`).join('')}
       <div class="tix red"><small>RED${tdm ? ' KILLS' : ''}</small><b>${tdm ? 0 : 500}</b></div>
       <div class="clock">20:00</div>${tdm ? `<div class="goal">First to ${this.info.killLimit}</div>` : ''}`;
+    if (this.mode === 'fortress') {
+      this.capEl.classList.add('fort');
+      this.capEl.innerHTML = `<div class="wave"><small>WAVE</small><b>0/10</b></div><div class="wave-info"></div><div class="bunker"><small>COMMAND BUNKER</small><i><u></u></i></div>`;
+    }
     this.hud.appendChild(this.capEl);
+    this.flagTarget = {};
 
     // Scoreboard (hold Tab) and floating names over other player crews.
     this.boardEl = document.createElement('div');
@@ -278,6 +285,7 @@ export class MatchClient {
     // Full destroyed-prop list (no effects: these may be old news, e.g. after joining).
     if (msg.pd && this.props) this.props.setDestroyed(msg.pd.filter((id) => !this.props.dead.has(id)), null);
     if (msg.pts) this.updateCapture(msg);
+    if (msg.fort) this.updateFort(msg.fort);
     if (msg.sb) {
       this.stats = msg.sb;
       if (this.boardEl.classList.contains('show')) this.boardEl.innerHTML = this.scoreboardHtml();
@@ -347,6 +355,20 @@ export class MatchClient {
       case 'pd':
         this.props?.setDestroyed([ev.id], this.fx);
         break;
+      case 'wave':
+        this.banner(ev.boss ? `BOSS WAVE ${ev.n} — HEAVY ARMOUR INBOUND` : `WAVE ${ev.n} INCOMING`);
+        this.sound.distantArtillery({ x: 0, y: 0, z: -300 });
+        break;
+      case 'waveClear':
+        this.banner(`WAVE ${ev.n} REPELLED`);
+        break;
+      case 'arty':
+        if (performance.now() - (this.artyWarn ?? 0) > 15000) {
+          this.artyWarn = performance.now();
+          this.banner('ARTILLERY INCOMING!');
+        }
+        this.sound.plane?.();
+        break;
       case 'boom': {
         const pos = new THREE.Vector3(ev.x, ev.y, ev.z);
         this.fx?.explosion(pos, ev.size);
@@ -383,12 +405,17 @@ export class MatchClient {
       const changed = p.owner !== newOwner;
       Object.assign(p, { owner: newOwner, progress, contested: !!contested });
       const el = this.capEl.querySelector(`[data-pt="${id}"]`);
-      el.className = `cap ${newOwner ?? 'neutral'}${contested ? ' contested' : ''}`;
-      // Progress ring: blue fills clockwise for +, red for −.
-      const col = progress >= 0 ? '#5fa0e0' : '#e0645a';
-      el.style.background = `conic-gradient(${col} ${Math.abs(progress) * 360}deg, rgba(20,22,16,0.85) 0)`;
+      if (el) {
+        el.className = `cap ${newOwner ?? 'neutral'}${contested ? ' contested' : ''}`;
+        // Progress ring: blue fills clockwise for +, red for −.
+        const col = progress >= 0 ? '#5fa0e0' : '#e0645a';
+        el.style.background = `conic-gradient(${col} ${Math.abs(progress) * 360}deg, rgba(20,22,16,0.85) 0)`;
+      }
       if (changed) this.recolorPoint(id, newOwner);
+      // The flag climbs with the capture progress in the colour of the side that's winning.
+      this.flagTarget[id] = { h: Math.abs(progress), team: progress > 0.02 ? 'blue' : progress < -0.02 ? 'red' : null };
     }
+    if (this.mode === 'fortress') return;
     const tally = this.mode === 'tdm' ? msg.sc : msg.tk;
     this.capEl.querySelector('.tix.blue b').textContent = tally[0];
     this.capEl.querySelector('.tix.red b').textContent = tally[1];
@@ -396,11 +423,37 @@ export class MatchClient {
     this.capEl.querySelector('.clock').textContent = `${m}:${String(msg.left % 60).padStart(2, '0')}`;
   }
 
+  // Wave counter, enemies left / countdown, command bunker health.
+  updateFort([wave, fighting, countdown, enemies, bunker]) {
+    const el = this.capEl;
+    el.querySelector('.wave b').textContent = `${wave}/10`;
+    el.querySelector('.wave-info').textContent = fighting ? `${enemies} attackers left` : `${wave ? 'Next wave' : 'First wave'} in ${countdown}s`;
+    const bar = el.querySelector('.bunker u');
+    bar.style.width = `${bunker}%`;
+    bar.classList.toggle('low', bunker < 35);
+  }
+
+  banner(text) {
+    if (this.view instanceof DriverView) this.view.flash?.(text);
+    else this.view.showBanner?.(text);
+  }
+
   recolorPoint(id, owner) {
     if (!this.world) return;
     const hex = owner === 'blue' ? 0x3f7fd0 : owner === 'red' ? 0xc84a3f : 0xdddddd;
-    this.world.pointMarkers[id]?.userData.flag.material.color.setHex(hex);
     this.props?.zoneRings[id]?.material.color.setHex(hex);
+  }
+
+  // Animate the A/B/C flags towards their capture height (lowered enemy flag, raised ours).
+  animateFlags(dt) {
+    for (const [id, tgt] of Object.entries(this.flagTarget)) {
+      const flag = this.world.pointMarkers[id]?.userData.flag;
+      if (!flag) continue;
+      const y = 1.2 + tgt.h * 6.9;
+      flag.position.y += (y - flag.position.y) * Math.min(1, dt * 1.5);
+      const hex = tgt.team === 'blue' ? 0x3f7fd0 : tgt.team === 'red' ? 0xc84a3f : 0xdddddd;
+      if (flag.material.color.getHex() !== hex) flag.material.color.setHex(hex);
+    }
   }
 
   unitName(team, type) {
@@ -518,6 +571,7 @@ export class MatchClient {
       const alive = [...states.values()].filter((u) => !u.dead && TANKS[u.type]);
       this.props.update(dt, this.fx, alive, cam, this.sound);
       this.world.animate(dt, cam);
+      this.animateFlags(dt);
       // Damaged tanks smoke; wrecks burn.
       this.smokeT = (this.smokeT ?? 0) - dt;
       if (this.smokeT <= 0) {

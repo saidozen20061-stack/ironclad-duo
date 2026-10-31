@@ -438,6 +438,72 @@ const builders = {
   radardish(p) {
     return [box(C.concrete, 0, 0, 0, p.w, 0.6, p.d), part(CYL8, C.metal, { y: 3, sx: 0.5, sy: 5, sz: 0.5 }), box(C.olive, 0, 0.6, 0, 1.6, 1.5, 1.6)];
   },
+  // ---------- Fortress Defence ----------
+  fwall(p) {
+    const { w, d, h } = p;
+    const parts = [box(C.stone, 0, 0, 0, w, h, d), box(C.stoneDark, 0, 0, 0, w + 0.05, 0.5, d + 0.3)];
+    // Crenellations on both faces.
+    for (const sz of [-1, 1]) for (let i = 0; i < 4; i++) parts.push(box(i % 2 ? C.stone : C.stoneDark, -w / 2 + 1.25 + i * 2.5, h, sz * (d / 2 - 0.35), 1.3, 0.7, 0.7));
+    return parts;
+  },
+  fgate(p) {
+    const { w, d, h } = p;
+    const parts = [];
+    for (const sx of [-1, 1]) {
+      parts.push(box(C.woodDark, sx * w * 0.25, 0, 0, w / 2 - 0.1, h, d * 0.6));
+      for (const y of [0.5, h - 0.8]) parts.push(box(C.black, sx * w * 0.25, y, 0, w / 2 - 0.2, 0.25, d * 0.66));
+    }
+    parts.push(box(C.stoneDark, 0, h, 0, w + 1, 0.8, d + 0.4));
+    return parts;
+  },
+  ftower(p) {
+    const { w, h } = p;
+    const parts = [box(C.stone, 0, 0, 0, w, h, w), box(C.stoneDark, 0, h, 0, w + 1, 0.4, w + 1)];
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) parts.push(box(C.stone, sx * (w / 2), h + 0.4, sz * (w / 2), 1, 0.9, 1));
+    for (const sz of [-1, 1]) parts.push(box(0x1e1e1c, 0, h * 0.6, sz * (w / 2 + 0.01), 0.3, 1.2, 0.08));
+    parts.push(part(CONE4, C.roofDark, { y: h + 1.6, sx: w * 0.9, sy: 2.2, sz: w * 0.9, ry: Math.PI / 4 }));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(C.wood, sx * w * 0.35, h + 0.4, sz * w * 0.35, 0.2, 1.3, 0.2));
+    return parts;
+  },
+  fbunker(p) {
+    return builders.bunker(p);
+  },
+  hulldown(p) {
+    const { w, d, h } = p;
+    // Earth berm with sloped faces and short side arms; a tank parks behind it.
+    return [
+      box(0x5a4a32, 0, 0, 0, w, h, d),
+      box(0x6b5a3c, 0, 0, d / 2 + 0.6, w, h * 0.6, 1.2, { rx: -0.5 }),
+      box(0x5a4a32, -w / 2, 0, -d * 0.9, 1.4, h * 0.8, d * 1.8),
+      box(0x5a4a32, w / 2, 0, -d * 0.9, 1.4, h * 0.8, d * 1.8),
+      box(C.sand, 0, h, 0, w * 0.9, 0.35, d * 0.6),
+    ];
+  },
+  depot(p) {
+    const { w, d, h } = p;
+    const parts = [];
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(box(C.metal, sx * (w / 2 - 0.3), 0, sz * (d / 2 - 0.3), 0.35, h, 0.35));
+    parts.push(box(C.canvas, 0, h, 0, w + 0.6, 0.3, d + 0.6));
+    parts.push(box(0xc9b23a, 0, 0.02, d / 2 - 0.5, w * 0.9, 0.05, 0.3)); // yellow bay line
+    for (let i = 0; i < 5; i++) parts.push(box(C.olive, -w / 2 + 1.2 + i * 1.3, 0, -d / 2 + 1, 1.1, 0.8, 1.1)); // ammo crates
+    for (let i = 0; i < 4; i++) parts.push(part(CYL8, C.rust, { x: w / 2 - 1.2, y: 0.55, z: -d / 2 + 1.2 + i * 1.1, sx: 0.9, sy: 1.1, sz: 0.9 }));
+    parts.push(box(C.blueTeam, 0, h - 1, -d / 2 + 0.25, w * 0.4, 0.8, 0.1)); // depot sign
+    return parts;
+  },
+  command(p) {
+    const { w, d, h } = p;
+    const parts = [
+      box(C.concrete, 0, 0, 0, w, h, d),
+      box(C.concrete, 0, h, 0, w + 1, 0.6, d + 1),
+      part(ICO, C.sand, { y: h + 0.6, sx: w * 0.45, sy: 0.9, sz: d * 0.45 }),
+      box(0x1e1e1c, 0, h * 0.5, d / 2 + 0.01, w * 0.5, 0.5, 0.1),
+      box(C.woodDark, 0, 0, -d / 2 - 0.05, 1.4, 2.2, 0.1),
+      box(C.metal, w * 0.3, h + 0.6, 0, 0.15, 7, 0.15), // radio mast
+      box(C.metal, w * 0.3, h + 6.2, 0, 2.2, 0.08, 0.08),
+    ];
+    for (let i = 0; i < 6; i++) parts.push(box(C.sand, -w / 2 + 1 + i * (w - 2) / 5, 0, d / 2 + 1.4, 2, 0.9, 0.8));
+    return parts;
+  },
   artillery(p) {
     // Carriage + trails only; the barrel is a separate animated mesh.
     const { w, d } = p;

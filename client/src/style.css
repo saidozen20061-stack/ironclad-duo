@@ -391,3 +391,15 @@ input, select {
 .name-tags { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .name-tag { position: absolute; transform: translate(-50%, -100%); font: 700 12px var(--ui); color: #cfe3f7; text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; }
 .name-tag.red { color: #f3b1aa; }
+
+/* ---------- Mode HUD extras ---------- */
+.cap-hud .goal { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--ink-dim); white-space: nowrap; }
+.cap-hud.fort { gap: 14px; background: rgba(12, 14, 10, 0.72); border: 1px solid rgba(76, 85, 57, 0.8); border-radius: 4px; padding: 6px 14px; }
+.cap-hud .wave { display: flex; flex-direction: column; align-items: center; }
+.cap-hud .wave small, .cap-hud .bunker small { font-size: 11px; font-weight: 700; color: var(--ink-dim); letter-spacing: 0.08em; }
+.cap-hud .wave b { font-family: var(--stencil); font-size: 26px; color: var(--accent); line-height: 1; }
+.cap-hud .wave-info { font-weight: 700; font-size: 15px; min-width: 150px; text-align: center; }
+.cap-hud .bunker { display: flex; flex-direction: column; gap: 3px; min-width: 130px; }
+.cap-hud .bunker i { height: 8px; background: #0c0e0a; border-radius: 4px; overflow: hidden; }
+.cap-hud .bunker u { display: block; height: 100%; background: #7fd36a; transition: width 0.3s; }
+.cap-hud .bunker u.low { background: var(--danger); }

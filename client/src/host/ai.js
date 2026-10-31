@@ -5,14 +5,13 @@
 import { Vector3 } from 'three';
 import { UNITS, MATCH, TANKS } from '../../../shared/constants.js';
 import { POINTS, BASES, groundAt, heightAt, WATER_LEVEL } from '../../../shared/map.js';
-import { PROPS, propsNear, circleHitsProp } from '../../../shared/props.js';
+import { propsNear, circleHitsProp, FORT } from '../../../shared/props.js';
 import { wrapAngle, planePitchAlong, muzzlePose } from '../../../shared/tank.js';
 import { nextWaypoint, passable, distanceTo } from './nav.js';
 
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
 const ENEMY = { blue: 'red', red: 'blue' };
-const COVER = PROPS.filter((p) => p.cover);
 
 // ---------- Helpers ----------
 
@@ -39,8 +38,19 @@ export function unitHeight(u) {
   return u.kind === 'tank' ? u.pose.y + 1.4 : u.pose.y + (u.kind === 'inf' ? 1.3 : 1.0);
 }
 
+// Where an objective key is: a capture point, a base ('blue' / 'red'), or the fortress.
+function objPoint(id) {
+  const pt = POINTS.find((p) => p.id === id);
+  if (pt) return pt;
+  if (id === 'fortress') return { x: FORT.center.x, z: FORT.center.z, r: 100 };
+  const b = BASES[id];
+  return b ? { x: b.x, z: b.z, r: 45 } : null;
+}
+
 function chooseObjective(match, u) {
   const team = u.team;
+  // Fortress Defence: Red storms the Blue base, Blue NPCs man the walls.
+  if (match.mode === 'fortress') return team === 'red' ? 'blue' : 'fortress';
   const cls = u.kind === 'tank' ? 'tank' : 'inf';
   const notOurs = match.points.filter((p) => p.owner !== team);
   const pool = notOurs.length ? notOurs : match.points;
@@ -128,7 +138,10 @@ export class ArmyAI {
   // ---------- Spawning ----------
   update(dt) {
     const m = this.match;
+    const fortress = m.mode === 'fortress';
     for (const team of ['blue', 'red']) {
+      // In Fortress Defence the waves bring Red; Blue only fields wall defenders.
+      if (fortress && team === 'red') continue;
       this.waveT[team] -= dt;
       this.tankT[team] -= dt;
       const alive = m.units.filter((u) => u.team === team && !u.dead && !u.player && !u.crew);
@@ -139,7 +152,7 @@ export class ArmyAI {
         const room = MATCH.caps.inf - inf;
         if (room >= 3) this.spawnSquad(team, Math.min(room, 6));
       }
-      if (this.tankT[team] <= 0) {
+      if (this.tankT[team] <= 0 && !fortress) {
         this.tankT[team] = MATCH.waveInterval * 1.6;
         // Blue's player tank counts towards the blue armour cap.
         const cap = MATCH.caps.tank - m.playerTanks(team);
@@ -148,7 +161,7 @@ export class ArmyAI {
       }
     }
     // AT guns belong to whoever holds the point.
-    for (const s of this.slots) {
+    for (const s of fortress ? [] : this.slots) {
       const owner = m.points.find((p) => p.id === s.point).owner;
       if (s.gun && (s.gun.dead || !m.units.includes(s.gun))) s.gun = null;
       if (!s.gun && owner) {
@@ -171,6 +184,7 @@ export class ArmyAI {
   }
 
   spawnPoint(team, spread = 40) {
+    if (this.match.mode === 'fortress' && team === 'blue') return [FORT.center.x + rand(-50, 50), FORT.center.z + rand(-20, 20)];
     const b = BASES[team];
     const s = team === 'blue' ? 1 : -1;
     for (let k = 0; k < 10; k++) {
@@ -183,13 +197,54 @@ export class ArmyAI {
 
   spawnSquad(team, n) {
     const [cx, cz] = this.spawnPoint(team);
-    const objective = chooseObjective(this.match, { team, kind: 'inf', x: cx, z: cz });
+    return this.spawnSquadAt(team, cx, cz, n);
+  }
+
+  spawnSquadAt(team, cx, cz, n, objective = chooseObjective(this.match, { team, kind: 'inf', x: cx, z: cz })) {
+    const out = [];
     for (let i = 0; i < n; i++) {
       const type = i === 0 || (i === 3 && Math.random() < 0.5) ? 'rocket' : 'rifle';
       const u = new Infantry(team, type, cx + rand(-6, 6), cz + rand(-6, 6));
       u.ai.objective = objective;
       this.match.units.push(u);
+      out.push(u);
     }
+    return out;
+  }
+
+  spawnTankAt(team, type, x, z, h, objective = null) {
+    const t = this.match.createTank(team, type, x, z, h);
+    t.ai = { state: 'move', objective: objective ?? chooseObjective(this.match, t), think: rand(0, 0.5), target: null, stuckT: 0, reverseT: 0, lastPos: [x, z] };
+    this.match.units.push(t);
+    return t;
+  }
+
+  // Fortress structures as pseudo-targets for attackers (gates first, then the command bunker).
+  structureTarget(u, range) {
+    const m = this.match;
+    let best = null;
+    let bestScore = Infinity;
+    for (const p of propsNear(u.x, u.z, range)) {
+      if (!p.fort || !Number.isFinite(p.maxHp) || m.propDead.has(p.id)) continue;
+      const d = Math.hypot(p.x - u.x, p.z - u.z);
+      if (d > range) continue;
+      const score = d - (p.type === 'fgate' ? 80 : p.type === 'command' ? 120 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    if (!best) return null;
+    this.propTargets ??= new Map();
+    let t = this.propTargets.get(best.id);
+    if (!t) {
+      const prop = best;
+      t = { id: -1000 - prop.id, kind: 'prop', team: 'blue', x: prop.x, z: prop.z, prop, pose: { y: prop.y + prop.h * 0.5 - 0.6 }, get dead() {
+        return m.propDead.has(prop.id);
+      } };
+      this.propTargets.set(best.id, t);
+    }
+    return t;
   }
 
   spawnTank(team) {
@@ -240,6 +295,7 @@ export class ArmyAI {
       ai.think = rand(0.4, 0.7);
       if (ai.target && (ai.target.dead || !m.units.includes(ai.target))) ai.target = null;
       ai.target = this.findTarget(u, w.range, w.kind === 'rocket' ? 'armor' : 'soft');
+      if (!ai.target && m.mode === 'fortress' && u.team === 'red' && w.kind === 'rocket') ai.target = this.structureTarget(u, 90);
       if (u.hp < 35 && ai.state !== 'retreat') {
         ai.state = 'retreat';
         ai.cover = null;
@@ -252,8 +308,13 @@ export class ArmyAI {
           ai.state = ai.cover ? 'cover' : 'engage';
         } else {
           ai.cover = null;
-          const pt = POINTS.find((p) => p.id === ai.objective);
-          ai.state = pt && Math.hypot(pt.x - u.x, pt.z - u.z) < pt.r * 0.8 ? 'hold' : 'move';
+          const pt = objPoint(ai.objective);
+          ai.state = ai.objective === 'fortress' || (pt && Math.hypot(pt.x - u.x, pt.z - u.z) < pt.r * 0.8) ? 'hold' : 'move';
+        }
+        // Wall defenders keep their firing position even while shooting.
+        if (ai.objective === 'fortress' && ai.state !== 'retreat') {
+          ai.state = 'hold';
+          ai.cover = null;
         }
       }
     }
@@ -264,9 +325,14 @@ export class ArmyAI {
     else if (ai.state === 'retreat') goal = nextWaypoint('inf', u.team, u.x, u.z, 2);
     else if (ai.state === 'cover' && ai.cover) goal = ai.cover;
     else if (ai.state === 'hold' && !ai.holdSpot) {
-      const pt = POINTS.find((p) => p.id === ai.objective);
-      const a = rand(0, Math.PI * 2);
-      ai.holdSpot = { x: pt.x + Math.cos(a) * rand(5, pt.r * 0.7), z: pt.z + Math.sin(a) * rand(5, pt.r * 0.7) };
+      if (ai.objective === 'fortress' && FORT.spots.length) {
+        const sp = FORT.spots[Math.floor(Math.random() * FORT.spots.length)];
+        ai.holdSpot = { x: sp.x + rand(-2, 2), z: sp.z + rand(-1, 1) };
+      } else {
+        const pt = objPoint(ai.objective);
+        const a = rand(0, Math.PI * 2);
+        ai.holdSpot = { x: pt.x + Math.cos(a) * rand(5, pt.r * 0.7), z: pt.z + Math.sin(a) * rand(5, pt.r * 0.7) };
+      }
     }
     if (ai.state === 'hold') goal = ai.holdSpot;
     else ai.holdSpot = null;
@@ -316,7 +382,9 @@ export class ArmyAI {
       const d = Math.hypot(t.x - u.x, t.z - u.z);
       if (d <= w.range) {
         ai.cd = w.interval * rand(0.8, 1.4);
-        const ox = u.x, oy = u.pose.y + (u.ty ? 1.0 : 1.5), oz = u.z;
+        // Wall defenders stand on the firing step behind the parapet.
+        const step = ai.objective === 'fortress' && ai.holdSpot && Math.hypot(ai.holdSpot.x - u.x, ai.holdSpot.z - u.z) < 1.5 ? 1.4 : 0;
+        const ox = u.x, oy = u.pose.y + (u.ty ? 1.0 : 1.5) + step, oz = u.z;
         const ty = unitHeight(t) - 0.2;
         const pitch = ballisticPitch(d, ty - oy, w.speed);
         const yaw = Math.atan2(t.x - ox, t.z - oz);
@@ -337,8 +405,8 @@ export class ArmyAI {
   findCover(u, threat) {
     let best = null;
     let bestD = 22;
-    for (const p of COVER) {
-      if (this.match.propDead.has(p.id)) continue;
+    for (const p of propsNear(u.x, u.z, 22)) {
+      if (!p.cover || this.match.propDead.has(p.id)) continue;
       const d = Math.hypot(p.x - u.x, p.z - u.z);
       if (d > bestD) continue;
       // Spot on the far side of the cover from the threat.
@@ -362,14 +430,17 @@ export class ArmyAI {
     if (ai.think <= 0) {
       ai.think = rand(0.4, 0.6);
       ai.target = this.findTarget(t, 420, 'armor');
+      if (m.mode === 'fortress' && t.team === 'red' && (!ai.target || Math.hypot(ai.target.x - t.x, ai.target.z - t.z) > 160)) ai.target = this.structureTarget(t, 160) ?? ai.target;
       if (t.hp < t.spec.hp * 0.25) ai.state = 'retreat';
       else if (ai.state === 'retreat' && t.hp > t.spec.hp * 0.7) ai.state = 'move';
       if (ai.state !== 'retreat') {
         const objPt = m.points.find((p) => p.id === ai.objective);
         if (!objPt || (objPt.owner === t.team && Math.random() < 0.05)) ai.objective = chooseObjective(m, t);
-        const pt = POINTS.find((p) => p.id === ai.objective);
-        const inZone = Math.hypot(pt.x - t.x, pt.z - t.z) < pt.r * 0.7;
-        ai.state = ai.target && Math.hypot(ai.target.x - t.x, ai.target.z - t.z) < 260 ? 'engage' : inZone ? 'hold' : 'move';
+        const pt = objPoint(ai.objective);
+        const inZone = !!pt && Math.hypot(pt.x - t.x, pt.z - t.z) < pt.r * 0.7;
+        // Fortress attackers keep closing in; elsewhere tanks stop to fight at long range.
+        const engageAt = m.mode === 'fortress' && t.team === 'red' ? 110 : 260;
+        ai.state = ai.target && Math.hypot(ai.target.x - t.x, ai.target.z - t.z) < engageAt ? 'engage' : inZone ? 'hold' : 'move';
       }
       // Stuck detection: trying to move but not getting anywhere.
       const moved = Math.hypot(t.x - ai.lastPos[0], t.z - ai.lastPos[1]);
