@@ -26,6 +26,8 @@ export function decodeUnit(a) {
     player: a[10] > 0 && TYPE_IDS[a[2]] !== 'crew',
     crew: a[10] > 0 ? a[10] - 1 : null,
     y: (a[11] ?? 0) / 100,
+    gy: (a[12] ?? 0) / 100, // planes: where the side gun points
+    gx: (a[13] ?? 0) / 100,
   };
 }
 

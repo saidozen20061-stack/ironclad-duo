@@ -18,13 +18,13 @@ const HINTS = {
     'About to go down? X bails both of you out with parachutes.',
   ],
   planeGunner: [
-    'You are the REAR GUNNER. Mouse aims, left click fires. Call out enemies on your six!',
+    'You are the SIDE GUNNER on the door minigun. Mouse turns the gun anywhere except straight up, left click fires. Call out enemies on your six!',
     'On bombers, F switches to the bomb sight looking straight down: left click drops, and tell the pilot to steer.',
     'T switches thermal. Q pings a spot on the pilot\'s compass. X bails out.',
   ],
   planeSolo: [
     'SOLO PLANE: W throttle up, mouse aims the plane, it flies where you point. Pull up past take-off speed to lift off.',
-    'Left click guns, Space bombs, R rockets. Hold right click for the cockpit view. The rear gun fires by itself.',
+    'Left click guns, Space bombs, R rockets. Hold right click for the cockpit view. The side gun fires by itself.',
     'Land on your own runway and stop to repair, refuel and rearm. X bails out.',
   ],
   solo: [

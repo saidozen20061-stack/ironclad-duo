@@ -1,5 +1,5 @@
-import { Vector3 } from 'three';
-import { PLANES, FLIGHT, NPC_PLANES } from '../../../shared/planes.js';
+import { Vector3, Euler, Quaternion } from 'three';
+import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP } from '../../../shared/planes.js';
 import { TICK_RATE } from '../../../shared/constants.js';
 import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES } from '../../../shared/map.js';
 import { PROPS, propsNear, segmentHitsProp, FORT } from '../../../shared/props.js';
@@ -56,6 +56,8 @@ export class Plane {
     if (sp.engines === 2) this.mods.engine2 = 1;
     this.ctl = { th: 0, pitch: 0, roll: 0, yaw: 0, fire: false, bomb: false, rocket: false, aim: null };
     this.rear = { dir: null, fire: false };
+    this.gunYaw = -Math.PI / 2; // pointing out of the door
+    this.gunPitch = 0;
     this.stall = false;
     this.warnEdge = false;
     this.warnLow = false;
@@ -360,7 +362,7 @@ export class PlaneSystem {
       const off = s.size.width * 0.12 * side;
       const pos = new Vector3(p.x + c * off + f.x * 2, p.y + f.y * 2 - 0.2, p.z - sn * off + f.z * 2);
       const spread = g.spread * (p.ai ? Math.sqrt(m.skill.aim) * 0.6 : 1) * (1 + (1 - p.mods.guns) * 2);
-      m.fire(p, { kind: g.kind, damage: g.damage, speed: g.speed + p.v, splash: g.kind === 'ac' ? 1 : 0, splashDamage: g.kind === 'ac' ? g.damage * 0.3 : 0, spread, life: 2.2 }, pos, f.clone());
+      m.fire(p, { kind: g.kind, damage: g.damage, speed: g.speed + p.v, splash: g.kind === 'ac' ? 1 : 0, splashDamage: g.kind === 'ac' ? g.damage * 0.3 : 0, spread, life: 2.2, air: true }, pos, f.clone());
     }
     if (k.bomb) this.dropBomb(p);
     if (k.rocket && p.rocketCd <= 0 && p.rockets > 0 && !p.grounded) {
@@ -386,44 +388,49 @@ export class PlaneSystem {
     this.m.fire(p, { kind: 'bomb', damage: b.damage, speed: Math.max(15, p.v), splash: b.splash, splashDamage: b.splashDamage, spread: b.spread * (p.ai ? this.m.skill.aim * 0.5 : 1), life: 14 }, pos, f);
   }
 
-  // The rear gun: the gunner's aim, or automatic at nearby enemy planes (solo, NPC, empty seat).
+  // The side gun: the gunner's aim, or automatic at nearby enemy planes (solo, NPC, empty seat).
+  // It turns freely on its mount and fires everywhere except up past its stop.
   rearGun(p) {
     const s = p.spec, m = this.m;
-    if (!s.rear || p.rearCd > 0 || p.rearAmmo <= 0 || p.mods.crew <= 0) return;
+    if (!s.rear) return;
     const crew = m.crewOf(p);
-    let dir = null;
+    const manned = crew && crew.seats.gunner;
+    let dir = p.rear.dir;
+    let fire = manned && p.rear.fire;
     let spread = s.rear.spread;
-    if (crew && crew.seats.gunner) {
-      if (!p.rear.fire || !p.rear.dir) return;
-      dir = p.rear.dir.clone();
-    } else {
-      // Low accuracy, short bursts.
-      if (Math.random() > 0.35) return;
+    if (!manned) {
       let best = null, bd = 260;
       for (const o of this.planes) {
         if (o.dead || o.team === p.team) continue;
         const d = Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z);
         if (d < bd) {
-          const b = fwd(p.h, p.gp, _f);
-          const dot = (o.x - p.x) * b.x + (o.y - p.y) * b.y + (o.z - p.z) * b.z;
-          if (dot < d * 0.2) {
-            bd = d;
-            best = o;
-          }
+          bd = d;
+          best = o;
         }
       }
-      if (!best) return;
-      dir = new Vector3(best.x - p.x, best.y - p.y, best.z - p.z).normalize();
-      spread = s.rear.spread * 3.5;
+      dir = best ? new Vector3(best.x - p.x, best.y - p.y, best.z - p.z).normalize() : null;
+      // Low accuracy, short bursts.
+      fire = !!best && Math.random() < 0.35;
+      spread *= 3.5;
     }
-    // Only the rear arc: it can't shoot through its own plane.
-    const f = fwd(p.h, p.gp, _f);
-    if (dir.dot(f) > 0.25) return;
+    // Where the gun points in the plane's own frame, for everyone to see on the model.
+    _e.set(-p.gp, p.h, p.ty, 'YXZ');
+    if (dir) {
+      _q.setFromEuler(_e).invert();
+      _l.copy(dir).applyQuaternion(_q);
+      p.gunYaw = Math.atan2(_l.x, _l.z);
+      p.gunPitch = Math.asin(clamp(_l.y));
+    }
+    if (!fire || !dir || p.rearCd > 0 || p.rearAmmo <= 0 || p.mods.crew <= 0 || p.grounded) return;
+    if (_l.y > SIDE_GUN_MAX_UP) return;
     p.rearCd = s.rear.interval;
     p.rearAmmo--;
     p.coaxBelt = p.rearAmmo;
-    const pos = new Vector3(p.x - f.x * s.size.length * 0.24, p.y + 0.9, p.z - f.z * s.size.length * 0.24);
-    m.fire(p, { kind: 'mg', damage: s.rear.damage, speed: s.rear.speed, splash: 0, splashDamage: 0, spread, life: 2.2 }, pos.addScaledVector(dir, 2), dir);
+    const pos = new Vector3(...s.door).applyEuler(_e);
+    pos.x += p.x;
+    pos.y += p.y;
+    pos.z += p.z;
+    m.fire(p, { kind: 'mg', damage: s.rear.damage, speed: s.rear.speed, splash: 0, splashDamage: 0, spread, life: 2.2, air: true }, pos.addScaledVector(dir, 1.2), dir.clone());
   }
 
   // "Enemy on our six!": a warning when a hostile plane sits behind us.
@@ -676,6 +683,7 @@ export class PlaneSystem {
       if (e.dead || e.team === p.team) continue;
       const d = Math.hypot(e.x - p.x, e.z - p.z);
       if (d > 950) continue;
+      if (!m.army.inView(p, e, d, 1.75)) continue; // a pilot sees a lot, but not behind the tail
       let score = d;
       if (e.kind === 'plane') {
         if (e.grounded) score += 900;
@@ -695,3 +703,6 @@ export class PlaneSystem {
 }
 
 const _f = new Vector3();
+const _l = new Vector3();
+const _e = new Euler();
+const _q = new Quaternion();

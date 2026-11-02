@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { PLANES, FLIGHT, PLANE_KMH } from '../../../shared/planes.js';
+import { PLANES, FLIGHT } from '../../../shared/planes.js';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
 import { settings } from '../settings.js';
 import { GunnerView } from './gunner.js';
-import { planeEye, rearGunPos } from '../models/planes.js';
+import { planeEye, sideGunPos } from '../models/planes.js';
 
-// The three ways to sit in a plane: pilot (cockpit), rear gunner (turret + bomb sight) and
+// The three ways to sit in a plane: pilot (cockpit), side gunner (door minigun + bomb sight) and
 // solo (chase camera with mouse aim, right click for the cockpit). They reuse the gunner's
 // pointer lock, minimap, ping, banners and thermal; only the HUD and camera are their own.
 
@@ -132,7 +132,7 @@ function drawInstruments(cp, self, me, spec, pingBearing) {
   const W = 720, H = 240;
   ctx.fillStyle = '#20221c';
   ctx.fillRect(0, 0, W, H);
-  drawGauge(ctx, 92, 120, 84, 'SPEED', Math.abs(self.v ?? me.v) / (spec.maxSpeed * 1.4), `${Math.round(Math.abs(me.v) * PLANE_KMH)}`);
+  drawGauge(ctx, 92, 120, 84, 'SPEED', Math.abs(self.v ?? me.v) / (spec.maxSpeed * 1.4), `${Math.round(Math.abs(me.v) * 3.6)}`);
   drawGauge(ctx, 268, 120, 84, 'ALT', (pl.y ?? 0) / FLIGHT.maxAlt, `${Math.round(pl.y ?? 0)}`);
   // Artificial horizon.
   ctx.save();
@@ -282,12 +282,12 @@ class PlaneBase extends GunnerView {
     const $ = this.$;
     $('.g-lock').style.display = this.aiming() || this.paused ? 'none' : '';
     $('.g-thermal').classList.toggle('on', this.thermalActive());
-    $('.p-speed').textContent = Math.round(Math.abs(me.v) * PLANE_KMH);
+    $('.p-speed').textContent = Math.round(Math.abs(me.v) * 3.6);
     $('.p-alt').textContent = Math.round((pl.y ?? 0) - Math.max(groundAt(self.x, self.z), WATER_LEVEL));
     $('.p-th').style.width = `${(pl.th ?? 0) * 100}%`;
     $('.p-fuel').style.width = `${(pl.fuel ?? 0) * 100}%`;
     const s = this.plane;
-    $('.p-arms').innerHTML = `<span>GUN <b>${pl.ammo ?? 0}</b></span>${s.bombs ? `<span>BOMB <b>${pl.bombs ?? 0}</b></span>` : ''}${s.rockets ? `<span>RKT <b>${pl.rockets ?? 0}</b></span>` : ''}${s.rear ? `<span>REAR <b>${pl.rear ?? 0}</b></span>` : ''}`;
+    $('.p-arms').innerHTML = `<span>GUN <b>${pl.ammo ?? 0}</b></span>${s.bombs ? `<span>BOMB <b>${pl.bombs ?? 0}</b></span>` : ''}${s.rockets ? `<span>RKT <b>${pl.rockets ?? 0}</b></span>` : ''}${s.rear ? `<span>MINIGUN <b>${pl.rear ?? 0}</b></span>` : ''}`;
     const modKey = JSON.stringify(me.mods);
     if (modKey !== this.lastMods) {
       this.lastMods = modKey;
@@ -458,36 +458,47 @@ function fwdOf(u, out = new THREE.Vector3()) {
   return out.set(Math.sin(u.h) * Math.cos(u.gp), Math.sin(u.gp), Math.cos(u.h) * Math.cos(u.gp));
 }
 
-// ---------- Rear gunner ----------
+// ---------- Side gunner ----------
+// Sits at the door with a minigun. Like a tank gunner, the aim stays on target while the
+// plane manoeuvres; the gun turns anywhere on its mount except up past its stop.
+const SIDE_MAX_PITCH = 0.6;
+const SIDE_MIN_PITCH = -1.4;
+
 export class PlaneGunnerView extends PlaneBase {
   constructor(opts) {
     super(opts);
     this.el.classList.add('rearg');
     this.bombSight = false;
-    this.look = { yaw: 0, pitch: 0.1 };
     this.drift = 0;
+    this.spin = 0;
     this.lastSend = { key: '', at: 0 };
-    this.$('.p-hint').textContent = `Mouse aims · LMB fires${this.plane.bombs ? ' · F bomb sight (LMB drops)' : ''} · T thermal · Q ping · X bail out`;
+    this.$('.p-hint').textContent = `Mouse turns the gun · LMB fires${this.plane.bombs ? ' · F bomb sight (LMB drops)' : ''} · T thermal · Q ping · X bail out`;
     this.bindFlight();
-    // Twin gun on its mount, drawn with the world.
+    // The minigun, drawn over the world so it never clips into the plane.
     this.gunScene = new THREE.Scene();
-    this.gunScene.add(new THREE.HemisphereLight(0xdfe4e8, 0x4a4030, 1.3));
+    this.gunScene.add(new THREE.HemisphereLight(0xdfe4e8, 0x4a4030, 1.5));
     this.gunCam = new THREE.PerspectiveCamera(60, 1, 0.02, 10);
     const dark = new THREE.MeshStandardMaterial({ color: 0x5c5e54, flatShading: true, roughness: 0.6, metalness: 0.2 });
     const mount = new THREE.Group();
-    for (const s of [-1, 1]) {
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.95, 6).rotateX(Math.PI / 2), dark);
-      b.position.set(s * 0.07, 0, -0.75);
-      mount.add(b);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.42), dark);
-      body.position.set(s * 0.07, 0, -0.2);
-      mount.add(body);
+    this.barrels = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.7, 5).rotateX(Math.PI / 2), dark);
+      b.position.set(Math.cos(a) * 0.028, Math.sin(a) * 0.028, -0.35);
+      this.barrels.add(b);
     }
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.05), dark);
-    grip.position.set(0, -0.08, 0.04);
-    mount.add(grip);
-    mount.position.set(0, -0.26, -0.15);
-    mount.scale.setScalar(0.8);
+    this.barrels.position.z = -0.32;
+    mount.add(this.barrels);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.34), dark);
+    body.position.z = -0.16;
+    mount.add(body);
+    for (const s of [-1, 1]) {
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.03), dark);
+      grip.position.set(s * 0.09, -0.02, 0.02);
+      mount.add(grip);
+    }
+    mount.position.set(0, -0.24, -0.34);
+    mount.scale.setScalar(0.75);
     this.mount = mount;
     this.gunScene.add(mount);
   }
@@ -497,11 +508,10 @@ export class PlaneGunnerView extends PlaneBase {
   }
 
   onLook(dx, dy) {
-    const k = (0.0022 * settings.sensitivity) / (this.bombSight ? 3 : 1);
     if (this.bombSight) return;
-    // Look around the rear hemisphere of the plane.
-    this.look.yaw = Math.max(-2.1, Math.min(2.1, this.look.yaw - dx * k));
-    this.look.pitch = Math.max(-0.75, Math.min(1.2, this.look.pitch - dy * k));
+    const k = 0.0022 * settings.sensitivity;
+    this.aim.yaw = wrapAngle(this.aim.yaw - dx * k);
+    this.aim.pitch = Math.max(SIDE_MIN_PITCH, Math.min(SIDE_MAX_PITCH, this.aim.pitch - dy * k));
   }
 
   update(dt, states, me) {
@@ -511,6 +521,11 @@ export class PlaneGunnerView extends PlaneBase {
     this.thermalKey();
     const self = states.get(me.id);
     if (!self) return;
+    if (!this.aim.initialised) {
+      this.aim.yaw = self.h - Math.PI / 2; // starts looking out of the door
+      this.aim.pitch = -0.1;
+      this.aim.initialised = true;
+    }
     const k = this.keys;
     if (!this.paused) {
       if (k.took('KeyQ')) this.onPing?.();
@@ -518,35 +533,30 @@ export class PlaneGunnerView extends PlaneBase {
       if (this.plane.bombs && k.took('KeyF')) this.bombSight = !this.bombSight;
     }
     const cam = this.camera;
-    const [rx, ry, rz] = rearGunPos(this.tank);
-    planeQuaternion(self, _q);
+    const [dx, dy, dz] = sideGunPos(this.tank);
     this.$('.p-bombsight').classList.toggle('on', this.bombSight);
     this.$('.p-pipper').style.display = this.bombSight ? 'none' : '';
+    const own = this.units.get(me.id);
+    if (own?.handles.rear) own.handles.rear.visible = this.bombSight;
+    this.showOwn(true);
     if (this.bombSight) {
       // Straight down through the floor, zoomed.
       this.planePoint(self, 0, -1.2, 0.5, cam.position);
-      _e.set(-Math.PI / 2, self.h + Math.PI, 0);
-      cam.quaternion.setFromEuler(_e);
+      cam.quaternion.setFromEuler(_e.set(-Math.PI / 2, self.h + Math.PI, 0));
       cam.fov += (22 - cam.fov) * Math.min(1, dt * 8);
-      // Which way should the pilot steer: wind and turn shift the fall line.
+      // Which way should the pilot steer: a bank shifts the fall line.
       this.drift += (self.ty - this.drift) * Math.min(1, dt * 2);
-      const steer = Math.abs(this.drift) < 0.05 ? 'STEADY' : this.drift > 0 ? 'STEER LEFT ◂' : '▸ STEER RIGHT';
-      this.$('.p-drift').textContent = steer;
-      this.showOwn(true);
+      this.$('.p-drift').textContent = Math.abs(this.drift) < 0.05 ? 'STEADY' : this.drift > 0 ? 'STEER LEFT ◂' : '▸ STEER RIGHT';
     } else {
-      this.planePoint(self, rx, ry + 0.75, rz + 0.1, cam.position);
+      // At the door, just over and outboard of the gun, looking along the aim.
+      this.planePoint(self, dx - 0.2, dy + 0.42, dz - 0.1, cam.position);
+      cam.quaternion.setFromEuler(_e.set(this.aim.pitch, this.aim.yaw + Math.PI, 0));
       cam.fov += (66 - cam.fov) * Math.min(1, dt * 8);
-      // Rear gunner faces backwards: look yaw is measured from the tail.
-      cam.quaternion.copy(_q);
-      cam.rotateY(this.look.yaw);
-      cam.rotateX(this.look.pitch);
-      this.showOwn(true);
     }
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     this.world.update(cam.position, cam);
 
-    // Gun direction: where the view points (camera looks along its -Z).
     const dir = cam.getWorldDirection(_v).clone();
     this.range = this.raycast(cam.position, dir, states, me.id);
     if (!this.paused) {
@@ -559,7 +569,9 @@ export class PlaneGunnerView extends PlaneBase {
         this.lastSend = { key, at: now };
       }
     }
-    this.aim.yaw = Math.atan2(dir.x, dir.z);
+    // Barrels spin up while the trigger is held.
+    this.spin += ((this.mouseBtn.left && !this.bombSight ? 38 : 0) - this.spin) * Math.min(1, dt * 5);
+    this.barrels.rotation.z += this.spin * dt;
     this.cockpitOn = false;
     this.mount.visible = !this.bombSight;
     this.$('.p-pipper').style.left = '50%';

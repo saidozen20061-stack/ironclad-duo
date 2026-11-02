@@ -28,7 +28,7 @@ function buildTankCards() {
   root.innerHTML = '';
   for (const id of [...TANK_IDS, ...COOP_PLANE_IDS]) {
     const t = TANKS[id] ?? PLANES[id];
-    if (id === COOP_PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', '<h3 class="pick-head">Planes <small>pilot + rear gunner · one per side</small></h3>');
+    if (id === COOP_PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', '<h3 class="pick-head">Planes <small>pilot + side gunner · one per side</small></h3>');
     const btn = document.createElement('button');
     btn.className = 'tank-card';
     btn.dataset.tank = id;

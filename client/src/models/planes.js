@@ -100,7 +100,7 @@ const SHAPES = {
     },
     tail: { z: -4.9, span: 2.5, chord: 1.1, y: 0.45 }, fin: { z: -4.4, h: 1.7, chord: 1.2, y: 0.5 },
     canopy: [1.1, 2.6, 0.62, 0.72], prop: { z: 5.75, r: 1.65, blades: 3 }, nose: [[5.65, 3.6]], noseColor: 0xd9b72e,
-    rearPos: [0, 1.15, -0.9], gear: 'spats', cockpitY: 0.95,
+    gear: 'spats', cockpitY: 0.95,
   },
   sturmovik: {
     mark: [4, -0.07],
@@ -112,7 +112,7 @@ const SHAPES = {
     },
     tail: { z: -4.8, span: 2.5, chord: 1.2, y: 0.4 }, fin: { z: -4.3, h: 1.6, chord: 1.3, y: 0.45 },
     canopy: [0.6, 2.5, 0.65, 0.78], prop: { z: 5.5, r: 1.7, blades: 3 }, nose: [], noseColor: null,
-    rearPos: [0, 1.15, -1.0], gear: 'pods', cockpitY: 1.0,
+    gear: 'pods', cockpitY: 1.0,
   },
   dauntless: {
     mark: [4, -0.17],
@@ -122,7 +122,7 @@ const SHAPES = {
     },
     tail: { z: -4.2, span: 2.3, chord: 1.1, y: 0.4 }, fin: { z: -3.7, h: 1.8, chord: 1.4, y: 0.4 },
     canopy: [0.3, 3.2, 0.6, 0.78], prop: { z: 4.85, r: 1.6, blades: 3 }, nose: [], noseColor: null,
-    rearPos: [0, 1.2, -1.45], gear: 'mains', cockpitY: 1.0,
+    gear: 'mains', cockpitY: 1.0,
   },
   heavyfighter: {
     mark: [5, 0.03],
@@ -132,7 +132,7 @@ const SHAPES = {
     },
     tail: { z: -5.4, span: 3, chord: 1.1, y: 0.35 }, twinFin: { z: -5.5, x: 2.6, h: 1.6, chord: 1.1, y: 0.35 },
     canopy: [0.6, 4.2, 0.55, 0.8], twin: { x: 2.7, z: 3.1, tail: -1, r: 0.62, y: -0.1, propR: 1.5, color: 0x8e918a }, nose: [], noseColor: null,
-    rearPos: [0, 1.15, -1.5], gear: 'twin', cockpitY: 1.0, guns: [[0.15, 0.4, 5.6], [-0.15, 0.4, 5.6]],
+    gear: 'twin', cockpitY: 1.0, guns: [[0.15, 0.4, 5.6], [-0.15, 0.4, 5.6]],
   },
   mosquito: {
     mark: [5, 0.1],
@@ -142,7 +142,7 @@ const SHAPES = {
     },
     tail: { z: -5.3, span: 3, chord: 1.2, y: 0.3 }, fin: { z: -4.8, h: 2.3, chord: 1.8, y: 0.35 },
     canopy: [2.2, 2, 0.6, 0.72], twin: { x: 2.55, z: 3.0, tail: -1.4, r: 0.6, y: -0.15, propR: 1.55, color: null }, nose: [], noseColor: null,
-    roundels: true, rearPos: null, gear: 'twin', cockpitY: 0.95,
+    roundels: true, gear: 'twin', cockpitY: 0.95,
   },
   mitchell: {
     mark: [6.5, 0.33],
@@ -154,7 +154,7 @@ const SHAPES = {
     },
     tail: { z: -7, span: 3.6, chord: 1.3, y: 0.55 }, twinFin: { z: -7.1, x: 3.4, h: 1.9, chord: 1.2, y: 0.55 },
     canopy: [3.7, 2.2, 0.75, 1.05], twin: { x: 3.4, z: 3.0, tail: -1.3, r: 0.8, y: 0.25, propR: 1.9, color: null }, nose: [], noseColor: null, belly: 0x8d8f8a,
-    rearPos: [0, 1.5, -1.2], gear: 'twin', cockpitY: 1.2, guns: [[0, -0.1, 8.3]],
+    gear: 'twin', cockpitY: 1.2, guns: [[0, -0.1, 8.3]],
   },
   mustang: {
     mark: [3.5, -0.13],
@@ -314,12 +314,21 @@ export function buildPlane(type, team = 'blue', paint = type) {
 
   // Rear gun on its pivot.
   let rear = null;
-  if (sh.rearPos) {
+  if (spec.rear) {
+    const [dx, dy, dz] = spec.door;
     rear = new THREE.Group();
-    rear.position.set(...sh.rearPos);
-    const gun = new THREE.Mesh(merged([cyl(0.04, 0.04, 1.4, 6, 0.08, 0, -0.7), cyl(0.04, 0.04, 1.4, 6, -0.08, 0, -0.7), box(0.3, 0.2, 0.4, 0, 0, 0.05)]), DARK());
-    rear.add(gun);
+    rear.position.set(dx, dy, dz);
+    rear.rotation.order = 'YXZ';
+    rear.rotation.y = -Math.PI / 2;
+    const barrels = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      barrels.push(cyl(0.022, 0.022, 1.15, 5, Math.cos(a) * 0.055, Math.sin(a) * 0.055, 0.75));
+    }
+    rear.add(new THREE.Mesh(merged([...barrels, box(0.16, 0.18, 0.42, 0, 0, 0.02), box(0.06, 0.2, 0.06, 0, -0.16, 0)]), DARK()));
     group.add(rear);
+    // The arm that holds the gun out of the door.
+    group.add(new THREE.Mesh(merged([box(Math.abs(dx), 0.07, 0.09, dx / 2, dy - 0.26, dz), box(0.07, 0.3, 0.07, dx, dy - 0.14, dz)]), METAL()));
   }
 
   // Team marks: the two sides have to be told apart at a glance.
@@ -359,4 +368,4 @@ function finGeoUp(f, x = 0) {
 
 // Forward fuselage heights for the views (where the eye sits).
 export const planeEye = (type) => SHAPES[type].cockpitY;
-export const rearGunPos = (type) => SHAPES[type].rearPos ?? [0, 1, -1.5];
+export const sideGunPos = (type) => PLANES[type].door ?? [-0.8, 0.45, -1.6];

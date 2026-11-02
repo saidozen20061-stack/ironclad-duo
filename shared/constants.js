@@ -39,11 +39,12 @@ export const WAR = {
 // the first shot; turret: traverse speed; lead: how much of a moving target's travel they
 // aim ahead for; damage: on everything they fire; rocket: extra spread on AT rockets;
 // sight: range beyond which targets start slipping out of view (fog, dust); lose: chance per
-// look of losing a target in smoke or behind cover.
+// look of losing a target in smoke or behind cover; behind: chance per look of noticing
+// something outside the field of view.
 export const DIFFICULTY = {
-  easy: { name: 'Easy', aim: 6, react: [1.5, 2.5], turret: 0.55, lead: 0.1, damage: 0.55, rocket: 4, sight: 200, lose: 0.5 },
-  normal: { name: 'Normal', aim: 3, react: [0.8, 1.4], turret: 0.75, lead: 0.5, damage: 0.8, rocket: 2.2, sight: 280, lose: 0.3 },
-  hard: { name: 'Hard', aim: 2.2, react: [0.35, 0.75], turret: 0.95, lead: 0.85, damage: 1, rocket: 1.3, sight: 360, lose: 0.15 },
+  easy: { name: 'Easy', aim: 6, react: [1.5, 2.5], turret: 0.55, lead: 0.1, damage: 0.55, rocket: 4, sight: 200, lose: 0.5, behind: 0.008 },
+  normal: { name: 'Normal', aim: 3, react: [0.8, 1.4], turret: 0.75, lead: 0.5, damage: 0.8, rocket: 2.2, sight: 280, lose: 0.3, behind: 0.015 },
+  hard: { name: 'Hard', aim: 2.2, react: [0.35, 0.75], turret: 0.95, lead: 0.85, damage: 1, rocket: 1.3, sight: 360, lose: 0.15, behind: 0.03 },
 };
 
 export const TICK_RATE = 20; // server simulation ticks per second

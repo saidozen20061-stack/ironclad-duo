@@ -11,7 +11,7 @@ const TRACER = {
   ap: { color: 0xfff0c0, len: 7, width: 0.18 },
   he: { color: 0xffa040, len: 6, width: 0.2 },
   heavy: { color: 0xffd080, len: 9, width: 0.3 },
-  mg: { color: 0xff7040, len: 3, width: 0.06 },
+  mg: { color: 0xffa050, len: 3, width: 0.09 },
   rifle: { color: 0xffe070, len: 2.2, width: 0.04 },
   rocket: { color: 0xffc060, len: 1.4, width: 0.22 },
   grenade: { color: 0x2f3a26, len: 0.14, width: 0.1 },
@@ -25,6 +25,8 @@ const HEAT_SMOKE = { heat: 0.3, alpha: 0.18 };
 const HEAT_DUST = { heat: 0.2, alpha: 0.1 };
 const HEAT_WATER = { heat: 0.08, alpha: 0.2 };
 const HEAT_DIRT = { heat: 0.3 };
+
+const AIR_TRACER = { len: 5, width: 0.16 };
 
 const IMPACT_SIZE = { bomb: 7, ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
@@ -40,6 +42,8 @@ export class FX {
       this.tracerMats[k] = new THREE.MeshBasicMaterial({ color: v.color });
     }
     this.batches = new Map();
+    // Plane guns: bright enough to read through the haze, like tracers do at dusk.
+    this.airTracerMat = new THREE.MeshBasicMaterial({ color: 0xffd070, fog: false, toneMapped: false });
     this.puffGeo = new THREE.IcosahedronGeometry(1, 0);
     this.chunkGeo = new THREE.TetrahedronGeometry(0.4, 0);
     this.mats = {
@@ -57,12 +61,12 @@ export class FX {
   }
 
   spawnProjectile(ev) {
-    const style = TRACER[ev.kind] ?? TRACER.ap;
-    const mesh = new THREE.Mesh(this.tracerGeo, this.tracerMats[ev.kind] ?? this.tracerMats.ap);
+    const style = ev.air ? AIR_TRACER : TRACER[ev.kind] ?? TRACER.ap;
+    const mesh = new THREE.Mesh(this.tracerGeo, ev.air ? this.airTracerMat : this.tracerMats[ev.kind] ?? this.tracerMats.ap);
     markHeat(mesh, ev.kind === 'bomb' ? HEAT_DIRT : HEAT_TRACER);
     mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
-    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : 4 });
+    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air ? 2.2 : 4, style, streak: ev.kind === 'mg' || ev.kind === 'ac' });
   }
 
   removeProjectile(id) {
@@ -214,8 +218,14 @@ export class FX {
     this.particles.push({ b: this.batch(geo, mat), x: pos.x, y: pos.y, z: pos.z, rx: Math.random() * 3, ry: Math.random() * 3, vel, size, grow, life, t: 0, gravity, fade, drag, spin, ground });
   }
 
-  update(dt) {
+  update(dt, cam) {
     for (const [id, p] of this.projectiles) {
+      // Fast bullets are drawn as a streak of what they cover in a frame, and don't get
+      // thinner than a line with distance, so a burst always reads as a stream of tracers.
+      if (p.streak && cam) {
+        const w = p.style.width * Math.max(1, Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) / 40);
+        p.mesh.scale.set(w, w, Math.max(p.style.len, Math.hypot(p.vx, p.vy, p.vz) * dt * 1.2));
+      }
       if (p.kind === 'rocket') {
         // Smoke trail
         p.trail = (p.trail ?? 0) - dt;

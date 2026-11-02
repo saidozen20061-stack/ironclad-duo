@@ -388,7 +388,7 @@ export class MatchClient {
       case 'mod':
       case 'fixed': {
         if (ev.u !== myId || this.view.isFoot) break;
-        const name = { tracks: 'TRACKS', engine: 'ENGINE', turret: 'TURRET RING', gun: 'GUN', radar: 'RADAR', fire: 'ENGINE', engine2: 'ENGINE 2', wingL: 'LEFT WING', wingR: 'RIGHT WING', tail: 'TAIL', fuel: 'FUEL TANK', gear: 'LANDING GEAR', guns: 'GUNS', crew: 'REAR GUNNER' }[ev.m] ?? ev.m;
+        const name = { tracks: 'TRACKS', engine: 'ENGINE', turret: 'TURRET RING', gun: 'GUN', radar: 'RADAR', fire: 'ENGINE', engine2: 'ENGINE 2', wingL: 'LEFT WING', wingR: 'RIGHT WING', tail: 'TAIL', fuel: 'FUEL TANK', gear: 'LANDING GEAR', guns: 'GUNS', crew: 'SIDE GUNNER' }[ev.m] ?? ev.m;
         const text = ev.k === 'fixed' ? `${name} REPAIRED` : ev.m === 'fire' ? 'ENGINE FIRE!' : `${name} ${ev.state === 'destroyed' ? 'DESTROYED' : 'DAMAGED'}`;
         if (gunner) this.view.showBanner(text);
         else {
@@ -618,7 +618,7 @@ export class MatchClient {
       this.world.seeFar = this.units.thermal ? 2 : 1;
       this.units.update(states, dt);
     }
-    this.fx?.update(dt);
+    this.fx?.update(dt, isWorldView(this.view) ? this.view.camera.position : null);
     const board = this.keys.has('Tab') && !this.paused;
     if (board !== this.boardEl.classList.contains('show')) {
       this.boardEl.classList.toggle('show', board);

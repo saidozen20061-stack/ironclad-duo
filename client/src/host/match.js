@@ -697,7 +697,7 @@ export class Match {
       life: p.life ?? (p.kind === 'rocket' ? 2 : 4),
     };
     this.projectiles.push(proj);
-    this.events.push({ k: 'f', id: proj.id, o: t.id, kind: p.kind, x: r2(pos.x), y: r2(pos.y), z: r2(pos.z), vx: r2(proj.vx), vy: r2(proj.vy), vz: r2(proj.vz) });
+    this.events.push({ k: 'f', id: proj.id, o: t.id, kind: p.kind, x: r2(pos.x), y: r2(pos.y), z: r2(pos.z), vx: r2(proj.vx), vy: r2(proj.vy), vz: r2(proj.vz), ...(p.air ? { air: 1 } : {}) });
   }
 
   updateProjectiles() {
@@ -902,6 +902,11 @@ export class Match {
 
   damage(u, amount, p) {
     if (u.dead || amount <= 0 || this.over) return;
+    // Getting shot tells an NPC where you are for a few seconds, even from behind.
+    if (u.ai && p.owner > 0) {
+      u.ai.alertBy = p.owner;
+      u.ai.alertUntil = this.time + 6;
+    }
     // Infantry dug in behind cover shrug off half of direct fire.
     if (u.kind === 'inf' && u.ai?.inCover && Math.random() < 0.5) return;
     u.hp -= amount;
@@ -1052,7 +1057,7 @@ export class Match {
     const u = this.units.map((u) => {
       const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], Math.round(u.x * 10), Math.round(u.z * 10), Math.round(u.h * 1000), Math.round(u.ty * 1000), Math.round(u.gp * 1000), Math.round((u.hp / u.spec.hp) * 100), u.dead ? 1 : 0, u.crewId != null ? u.crewId + 1 : 0];
       if (u.crew) a.push(Math.round(u.jy * 100));
-      else if (u.kind === 'plane') a.push(Math.round(u.y * 100));
+      else if (u.kind === 'plane') a.push(Math.round(u.y * 100), Math.round(u.gunYaw * 100), Math.round(u.gunPitch * 100));
       return a;
     });
     const crews = {};

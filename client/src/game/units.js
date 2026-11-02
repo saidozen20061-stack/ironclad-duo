@@ -252,6 +252,7 @@ export class UnitsView {
     g.position.set(u.x, u.y, u.z);
     g.rotation.order = 'YXZ';
     g.rotation.set(-u.gp, u.h, u.ty);
+    if (m.handles.rear) m.handles.rear.rotation.set(-u.gx, u.gy, 0);
     const spin = u.dead ? 0 : 45;
     for (const p of m.handles.props) {
       p.rotation.z += spin * dt * (p.userData.dir ?? 1);

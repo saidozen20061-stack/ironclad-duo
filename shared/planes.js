@@ -3,7 +3,8 @@
 // (hp, size, armor, weapon.label), so a plane can stand in for a tank in shared code.
 
 const gun = (label, damage, interval, spread, kind = 'mg', speed = 620, ammo = 600) => ({ label, damage, interval, spread, kind, speed, ammo });
-const REAR = { damage: 9, interval: 0.11, spread: 0.018, speed: 600, ammo: 500 };
+// The side gunner's door-mounted minigun on every two-seater.
+const REAR = { damage: 8, interval: 0.05, spread: 0.014, speed: 420, ammo: 1500 };
 
 export const PLANES = {
   stuka: {
@@ -47,7 +48,7 @@ export const PLANES = {
     blurb: 'The fastest two-seater. Plywood armor: it survives by not getting hit.',
     hp: 500, maxSpeed: 92, minSpeed: 30, accel: 26, roll: 1.4, pitch: 0.72, yaw: 0.32, drag: 0.8,
     armor: { front: 1, side: 1.15, rear: 1.2 }, size: { length: 12.4, width: 16.5, height: 4.6 }, gearH: 2.3,
-    guns: gun('4× 20mm Cannon', 24, 0.09, 0.016, 'ac', 680, 450), rear: null,
+    guns: gun('4× 20mm Cannon', 24, 0.09, 0.016, 'ac', 680, 450), rear: REAR,
     bombs: { count: 4, damage: 260, splash: 11, splashDamage: 210, spread: 0.009 }, engineSound: 'inline',
     stats: { speed: 5, armor: 1, firepower: 4, agility: 3 },
   },
@@ -56,7 +57,7 @@ export const PLANES = {
     blurb: 'Biggest bomb load and guns all over. Slow, and a very large target.',
     hp: 1050, maxSpeed: 66, minSpeed: 28, accel: 16, roll: 0.75, pitch: 0.45, yaw: 0.24, drag: 0.8,
     armor: { front: 0.8, side: 0.9, rear: 0.95 }, size: { length: 16.1, width: 20.6, height: 4.8 }, gearH: 2.6,
-    guns: gun('4× .50 cal MG', 15, 0.09, 0.022), rear: { ...REAR, interval: 0.08, ammo: 800 },
+    guns: gun('4× .50 cal MG', 15, 0.09, 0.022), rear: REAR,
     bombs: { count: 8, damage: 300, splash: 12, splashDamage: 240, spread: 0.012 }, twinTail: true, engineSound: 'radial',
     stats: { speed: 2, armor: 4, firepower: 5, agility: 1 },
   },
@@ -85,14 +86,20 @@ export const PLANES = {
     stats: { speed: 5, armor: 2, firepower: 4, agility: 4 },
   },
 };
+// Where the side gun is mounted: right side of the fuselage, behind the wing (x, y, z).
+const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2] };
+// Highest the side gun can point above the plane's own wings: it fires everywhere but up.
+export const SIDE_GUN_MAX_UP = 0.64; // sine of the angle
+
 // Planes fly at about half their listed speed, so tanks and flak get a real chance at them.
-// The cockpit still shows believable numbers.
 const SPEED_SCALE = 0.55;
-export const PLANE_KMH = (3.6 * 1.7) / SPEED_SCALE;
 for (const p of Object.values(PLANES)) {
   p.maxSpeed *= SPEED_SCALE;
   p.minSpeed *= SPEED_SCALE;
   p.accel *= SPEED_SCALE * 1.1;
+  p.door = DOORS[p.id] ?? null;
+  // Slower bullets, so a burst reads as a visible stream of tracers.
+  p.guns = { ...p.guns, speed: 420 };
   p.weapon = { label: p.guns.label }; // what the HUD and shared code read
   p.bombs ??= null;
   p.rockets ??= null;
