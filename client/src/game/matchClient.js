@@ -139,11 +139,13 @@ export class MatchClient {
         <button data-pick="tank"><b>1</b>RESPAWN WITH ${planeSpec ? 'PLANE' : 'TANK'}<small>New ${planeSpec ? 'plane at the airfield' : 'tank at base'} after 15 s</small></button>
         <button data-pick="foot"><b>2</b>GO ON FOOT<small>Bail out next to the wreck and keep fighting</small></button>
       </div>
+      <button class="bail-skip" data-skip="1"><b>3</b>SKIP TIMER</button>
       <div class="bail-timer"><i></i></div>
       <div class="bail-picks"></div>`;
     this.choiceEl.addEventListener('click', (e) => {
       // Mouse only: a click made by the keyboard (Space on a focused button) has no detail.
       if (e.detail === 0) return;
+      if (e.target.closest('button[data-skip]')) return this.skipChoice();
       const b = e.target.closest('button[data-pick]');
       if (b) net.send({ t: 'bail', pick: b.dataset.pick });
     });
@@ -304,9 +306,16 @@ export class MatchClient {
     if (this.paused) this.view.setPaused?.(true);
   }
 
+  // Ends the choice countdown once the whole crew has pressed it.
+  skipChoice() {
+    net.send({ t: 'bailSkip' });
+    this.choiceEl.querySelector('.bail-skip').classList.add('sel');
+  }
+
   updateChoice(crew) {
     const on = crew?.mode === 'choice';
     this.choiceEl.classList.toggle('show', on);
+    if (!on) this.choiceEl.querySelector('.bail-skip').classList.remove('sel');
     if (!on) return;
     this.choiceEl.querySelector('.bail-timer i').style.width = `${(crew.left / FOOT.choiceTime) * 100}%`;
     const mine = crew.picks?.[this.solo ? 'driver' : this.role];
@@ -627,6 +636,7 @@ export class MatchClient {
     if (this.choiceEl.classList.contains('show')) {
       if (this.keys.took('Digit1')) net.send({ t: 'bail', pick: 'tank' });
       if (this.keys.took('Digit2')) net.send({ t: 'bail', pick: 'foot' });
+      if (this.keys.took('Digit3')) this.skipChoice();
     }
     if (this.me) this.view.update(dt, states, this.me);
     // Blast shake on top of whatever the view did with its camera.

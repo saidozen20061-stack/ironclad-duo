@@ -224,6 +224,7 @@ export class Match {
     if (!c) return;
     const t = c.tank;
     if (msg.t === 'bail') return this.onBailPick(c, player.role, msg.pick);
+    if (msg.t === 'bailSkip') return this.onBailSkip(c, player.role);
     // Dev-only test hook: destroy our own tank.
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
     // Dev-only: finish the current Fortress wave (or skip the break).
@@ -308,6 +309,14 @@ export class Match {
   onBailPick(c, role, pick) {
     if (c.bail.mode !== 'choice' || (pick !== 'tank' && pick !== 'foot')) return;
     c.bail.picks[role] = pick;
+  }
+
+  // Skip the countdown: everyone at the controls has to press it.
+  onBailSkip(c, role) {
+    const b = c.bail;
+    if (b.mode !== 'choice') return;
+    (b.skip ??= {})[role] = true;
+    if (['driver', 'gunner'].every((r) => b.skip[r] || !c.seats[r])) b.until = this.time;
   }
 
   // Both should agree; if they don't, the driver's pick wins (default: wait for a tank).
@@ -742,7 +751,13 @@ export class Match {
       const cx = u.x - x0, cy = u.pose.y + 1 - y0, cz = u.z - z0;
       const t = Math.max(0, Math.min(1, (cx * dx + cy * dy + cz * dz) / (len * len)));
       const ex = cx - dx * t, ey = cy - dy * t, ez = cz - dz * t;
-      if (ex * ex + ey * ey + ez * ez > (u.radius + 1) ** 2) continue;
+      const miss = ex * ex + ey * ey + ez * ez;
+      // A round cracking past is as good as a hit: the NPC now knows who is shooting at it.
+      if (u.ai && p.owner > 0 && p.team !== u.team && miss < 36) {
+        u.ai.alertBy = p.owner;
+        u.ai.alertUntil = this.time + 6;
+      }
+      if (miss > (u.radius + 1) ** 2) continue;
       const h = this.boxHit(u, x0, y0, z0, dx, dy, dz);
       if (h && (!best || h.t < best.t)) best = h;
     }
