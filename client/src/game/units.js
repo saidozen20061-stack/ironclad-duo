@@ -98,7 +98,7 @@ export class UnitsView {
       const m = this.ensure(u);
       const dist = Math.hypot(u.x - this.camPos.x, u.z - this.camPos.z);
       // Past the end of the fog nothing is drawn at all; small things go earlier (LOD).
-      const fogEnd = this.scene.fog?.far ?? quality().drawDistance;
+      const fogEnd = (this.scene.fog?.far ?? quality().drawDistance) * 1.15;
       const seeThroughFog = this.thermal ? 2 : 1;
       m.root.visible = dist < Math.min(fogEnd * seeThroughFog, m.kind === 'tank' ? Infinity : m.kind === 'inf' ? 650 : 900);
       if (u.dead) m.coolT += dt;

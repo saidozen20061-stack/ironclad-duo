@@ -16,6 +16,24 @@ export const MODES = {
 };
 export const KILL_LIMITS = [10, 20, 30];
 
+// The war around the match (host/war.js). Seconds unless noted.
+export const WAR = {
+  firstBarrage: [15, 30],
+  barrageEvery: [24, 50],
+  barrageShells: [4, 8],
+  shellFall: 2.8,
+  firstBomber: [45, 80],
+  bomberEvery: [70, 130],
+  bomberBombs: [6, 11],
+  bomberSpeed: 75,
+  bomberAlt: 170,
+  bombFall: 3.4,
+  nearPointChance: 0.12,
+  blastRadius: 24, // m
+  tankDamage: 0.05, // share of a tank's hp at the centre of the blast
+  infDamage: 45,
+};
+
 // NPC skill. aim: gun laying error; react: seconds [min, max] between spotting a target and
 // the first shot; turret: traverse speed; lead: how much of a moving target's travel they
 // aim ahead for; damage: on everything they fire; rocket: extra spread on AT rockets;

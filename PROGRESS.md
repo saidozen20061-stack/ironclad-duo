@@ -7,6 +7,6 @@ Each finished phase is committed, pushed and live.
 - [x] Phase 2: Easy/Normal/Hard NPC difficulty
 - [x] Phase 3: thermal view (T)
 - [x] Phase 3.5: turntable tank preview
-- [ ] Phase 4: war atmosphere
+- [x] Phase 4: war atmosphere
 - [ ] Phase 5: planes
 - [ ] Final: performance check, auto quality, summary

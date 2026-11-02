@@ -259,6 +259,18 @@ export class InteriorFX {
     }
   }
 
+  // Shells landing close shake dust down from the roof.
+  dust(n = 12) {
+    this.dustMat ??= new THREE.MeshBasicMaterial({ color: 0xb0a184, transparent: true, opacity: 0.6, depthWrite: false });
+    this.dustGeo ??= new THREE.IcosahedronGeometry(0.02, 0);
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(this.dustGeo, this.dustMat);
+      m.position.set((Math.random() - 0.5) * 1.7, 1.72, -0.8 + (Math.random() - 0.5) * 2.4);
+      this.scene.add(m);
+      this.items.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 0.08, -0.25 - Math.random() * 0.5, (Math.random() - 0.5) * 0.08), life: 1.4 + Math.random() * 1.8, t: 0, kind: 'dust' });
+    }
+  }
+
   // A random spot on the hull walls/ceiling for damage effects.
   static randomWallPoint() {
     const spots = [
@@ -286,7 +298,9 @@ export class InteriorFX {
         if (it.kind === 'smoke') it.m.material.dispose();
         continue;
       }
-      if (it.kind === 'spark') {
+      if (it.kind === 'dust') {
+        it.m.scale.setScalar(1 + k * 1.5);
+      } else if (it.kind === 'spark') {
         it.v.y -= 9.8 * dt;
         it.m.lookAt(it.m.position.clone().add(it.v));
       } else {

@@ -9,6 +9,36 @@ import { SkyLife } from './sky.js';
 import { BASE_FLAG_SPOTS } from './props.js';
 import { markHeat, noHeat } from './thermal.js';
 
+// Battlefield fog: distance fog that gets thicker in low ground (valleys, the river) and
+// comes in uneven patches across the map. Patched into every material that uses fog.
+THREE.ShaderChunk.fog_pars_vertex = `#ifdef USE_FOG
+  varying float vFogDepth;
+  varying vec3 vFogWorld;
+#endif`;
+THREE.ShaderChunk.fog_vertex = `#ifdef USE_FOG
+  vFogDepth = -mvPosition.z;
+  vFogWorld = (inverse(viewMatrix) * vec4(mvPosition.xyz, 1.0)).xyz;
+#endif`;
+THREE.ShaderChunk.fog_pars_fragment = `#ifdef USE_FOG
+  uniform vec3 fogColor;
+  varying float vFogDepth;
+  varying vec3 vFogWorld;
+  #ifdef FOG_EXP2
+    uniform float fogDensity;
+  #else
+    uniform float fogNear;
+    uniform float fogFar;
+  #endif
+#endif`;
+THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
+  float fogPatch = 0.82 + 0.28 * sin(vFogWorld.x * 0.0071 + 1.3) * sin(vFogWorld.z * 0.0053 + 0.4);
+  float fogDist = vFogDepth / fogPatch;
+  float fogFactor = smoothstep(fogNear, fogFar, fogDist);
+  float fogLow = 1.0 - smoothstep(6.0, 24.0, vFogWorld.y);
+  fogFactor = max(fogFactor, smoothstep(fogNear * 0.35, fogFar * 0.62, fogDist) * fogLow * 0.92);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+#endif`;
+
 // The outdoor battlefield scene (what the gunner sees).
 const colorNoise = createNoise2D(777);
 const dryNoise = createNoise2D(778);
@@ -114,7 +144,7 @@ function buildSky() {
       void main(){
         float h = clamp(vDir.y, -0.2, 1.0);
         vec3 horizon = vec3(0.92, 0.72, 0.52);
-        vec3 zenith = vec3(0.38, 0.52, 0.72);
+        vec3 zenith = vec3(0.42, 0.46, 0.5); // smoke-stained
         vec3 col = mix(horizon, zenith, pow(max(h, 0.0), 0.6));
         float s = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
         col += vec3(1.0, 0.75, 0.45) * pow(s, 8.0) * 0.35 + vec3(1.0, 0.9, 0.7) * pow(s, 600.0) * 2.0;
@@ -125,7 +155,7 @@ function buildSky() {
           fogged = toneMapping(fogged);
         #endif
         fogged = linearToOutputTexel(vec4(fogged, 1.0)).rgb;
-        col = mix(fogged, col, smoothstep(0.015, 0.2, h));
+        col = mix(fogged, col, smoothstep(0.02, 0.3, h));
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -195,6 +225,7 @@ function skyEnvironment(skyMesh) {
   return env;
 }
 
+const FLASH_COLOR = new THREE.Color(0xff9040);
 const _shadowFocus = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 
@@ -202,15 +233,19 @@ export class World {
   constructor() {
     const q = quality();
     this.scene = new THREE.Scene();
-    const fogColor = new THREE.Color(0xd2b08a);
-    this.scene.fog = new THREE.Fog(fogColor, 150, q.drawDistance);
+    const fogColor = new THREE.Color(0xb4997c); // dusty orange-grey haze
+    this.fogBase = fogColor.clone();
+    this.fogNear = 60;
+    this.fogFarGround = 400; // visibility down on the battlefield
+    this.fogFlashK = 0;
+    this.scene.fog = new THREE.Fog(fogColor, this.fogNear, this.fogFarGround);
     this.scene.background = fogColor;
 
     // Late-afternoon sun, low in the west-south-west for long shadows.
     this.sunDir = new THREE.Vector3(0.75, 0.32, -0.45).normalize();
     this.hemi = new THREE.HemisphereLight(0xffe4c0, 0x40402c, 0.85);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xffc690, 2.7);
+    this.sun = new THREE.DirectionalLight(0xffc690, 2.35);
     this.sun.castShadow = q.shadows;
     this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     const S = 110;
@@ -285,11 +320,27 @@ export class World {
     this.sun.position.copy(c).addScaledVector(this.sunDir, 300);
     this.sun.target.position.copy(c);
     this.sky.position.copy(focus);
+    // High up you look out over the haze; down in a valley it closes in.
+    const alt = focus.y - Math.max(gridHeightAt(focus.x, focus.z), WATER_LEVEL);
+    const up = smoothstep(25, 240, alt);
+    const low = 1 - smoothstep(8, 28, focus.y);
+    const far = this.fogFarGround * (1 - low * 0.22) * (1 + up * 2.2);
+    this.scene.fog.far = far;
+    this.scene.fog.near = this.fogNear + up * 200;
+  }
+
+  // Explosions light the haze from inside for a moment.
+  fogFlash(k) {
+    this.fogFlashK = Math.min(1, Math.max(this.fogFlashK, k));
   }
 
   // Per-frame life: flags, clouds, birds, drifting leaves.
   animate(dt, cam) {
     this.t += dt;
+    this.fogFlashK = Math.max(0, this.fogFlashK - dt * 2.8);
+    const fc = this.scene.fog.color.copy(this.fogBase);
+    if (this.fogFlashK > 0.001) fc.lerp(FLASH_COLOR, this.fogFlashK * 0.28);
+    this.sky.material.uniforms.fogCol.value.copy(fc);
     this.flags.forEach((f, i) => {
       if (Math.hypot(f.parent.position.x - cam.x, f.parent.position.z - cam.z) < 500) waveFlag(f, this.t, i * 1.7);
     });

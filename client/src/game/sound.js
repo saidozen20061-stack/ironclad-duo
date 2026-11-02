@@ -37,6 +37,7 @@ export class SoundScape {
     this.outside.connect(this.outsideFilter).connect(this.out);
     this.buildEngine();
     this.buildAmbient();
+    this.buildRumble();
     this.squeakT = 0;
     this.radioT = 8 + Math.random() * 10;
     this.voices = 0;
@@ -135,6 +136,99 @@ export class SoundScape {
     }
   }
 
+  // The war never stops: a low, slowly swelling rumble behind everything.
+  buildRumble() {
+    const ctx = this.ctx;
+    const src = noise(ctx);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 95;
+    const g = ctx.createGain();
+    g.gain.value = 0.16;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.07;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.07;
+    lfo.connect(depth).connect(g.gain);
+    src.connect(f).connect(g).connect(this.outside);
+    src.start();
+    lfo.start();
+    this.ambientExtra = [src, lfo];
+  }
+
+  // A falling shell or bomb: a descending whistle, louder the closer it will land.
+  whistle(pos, fall, big) {
+    const a = this.at(pos);
+    const near = Math.max(0.12, 1 - a.d / 180);
+    const t0 = this.ctx.currentTime + Math.max(0, fall - 2.2);
+    const dur = Math.min(fall, 2.2);
+    const o = this.ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(big ? 1100 : 1500, t0);
+    o.frequency.exponentialRampToValueAtTime(big ? 260 : 340, t0 + dur);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.17 * near, t0 + dur * 0.8);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(this.outside);
+    o.start(t0);
+    o.stop(t0 + dur + 0.05);
+    if (near > 0.6) this.burst({ freq: 2600, q: 5, dur, gain: 0.04 * near, attack: dur * 0.7, delay: Math.max(0, fall - dur), sweepTo: 700 });
+  }
+
+  // Big shell far or near: arrives after its flash, with echoes rolling off the hills.
+  farExplosion(pos, size = 1) {
+    const a = this.at(pos);
+    const k = Math.max(0.05, a.gain) * size;
+    this.tone({ freq: 55, to: 18, dur: 2.0 * size, gain: 1.1 * k, delay: a.delay });
+    this.burst({ freq: 1100 * a.bright, type: 'lowpass', dur: 2.6 * size, gain: 1.3 * k, delay: a.delay, sweepTo: 55 });
+    for (const [t, g] of [[0.32, 0.3], [0.78, 0.16]]) {
+      this.burst({ freq: 420 * a.bright, type: 'lowpass', dur: 1.7, gain: 1.0 * k * g, delay: a.delay + t, sweepTo: 60 });
+    }
+  }
+
+  flakPop(pos) {
+    const a = this.at(pos);
+    this.burst({ freq: 700 * a.bright, type: 'lowpass', dur: 0.5, gain: 0.45 * Math.max(0.12, a.gain), delay: a.delay, sweepTo: 120 });
+  }
+
+  // Close blast: everything goes dull for a few seconds and the ears ring.
+  shellShock(k) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const f = this.outsideFilter.frequency;
+    const open = this.role === 'driver' ? 650 : 18000;
+    f.cancelScheduledValues(t);
+    f.setValueAtTime(320 + (1 - k) * 800, t);
+    f.exponentialRampToValueAtTime(open, t + 2.2 + k * 2);
+    this.tone({ freq: 3900, dur: 2.2 + k * 1.8, gain: 0.07 * k, bus: this.out });
+  }
+
+  // Air raid siren somewhere behind the lines.
+  siren() {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(240, t);
+    for (let i = 0; i < 3; i++) {
+      o.frequency.linearRampToValueAtTime(560, t + 3 + i * 6);
+      o.frequency.linearRampToValueAtTime(260, t + 6 + i * 6);
+    }
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'bandpass';
+    lp.frequency.value = 500;
+    lp.Q.value = 0.8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.022, t + 2);
+    g.gain.setValueAtTime(0.022, t + 16);
+    g.gain.linearRampToValueAtTime(0, t + 19);
+    o.connect(lp).connect(g).connect(this.outside);
+    o.start(t);
+    o.stop(t + 19.2);
+  }
+
   // ---------- Building blocks ----------
   // Band/low-pass filtered noise burst.
   burst({ freq = 1000, q = 1, type = 'bandpass', dur = 0.2, gain = 0.3, attack = 0.002, delay = 0, bus = this.outside, sweepTo = null }) {
@@ -177,7 +271,7 @@ export class SoundScape {
   at(pos) {
     const l = this.listener;
     const d = Math.hypot(pos.x - l.x, (pos.y ?? l.y) - l.y, pos.z - l.z);
-    return { d, gain: 1 / (1 + d / 35), delay: Math.min(1.5, d / SPEED_OF_SOUND), bright: Math.max(0.15, 1 - d / 900) };
+    return { d, gain: 1 / (1 + d / 35), delay: Math.min(4, d / SPEED_OF_SOUND), bright: Math.max(0.15, 1 - d / 900) };
   }
 
   // ---------- Events ----------
@@ -290,7 +384,7 @@ export class SoundScape {
   }
 
   dispose() {
-    for (const n of [...this.engNodes, ...(this.ambientNodes ?? [])]) n.stop();
+    for (const n of [...this.engNodes, ...(this.ambientNodes ?? []), ...(this.ambientExtra ?? [])]) n.stop();
     this.engGain.disconnect();
     this.out.disconnect();
   }

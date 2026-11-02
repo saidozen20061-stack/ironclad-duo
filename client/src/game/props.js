@@ -689,7 +689,7 @@ export class PropsView {
     // Flames on burning wrecks: emissive cones that flicker, plus two shared point
     // lights that follow the nearest fires (a fixed light count avoids shader rebuilds).
     const geo = mergeGeometries([part(CONE8, 0xffb040, { y: 0.9, sx: 1.4, sy: 1.8, sz: 1.4 }), part(CONE8, 0xff7020, { x: 0.5, y: 0.6, sx: 0.9, sy: 1.2, sz: 0.9 }), part(CONE8, 0xffe080, { y: 0.6, sx: 0.6, sy: 1.0, sz: 0.6 })]);
-    this.flameMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.88, depthWrite: false }), Math.max(1, this.flames.length + 16));
+    this.flameMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.88, depthWrite: false }), Math.max(1, this.flames.length + 48));
     this.flameMesh.count = 0;
     this.flameMesh.frustumCulled = false;
     markHeat(this.flameMesh, { heat: 1 });

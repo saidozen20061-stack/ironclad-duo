@@ -168,6 +168,12 @@ export class DriverView {
     el.classList.add('show');
   }
 
+  // A shell landing close: the whole hull jolts and dust rains down.
+  onNearBlast(k) {
+    this.addShake(k * 0.6);
+    this.interior.fx.dust(Math.round(4 + k * 26));
+  }
+
   addShake(amount) {
     this.shake = Math.min(1.5, this.shake + amount);
   }

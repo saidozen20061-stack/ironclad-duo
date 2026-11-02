@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
 import { DIFFICULTY, TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
 import { footBlocked, nearGarage } from '../../../shared/foot.js';
+import { WarDirector } from './war.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
 import { tankPose, muzzlePose, planePitchAlong, wrapAngle } from '../../../shared/tank.js';
@@ -164,6 +165,7 @@ export class Match {
       });
     }
     this.army = new ArmyAI(this);
+    this.war = new WarDirector(this);
     installMode(this);
 
     this.interval = setInterval(() => this.tick(), 1000 / TICK_RATE);
@@ -261,6 +263,7 @@ export class Match {
     for (const c of this.crews.values()) this.tickCrew(c);
     this.army.update(DT);
     this.modeTick?.();
+    this.war.tick();
     // Remove NPC corpses / wrecks after a while.
     this.units = this.units.filter((u) => u.player || !u.dead || this.time - u.diedAt < (u.kind === 'tank' ? 30 : 30));
     this.updateProjectiles();

@@ -3,7 +3,7 @@ import { quality } from '../settings.js';
 import { noHeat } from './thermal.js';
 
 // Background war beyond the playable area: artillery flashes on the horizon, tracer
-// streams arcing across the sky, planes flying over, and flares drifting down.
+// streams arcing across the sky and planes flying over.
 // Purely client-side decoration; audio hooks (onSound) are used by Phase 7.
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -15,20 +15,14 @@ export class AmbientWar {
     this.nextArty = 2;
     this.nextTracer = 1;
     this.nextPlane = 12;
-    this.nextFlare = 6;
     this.items = [];
     this.flashMat = new THREE.MeshBasicMaterial({ color: 0xffc070, fog: false, transparent: true });
     this.smokeMat = new THREE.MeshLambertMaterial({ color: 0x5a524a, transparent: true, opacity: 0.6, flatShading: true });
     this.tracerMat = new THREE.MeshBasicMaterial({ color: 0xff9a50, fog: false });
-    this.flareMat = new THREE.MeshBasicMaterial({ color: 0xfff2c0, fog: false });
     this.puff = new THREE.IcosahedronGeometry(1, 0);
     this.box = new THREE.BoxGeometry(1, 1, 1);
     this.planeGeo = buildPlane();
     this.onSound = null; // (kind, position) => void
-    // One flare light, always in the scene: adding a light at run time recompiles every
-    // material, which shows up as a stutter and a lighting flicker.
-    this.flareLight = new THREE.PointLight(0xffe0a0, 0, 900, 1.2);
-    scene.add(this.flareLight);
   }
 
   // Random point on a ring well outside the map edge.
@@ -91,7 +85,7 @@ export class AmbientWar {
     }
 
     if ((this.nextPlane -= dt) <= 0) {
-      this.nextPlane = rand(35, 70);
+      this.nextPlane = rand(50, 110);
       const a = Math.random() * Math.PI * 2;
       const start = new THREE.Vector3(Math.cos(a) * 1600, rand(120, 220), Math.sin(a) * 1600);
       const end = new THREE.Vector3(-Math.cos(a + rand(-0.4, 0.4)) * 1600, start.y, -Math.sin(a + rand(-0.4, 0.4)) * 1600);
@@ -109,24 +103,6 @@ export class AmbientWar {
       this.onSound?.('plane', start);
     }
 
-    if ((this.nextFlare -= dt) <= 0) {
-      this.nextFlare = rand(16, 30); // one at a time: they share the light
-      const p = this.horizon(700, 1000);
-      p.y = rand(150, 250);
-      const flare = new THREE.Mesh(this.puff, this.flareMat);
-      flare.scale.setScalar(2.5);
-      flare.position.copy(p);
-      const light = this.flareLight;
-      flare.userData.flare = true;
-      this.add(flare, 14, (m, k, d) => {
-        m.position.y -= d * 12;
-        m.position.x += d * 2;
-        light.position.copy(m.position);
-        // Fades in and out so a new flare doesn't pop the light level.
-        light.intensity = Math.min(1, k * 8, (1 - k) * 3) * 4000 * (0.95 + Math.random() * 0.1);
-      });
-    }
-
     const keep = [];
     for (const it of this.items) {
       it.age += dt;
@@ -139,13 +115,12 @@ export class AmbientWar {
       keep.push(it);
     }
     this.items = keep;
-    if (!this.items.some((it) => it.flare)) this.flareLight.intensity = 0;
   }
 
   add(mesh, life, step) {
     noHeat(mesh);
     this.scene.add(mesh);
-    this.items.push({ mesh, life, step, age: 0, flare: !!mesh.userData.flare });
+    this.items.push({ mesh, life, step, age: 0 });
   }
 
   dispose() {

@@ -19,9 +19,12 @@ import { showTutorial } from './tutorial.js';
 import { SoldierView } from './soldier.js';
 import { SoloView } from './solo.js';
 import { Spotter } from './spot.js';
+import { WarFX } from './warfx.js';
 import { checkStructures } from './structureCheck.js';
 import { nearGarage } from '../../../shared/foot.js';
 import { escapeHtml } from '../ui/screens.js';
+
+const isWorldView = (v) => v instanceof GunnerView || !!v.isFoot;
 
 // Glue for a running match: receives server snapshots, routes events to effects,
 // and drives the role-specific view (driver cockpit or gunner sight).
@@ -115,6 +118,7 @@ export class MatchClient {
     this.fires = PROPS.filter((p) => p.type === 'wreck' && p.burning);
 
     this.sound = new SoundScape(role);
+    if (this.war) this.war.sound = this.sound;
     this.distantT = 3;
     this.lastReload = 0;
     showTutorial(role, this.hud);
@@ -149,6 +153,12 @@ export class MatchClient {
     document.addEventListener('pointerlockchange', this.onLockChange);
   }
 
+  // A shell or bomb landed close by: camera shake and ringing ears.
+  nearBlast(k) {
+    this.camShake = Math.min(1, Math.max(this.camShake ?? 0, k));
+    if (k > 0.25) this.sound.shellShock(k);
+  }
+
   // World, units and effects: built up front for the gunner, on first bail-out for the driver.
   ensureWorld() {
     if (this.world) return;
@@ -162,6 +172,8 @@ export class MatchClient {
     this.tracks = new TrackMarks(this.world.scene, this.fx);
     this.ambient = new AmbientWar(this.world.scene);
     this.ambient.onSound = (kind, pos) => (kind === 'artillery' ? this.sound.distantArtillery(pos) : this.sound.plane());
+    this.war = new WarFX(this.world, this.fx, this.props, this.sound);
+    this.war.onNearBlast = (k) => this.nearBlast(k);
     this.props.setEnvMap(this.world.envMap);
     for (const p of this.points) this.recolorPoint(p.id, p.owner);
   }
@@ -387,6 +399,28 @@ export class MatchClient {
         }
         this.sound.plane?.();
         break;
+      case 'inc':
+        if (this.war && this.view.camera) this.war.incoming(ev, this.view.camera.position);
+        break;
+      case 'shell':
+        if (this.war && isWorldView(this.view)) this.war.impact(ev, this.view.camera.position);
+        else {
+          // The driver only hears and feels it.
+          const self = this.buffer.latest?.units.get(myId);
+          this.sound.farExplosion(ev, ev.size);
+          if (self) {
+            const near = Math.max(0, 1 - Math.hypot(self.x - ev.x, self.z - ev.z) / (90 * ev.size));
+            if (near > 0) {
+              this.nearBlast(near);
+              this.view.onNearBlast?.(near);
+            }
+          }
+        }
+        break;
+      case 'bomber':
+        this.war?.addBomber(ev);
+        if (!this.war) this.sound.plane();
+        break;
       case 'boom': {
         const pos = new THREE.Vector3(ev.x, ev.y, ev.z);
         this.view.thermalFlash?.(ev.x, ev.y, ev.z, 2);
@@ -563,6 +597,14 @@ export class MatchClient {
       if (this.keys.took('Digit2')) net.send({ t: 'bail', pick: 'foot' });
     }
     if (this.me) this.view.update(dt, states, this.me);
+    // Blast shake on top of whatever the view did with its camera.
+    if (this.camShake > 0.001 && worldView) {
+      const s = this.camShake * 0.022;
+      this.view.camera.rotation.x += (Math.random() - 0.5) * s;
+      this.view.camera.rotation.y += (Math.random() - 0.5) * s;
+      this.view.camera.rotation.z += (Math.random() - 0.5) * s * 0.6;
+      this.camShake *= Math.exp(-dt * 3.2);
+    }
     if (this.units) this.updateTags(states);
     // Audio: listener follows the crew member's head.
     const self = this.me && states.get(this.view.isFoot ? this.view.myId ?? this.me.id : this.me.id);
@@ -608,6 +650,7 @@ export class MatchClient {
       }
       this.tracks.update(dt, states, cam);
       this.ambient.update(dt, cam);
+      this.war.update(dt, cam);
     }
     this.keys.endFrame();
   }
@@ -635,6 +678,7 @@ export class MatchClient {
     this.view.dispose();
     this.fx?.dispose();
     this.ambient?.dispose();
+    this.war?.dispose();
     this.sound.dispose();
     this.feed.remove();
     this.edgeEl.remove();
