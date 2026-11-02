@@ -418,6 +418,9 @@ export class Match {
           x = t.x + Math.cos(k) * (off + 2);
           z = t.z + Math.sin(k) * (off + 2);
         }
+        // A plane can come down past the map edge; the crew walks away from inside it.
+        x = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, x));
+        z = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, z));
         const s = new CrewSoldier(role, x, z, t.h, c);
         b.foot[role] = s;
         this.units.push(s);
