@@ -27,15 +27,16 @@ export class FX {
     this.tracerGeo = new THREE.BoxGeometry(1, 1, 1);
     this.tracerMats = {};
     for (const [k, v] of Object.entries(TRACER)) {
-      this.tracerMats[k] = new THREE.MeshBasicMaterial({ color: v.color, fog: false });
+      this.tracerMats[k] = new THREE.MeshBasicMaterial({ color: v.color });
     }
     this.puffGeo = new THREE.IcosahedronGeometry(1, 0);
     this.chunkGeo = new THREE.TetrahedronGeometry(0.4, 0);
     this.mats = {
-      fire: new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true }),
-      smoke: new THREE.MeshStandardMaterial({ color: 0x4a443c, flatShading: true, transparent: true }),
-      dust: new THREE.MeshStandardMaterial({ color: 0x8a7458, flatShading: true, transparent: true }),
-      water: new THREE.MeshStandardMaterial({ color: 0xcfe0e0, flatShading: true, transparent: true }),
+      // No depth writes: overlapping puffs must not punch holes in each other as they sort.
+      fire: new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, depthWrite: false }),
+      smoke: new THREE.MeshStandardMaterial({ color: 0x4a443c, flatShading: true, transparent: true, depthWrite: false }),
+      dust: new THREE.MeshStandardMaterial({ color: 0x8a7458, flatShading: true, transparent: true, depthWrite: false }),
+      water: new THREE.MeshStandardMaterial({ color: 0xcfe0e0, flatShading: true, transparent: true, depthWrite: false }),
       spark: new THREE.MeshBasicMaterial({ color: 0xffe080 }),
       dirt: new THREE.MeshStandardMaterial({ color: 0x4a3a2a, flatShading: true }),
     };

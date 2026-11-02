@@ -24,6 +24,10 @@ export class AmbientWar {
     this.box = new THREE.BoxGeometry(1, 1, 1);
     this.planeGeo = buildPlane();
     this.onSound = null; // (kind, position) => void
+    // One flare light, always in the scene: adding a light at run time recompiles every
+    // material, which shows up as a stutter and a lighting flicker.
+    this.flareLight = new THREE.PointLight(0xffe0a0, 0, 900, 1.2);
+    scene.add(this.flareLight);
   }
 
   // Random point on a ring well outside the map edge.
@@ -105,18 +109,20 @@ export class AmbientWar {
     }
 
     if ((this.nextFlare -= dt) <= 0) {
-      this.nextFlare = rand(8, 20);
+      this.nextFlare = rand(16, 30); // one at a time: they share the light
       const p = this.horizon(700, 1000);
       p.y = rand(150, 250);
       const flare = new THREE.Mesh(this.puff, this.flareMat);
       flare.scale.setScalar(2.5);
       flare.position.copy(p);
-      const light = new THREE.PointLight(0xffe0a0, 0, 900, 1.2);
-      flare.add(light);
+      const light = this.flareLight;
+      flare.userData.flare = true;
       this.add(flare, 14, (m, k, d) => {
         m.position.y -= d * 12;
         m.position.x += d * 2;
-        light.intensity = (1 - k) * 4000 * (0.85 + Math.random() * 0.3);
+        light.position.copy(m.position);
+        // Fades in and out so a new flare doesn't pop the light level.
+        light.intensity = Math.min(1, k * 8, (1 - k) * 3) * 4000 * (0.95 + Math.random() * 0.1);
       });
     }
 
@@ -132,11 +138,12 @@ export class AmbientWar {
       keep.push(it);
     }
     this.items = keep;
+    if (!this.items.some((it) => it.flare)) this.flareLight.intensity = 0;
   }
 
   add(mesh, life, step) {
     this.scene.add(mesh);
-    this.items.push({ mesh, life, step, age: 0 });
+    this.items.push({ mesh, life, step, age: 0, flare: !!mesh.userData.flare });
   }
 
   dispose() {

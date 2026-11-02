@@ -18,6 +18,8 @@ import { SoundScape } from './sound.js';
 import { showTutorial } from './tutorial.js';
 import { SoldierView } from './soldier.js';
 import { SoloView } from './solo.js';
+import { Spotter } from './spot.js';
+import { checkStructures } from './structureCheck.js';
 import { nearGarage } from '../../../shared/foot.js';
 import { escapeHtml } from '../ui/screens.js';
 
@@ -156,6 +158,7 @@ export class MatchClient {
     this.units.paintFor = (u) => (this.solo && u.crew === this.crew.id && u.player ? this.info.paint : null);
     this.fx = new FX(this.world.scene);
     this.props = new PropsView(this.world.scene);
+    if (import.meta.env.DEV) checkStructures();
     this.tracks = new TrackMarks(this.world.scene, this.fx);
     this.ambient = new AmbientWar(this.world.scene);
     this.ambient.onSound = (kind, pos) => (kind === 'artillery' ? this.sound.distantArtillery(pos) : this.sound.plane());
@@ -228,6 +231,8 @@ export class MatchClient {
       if (u.crew == null || u.dead || u.crew === this.crew.id) continue;
       const d = Math.hypot(u.x - cam.position.x, u.z - cam.position.z);
       if (d > 450) continue;
+      // Enemy names only when spotted, never through a hill.
+      if (u.team !== this.team && !(this.spotter ??= new Spotter()).sees(u, cam.position, 450, this.props?.dead)) continue;
       const m = this.units.get(u.id);
       v.set(u.x, (m?.pose.y ?? 0) + (TANKS[u.type] ? TANKS[u.type].size.height + 1.6 : 2.3), u.z).project(cam);
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;

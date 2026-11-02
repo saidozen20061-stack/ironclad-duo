@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { heightAt } from '../../../shared/map.js';
 
 // Instanced scatter layer with distance LOD.
 //
@@ -222,4 +223,51 @@ export function mergeParts(parts) {
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return out;
+}
+
+// Ground markings (mud, ruts, scorch, craters, puddles): baked into one mesh per map chunk
+// with every vertex following the terrain, so nothing cuts into a slope or floats over one.
+// Unless `solid`, they draw straight after the terrain without touching the depth buffer,
+// so they can never fight with the ground or with each other.
+export function bakeOnGround(scene, geo, mat, items, { lift = 0.05, order = 1, solid = false, chunk = 180 } = {}) {
+  const src = (geo.index ? geo.toNonIndexed() : geo).attributes;
+  const n = src.position.count;
+  const groups = new Map();
+  for (const it of items) {
+    const k = `${Math.floor(it.x / chunk)},${Math.floor(it.z / chunk)}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(it);
+  }
+  const meshes = [];
+  for (const list of groups.values()) {
+    const pos = new Float32Array(list.length * n * 3);
+    const col = src.color ? new Float32Array(list.length * n * 3) : null;
+    let o = 0;
+    for (const it of list) {
+      const c = Math.cos(it.rot ?? 0), sn = Math.sin(it.rot ?? 0);
+      const sx = it.s ?? 1, sz = it.sz ?? sx, sy = it.sy ?? 1;
+      for (let i = 0; i < n; i++, o += 3) {
+        const lx = src.position.getX(i) * sx, lz = src.position.getZ(i) * sz;
+        const x = it.x + lx * c + lz * sn, z = it.z - lx * sn + lz * c;
+        pos[o] = x;
+        pos[o + 1] = heightAt(x, z) + lift + src.position.getY(i) * sy;
+        pos[o + 2] = z;
+        if (col) {
+          col[o] = src.color.getX(i);
+          col[o + 1] = src.color.getY(i);
+          col[o + 2] = src.color.getZ(i);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.receiveShadow = true;
+    if (!solid) mesh.renderOrder = order;
+    scene.add(mesh);
+    meshes.push(mesh);
+  }
+  return meshes;
 }

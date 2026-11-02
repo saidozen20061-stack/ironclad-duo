@@ -6,6 +6,7 @@ import { net } from '../net.js';
 import { settings } from '../settings.js';
 import { terrainImage, worldToImage } from './mapImage.js';
 import { propsNear, segmentHitsProp } from '../../../shared/props.js';
+import { Spotter } from './spot.js';
 
 const ZOOMS = [1, 2, 6];
 const BASE_FOV = 62;
@@ -59,7 +60,9 @@ export class GunnerView {
     this.spec = TANKS[tank];
     this.tank = tank;
     this.keys = keys;
-    this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 5000);
+    // Near plane well off the lens: depth precision is what keeps far walls and windows
+    // from fighting each other, most of all through the 6× sight.
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.5, 4600);
     this.camera.rotation.order = 'YXZ';
     this.zoomIdx = 0;
     this.aim = { yaw: 0, pitch: 0, initialised: false };
@@ -281,7 +284,7 @@ export class GunnerView {
       cam.position.set(d.x, d.y, d.z);
       cam.rotation.set(d.pitch ?? 0, (d.yaw ?? 0) + Math.PI, 0);
     }
-    this.world.update(cam.position);
+    this.world.update(cam.position, cam);
 
     // Range finder: what the crosshair is on.
     const dir = new THREE.Vector3();
@@ -438,8 +441,8 @@ export class GunnerView {
 
     for (const u of states.values()) {
       if (u.id === self.id || u.dead) continue;
-      // Enemies only show once they're close enough to be spotted.
-      if (u.team !== (this.team ?? 'blue') && Math.hypot(u.x - self.x, u.z - self.z) > 400) continue;
+      // Enemies only show once actually spotted: in range and in line of sight.
+      if (u.team !== (this.team ?? 'blue') && !(this.spotter ??= new Spotter()).sees(u, this.camera.position, 400, this.deadProps)) continue;
       const [px, py] = toMap(u.x, u.z);
       if (px < 0 || px > S || py < 0 || py > S) continue;
       ctx.fillStyle = u.team === (this.team ?? 'blue') ? '#7fd36a' : '#ff5a4a';

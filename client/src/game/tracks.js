@@ -14,13 +14,14 @@ export class TrackMarks {
     this.mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x2a2219, roughness: 1, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -3, depthWrite: false }), MAX_MARKS);
     this.mesh.count = 0;
     this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 2;
     scene.add(this.mesh);
     this.next = 0;
     this.last = new Map(); // unit id -> {x, z}
     this.dustT = new Map();
     this.m = new THREE.Matrix4();
     this.q = new THREE.Quaternion();
-    this.up = new THREE.Vector3(0, 1, 0);
+    this.e = new THREE.Euler();
   }
 
   update(dt, states, camPos) {
@@ -60,12 +61,15 @@ export class TrackMarks {
   stamp(u) {
     const spec = TANKS[u.type];
     const half = spec.size.width / 2 - 0.35;
-    this.q.setFromAxisAngle(this.up, u.h);
     for (const side of [-1, 1]) {
       const x = u.x + Math.cos(u.h) * half * side;
       const z = u.z - Math.sin(u.h) * half * side;
       if (waterDepthAt(x, z) > 0) continue;
-      this.m.compose(new THREE.Vector3(x, groundAt(x, z) + 0.05, z), this.q, new THREE.Vector3(1, 1, 1));
+      // Lies on the slope: nose up/down along the tank's heading.
+      const fx = Math.sin(u.h) * 0.8, fz = Math.cos(u.h) * 0.8;
+      const pitch = -Math.atan2(groundAt(x + fx, z + fz) - groundAt(x - fx, z - fz), 1.6);
+      this.q.setFromEuler(this.e.set(pitch, u.h, 0, 'YXZ'));
+      this.m.compose(new THREE.Vector3(x, groundAt(x, z) + 0.07, z), this.q, new THREE.Vector3(1, 1, 1));
       this.mesh.setMatrixAt(this.next, this.m);
       this.next = (this.next + 1) % MAX_MARKS;
       this.mesh.count = Math.max(this.mesh.count, this.next === 0 ? MAX_MARKS : this.next);

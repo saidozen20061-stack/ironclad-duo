@@ -154,7 +154,7 @@ export class SoloView extends GunnerView {
       cam.position.set(d.x, d.y, d.z);
       cam.rotation.set(d.pitch ?? 0, (d.yaw ?? 0) + Math.PI, 0);
     }
-    this.world.update(cam.position);
+    this.world.update(cam.position, cam);
 
     // What the crosshair is on; in third person the gun aims from its sight at that point.
     const look = new THREE.Vector3();

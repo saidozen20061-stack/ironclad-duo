@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GRID, CELL, HALF, MAP_SIZE, WATER_LEVEL, BRIDGES, BRIDGE_DECK, POINTS, BASES, gridHeight, riverZ, RIVER_HALF_WIDTH, smoothstep } from '../../../shared/map.js';
 import { createNoise2D } from '../../../shared/noise.js';
 import { distToRoad, fieldAt } from '../../../shared/props.js';
@@ -105,10 +106,10 @@ function buildSky() {
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: { sunDir: { value: new THREE.Vector3() } },
+    uniforms: { sunDir: { value: new THREE.Vector3() }, fogCol: { value: new THREE.Color() } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `
-      uniform vec3 sunDir; varying vec3 vDir;
+      uniform vec3 sunDir; uniform vec3 fogCol; varying vec3 vDir;
       void main(){
         float h = clamp(vDir.y, -0.2, 1.0);
         vec3 horizon = vec3(0.92, 0.72, 0.52);
@@ -116,7 +117,14 @@ function buildSky() {
         vec3 col = mix(horizon, zenith, pow(max(h, 0.0), 0.6));
         float s = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
         col += vec3(1.0, 0.75, 0.45) * pow(s, 8.0) * 0.35 + vec3(1.0, 0.9, 0.7) * pow(s, 600.0) * 2.0;
-        if (h < 0.0) col = mix(col, vec3(0.55, 0.45, 0.36), -h * 4.0);
+        // The horizon is exactly what fully fogged geometry looks like on screen, so far
+        // terrain and tanks melt into the sky instead of standing out as silhouettes.
+        vec3 fogged = fogCol;
+        #ifdef TONE_MAPPING
+          fogged = toneMapping(fogged);
+        #endif
+        fogged = linearToOutputTexel(vec4(fogged, 1.0)).rgb;
+        col = mix(fogged, col, smoothstep(0.015, 0.2, h));
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -124,28 +132,28 @@ function buildSky() {
 }
 
 function buildBridge(b) {
-  const g = new THREE.Group();
-  const stone = new THREE.MeshStandardMaterial({ color: 0x8b8475, flatShading: true, roughness: 0.95 });
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6b5238, flatShading: true });
+  // Everything hangs off the deck: rails stand on its edges, piers reach up into it.
+  const stone = new THREE.Color(0x8b8475), wood = new THREE.Color(0x6b5238);
   const len = b.halfLength * 2;
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(b.halfWidth * 2, 0.6, len), wood);
-  deck.position.set(0, BRIDGE_DECK - 0.3, 0);
-  g.add(deck);
-  for (const s of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, len), stone);
-    rail.position.set(s * (b.halfWidth + 0.2), BRIDGE_DECK + 0.5, 0);
-    g.add(rail);
-  }
-  for (const z of [-10, 0, 10]) {
-    const pier = new THREE.Mesh(new THREE.BoxGeometry(b.halfWidth * 2 + 1, BRIDGE_DECK, 2.2), stone);
-    pier.position.set(0, BRIDGE_DECK / 2 - 1, z);
-    g.add(pier);
-  }
-  g.position.set(b.x, 0, b.z);
-  g.traverse((o) => {
-    if (o.isMesh) o.castShadow = o.receiveShadow = true;
-  });
-  return g;
+  const DECK_T = 0.6;
+  const piece = (w, h, d, x, y, z, color) => {
+    const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+    g.deleteAttribute('uv');
+    g.translate(x, y, z);
+    const col = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i < g.attributes.position.count; i++) color.toArray(col, i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  };
+  const parts = [piece(b.halfWidth * 2 + 0.8, DECK_T, len, 0, BRIDGE_DECK - DECK_T / 2, 0, wood)];
+  for (const s of [-1, 1]) parts.push(piece(0.4, 1.0, len, s * (b.halfWidth + 0.2), BRIDGE_DECK + 0.5, 0, stone));
+  const pierTop = BRIDGE_DECK - DECK_T + 0.1, pierBottom = -1;
+  for (const z of [-10, 0, 10]) parts.push(piece(b.halfWidth * 2 + 1, pierTop - pierBottom, 2.2, 0, (pierTop + pierBottom) / 2, z, stone));
+  // The ramped banks run just under the deck, so the deck draws slightly in front of them.
+  const mesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  mesh.position.set(b.x, 0, b.z);
+  mesh.castShadow = mesh.receiveShadow = true;
+  return mesh;
 }
 
 function buildPointMarker(pt) {
@@ -186,6 +194,9 @@ function skyEnvironment(skyMesh) {
   return env;
 }
 
+const _shadowFocus = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+
 export class World {
   constructor() {
     const q = quality();
@@ -203,12 +214,19 @@ export class World {
     this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     const S = 110;
     Object.assign(this.sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 600 });
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.6;
+    // Tight bias: a large normalBias detaches shadows from walls, which looks like gaps
+    // under roofs and buildings hovering over the ground.
+    this.shadowTexel = (2 * S) / q.shadowMap;
+    this.sun.shadow.bias = -0.0002;
+    this.sun.shadow.normalBias = this.shadowTexel * 1.1;
     this.scene.add(this.sun, this.sun.target);
 
     this.sky = buildSky();
     this.sky.material.uniforms.sunDir.value.copy(this.sunDir);
+    this.sky.material.uniforms.fogCol.value.copy(fogColor);
+    // Shadow map axes: the same ones the shadow camera ends up with when it looks at the sun.
+    this.sunRight = new THREE.Vector3(0, 1, 0).cross(this.sunDir).normalize();
+    this.sunUp = this.sunDir.clone().cross(this.sunRight);
     this.scene.add(this.sky);
 
     const terrain = new THREE.Mesh(buildTerrainGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
@@ -250,10 +268,19 @@ export class World {
     this.t = 0;
   }
 
-  // Keep the shadow frustum centred on the viewer.
-  update(focus) {
-    this.sun.position.copy(focus).addScaledVector(this.sunDir, 300);
-    this.sun.target.position.copy(focus);
+  // Keep the shadow frustum on what the viewer sees, moving it in whole shadow-map texels
+  // only: otherwise every shadow edge crawls and shimmers as the camera moves.
+  update(focus, camera) {
+    const c = _shadowFocus.copy(focus);
+    if (camera) {
+      camera.getWorldDirection(_camDir);
+      c.addScaledVector(_camDir.setY(0), 70);
+    }
+    const t = this.shadowTexel;
+    const u = c.dot(this.sunRight), v = c.dot(this.sunUp);
+    c.addScaledVector(this.sunRight, Math.round(u / t) * t - u).addScaledVector(this.sunUp, Math.round(v / t) * t - v);
+    this.sun.position.copy(c).addScaledVector(this.sunDir, 300);
+    this.sun.target.position.copy(c);
     this.sky.position.copy(focus);
   }
 

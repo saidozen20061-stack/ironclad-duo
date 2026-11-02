@@ -46,7 +46,7 @@ export class SoldierView {
     this.role = role;
     this.mateRole = role === 'driver' ? 'gunner' : 'driver';
     this.deadProps = props.dead;
-    this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 5000);
+    this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.2, 4600);
     this.camera.rotation.order = 'YXZ';
     this.aim = { yaw: 0, pitch: 0 };
     this.pos = null;
@@ -326,7 +326,7 @@ export class SoldierView {
       this.pingRing.scale.setScalar(1 + ((now / 600) % 1) * 1.5);
       mk.scale.setScalar(Math.max(0.15, Math.min(1, Math.hypot(me.ping.x - cam.position.x, me.ping.z - cam.position.z) / 80)));
     }
-    this.world.update(cam.position);
+    this.world.update(cam.position, cam);
     this.updateHud(mine, mate);
   }
 

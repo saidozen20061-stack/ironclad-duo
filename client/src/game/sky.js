@@ -22,7 +22,7 @@ function buildSkirt() {
     const x = pos.getX(i), z = pos.getZ(i);
     const out = Math.max(0, Math.max(Math.abs(x), Math.abs(z)) - HALF);
     let y = heightAt(x, z);
-    if (out <= 0) y -= 3;
+    if (out <= 0) y -= 6;
     else y += out * 0.12 + (n(x / 260, z / 260) * 0.5 + 0.5) * Math.min(1, out / 200) * 110;
     pos.setY(i, y);
   }
@@ -41,8 +41,8 @@ function buildSkirt() {
 }
 
 function buildMountains() {
-  // Three ridge rings, each fading further into the haze. Not fogged, so they always
-  // frame the horizon even when the fog swallows the near countryside.
+  // Three ridge rings, each fading further into the haze. In the fog like everything else:
+  // an unfogged backdrop would show far tanks as fog-coloured silhouettes in front of it.
   const n = createNoise2D(9191);
   const group = new THREE.Group();
   const rings = [
@@ -83,7 +83,7 @@ function buildMountains() {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     mesh.renderOrder = -1;
     group.add(mesh);
   }

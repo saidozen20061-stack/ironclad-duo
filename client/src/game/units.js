@@ -5,6 +5,7 @@ import { groundAt } from '../../../shared/map.js';
 import { buildTank, trackMaterial } from '../models/tanks.js';
 import { buildATGun } from '../models/infantry.js';
 import { SoldierRig } from '../models/rig.js';
+import { quality } from '../settings.js';
 
 const burnt = new THREE.MeshStandardMaterial({ color: 0x1d1b19, flatShading: true, roughness: 1 });
 const kindOf = (type) => (TANKS[type] ? 'tank' : type === 'atgun' ? 'atgun' : 'inf');
@@ -89,8 +90,9 @@ export class UnitsView {
     for (const u of states.values()) {
       const m = this.ensure(u);
       const dist = Math.hypot(u.x - this.camPos.x, u.z - this.camPos.z);
-      // Hide small things far away (LOD); tanks stay visible to the fog.
-      m.root.visible = m.kind === 'tank' || dist < (m.kind === 'inf' ? 650 : 900);
+      // Past the end of the fog nothing is drawn at all; small things go earlier (LOD).
+      const fogEnd = this.scene.fog?.far ?? quality().drawDistance;
+      m.root.visible = dist < Math.min(fogEnd, m.kind === 'tank' ? Infinity : m.kind === 'inf' ? 650 : 900);
       if (!m.root.visible) continue;
       if (m.kind === 'tank') this.updateTank(m, u, dt);
       else if (m.kind === 'atgun') this.updateGun(m, u);

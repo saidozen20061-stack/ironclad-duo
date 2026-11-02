@@ -5,6 +5,7 @@ import { groundAt, heightAt, POINTS, BASES } from '../../../shared/map.js';
 import { mulberry32 } from '../../../shared/noise.js';
 import { quality } from '../settings.js';
 import { Vegetation } from './vegetation.js';
+import { bakeOnGround } from './scatter.js';
 
 // Buildings and other solid props. Static props are merged per 120 m map chunk (one
 // draw call per chunk); a chunk is re-merged when one of its props is destroyed.
@@ -30,9 +31,10 @@ function part(geo, color, { x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1,
   const col = new Float32Array(n * 3);
   tmpColor.setHex(color);
   // Slight per-face variation keeps flat surfaces from looking plastic.
-  for (let i = 0; i < n; i += 3) {
+  const step = n === 36 ? 6 : 3; // a box: one shade per face, so quads show no diagonal
+  for (let i = 0; i < n; i += step) {
     const k = 0.92 + Math.random() * 0.12;
-    for (let j = 0; j < 3 && i + j < n; j++) {
+    for (let j = 0; j < step && i + j < n; j++) {
       col[(i + j) * 3] = tmpColor.r * k;
       col[(i + j) * 3 + 1] = tmpColor.g * k;
       col[(i + j) * 3 + 2] = tmpColor.b * k;
@@ -50,7 +52,6 @@ const CYL10 = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
 const TAPER = new THREE.CylinderGeometry(0.36, 0.5, 1, 8);
 const CONE4 = new THREE.ConeGeometry(0.71, 1, 4);
 const CONE8 = new THREE.ConeGeometry(0.5, 1, 8);
-const HALFCYL = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, false, 0, Math.PI);
 const ROOF = (() => {
   // Triangular prism, base 1x1, ridge along Z, height 1.
   const s = new THREE.Shape();
@@ -62,10 +63,18 @@ const ROOF = (() => {
   g.translate(0, 0, -0.5);
   return g;
 })();
+// Half cylinder lying along Z, flat side down on y = 0: width 1, rise 0.5, length 1.
+const VAULT = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, false, -Math.PI / 2, Math.PI).rotateX(-Math.PI / 2);
 const TET = new THREE.TetrahedronGeometry(1, 0);
 const ICO = new THREE.IcosahedronGeometry(1, 0);
 const DOME = new THREE.SphereGeometry(0.5, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
 const box = (c, x, y, z, w, h, d, extra = {}) => part(BOX, c, { x, y: y + h / 2, z, sx: w, sy: h, sz: d, ...extra });
+// Gable roof over a w × d footprint, always overhanging it. Ridge along Z, or along X with alongX.
+const OVER = 0.35;
+const gable = (c, x, y, z, w, d, rise, alongX = false) => part(ROOF, c, alongX
+  ? { x, y, z, ry: Math.PI / 2, sx: d + OVER * 2, sy: rise, sz: w + OVER * 2 }
+  : { x, y, z, sx: w + OVER * 2, sy: rise, sz: d + OVER * 2 });
+const vault = (c, x, y, z, w, d, rise) => part(VAULT, c, { x, y, z, sx: w, sy: rise * 2, sz: d });
 const wheel = (x, y, z, r, w = 0.3) => part(CYL8, C.black, { x, y, z, rz: Math.PI / 2, sx: r * 2, sy: w, sz: r * 2 });
 
 // ---------- Builders: return arrays of geometries in prop-local space ----------
@@ -75,15 +84,17 @@ const builders = {
     const { w, d, h } = p;
     const wallC = r() < 0.5 ? C.plaster : C.stone;
     parts.push(box(wallC, 0, 0, 0, w, h, d));
-    parts.push(part(ROOF, r() < 0.5 ? C.roof : C.roofDark, { y: h, sx: w + 0.8, sy: 2.6, sz: d + 0.6, ry: Math.PI / 2 }));
-    parts.push(box(C.stoneDark, w * 0.25, h, d * 0.2, 0.9, 2.6, 0.9)); // chimney
-    for (const sx of [-1, 1]) for (let i = -1; i <= 1; i++) parts.push(box(0x2a2620, i * w * 0.28, h * 0.45, sx * (d / 2 + 0.02), 1.0, 1.2, 0.08));
-    parts.push(box(C.woodDark, 0, 0, d / 2 + 0.03, 1.2, 2.2, 0.1));
+    parts.push(gable(r() < 0.5 ? C.roof : C.roofDark, 0, h, 0, w, d, 2.6, true));
+    // Chimney: starts inside the roof slope, rises above the ridge line.
+    parts.push(box(C.stoneDark, w * 0.25, h, d * 0.2, 0.9, 2.9, 0.9));
+    const winY = Math.max(h * 0.45, 2.45); // above the door
+    for (const sx of [-1, 1]) for (let i = -1; i <= 1; i++) if (winY + 1.2 < h) parts.push(box(0x2a2620, i * w * 0.28, winY, sx * (d / 2 + 0.02), 1.0, 1.2, 0.08));
+    parts.push(box(C.woodDark, 0, 0, d / 2 + 0.04, 1.2, 2.2, 0.12));
     if (p.shop) {
       // Shop front: big window, sign board and a striped awning over the street.
       const awning = r() < 0.5 ? 0x7a2a22 : 0x2f5a3a;
-      parts.push(box(C.glass, -w * 0.25, 0.4, d / 2 + 0.04, w * 0.38, 1.8, 0.08));
-      parts.push(box(C.woodDark, 0, 2.7, d / 2 + 0.08, w * 0.8, 0.6, 0.12));
+      parts.push(box(C.glass, -w * 0.28, 0.4, d / 2 + 0.03, w * 0.34, 1.8, 0.08));
+      parts.push(box(C.woodDark, 0, 2.3, d / 2 + 0.1, w * 0.8, 0.4, 0.2));
       for (let i = 0; i < 6; i++) parts.push(box(i % 2 ? awning : C.white, -w * 0.4 + (i + 0.5) * (w * 0.8) / 6, 2.4, d / 2 + 0.75, (w * 0.8) / 6, 0.08, 1.5, { rx: 0.35 }));
     }
     if (p.farm) parts.push(box(C.wood, -w / 2 - 1.2, 0, 0, 0.12, 1.1, d * 1.6), box(C.wood, w / 2 + 1.2, 0, 0, 0.12, 1.1, d * 1.6));
@@ -95,14 +106,14 @@ const builders = {
     const c = r() < 0.5 ? C.stone : C.plaster;
     // Broken walls of uneven height, one side missing.
     parts.push(box(c, 0, 0, -d / 2 + 0.3, w, h, 0.6));
-    parts.push(box(c, -w / 2 + 0.3, 0, 0, 0.6, h * 0.8, d));
+    parts.push(box(c, -w / 2 + 0.3, 0, 0.3, 0.6, h * 0.8, d - 0.6));
     parts.push(box(c, w * 0.25, 0, d / 2 - 0.3, w * 0.5, h * 0.55, 0.6));
-    parts.push(box(c, w / 2 - 0.3, 0, -d * 0.2, 0.6, h * 0.4, d * 0.6));
-    for (let i = 0; i < 4; i++) parts.push(box(c, -w / 2 + r() * w, h, -d / 2 + 0.3, 1 + r(), 0.6 + r() * 1.5, 0.6));
+    parts.push(box(c, w / 2 - 0.3, 0, -d * 0.2 + 0.3, 0.6, h * 0.4, d * 0.6 - 0.6));
+    for (let i = 0; i < 4; i++) parts.push(box(c, -w / 2 + r() * w, h, -d / 2 + 0.3, 1 + r(), 0.6 + r() * 1.5, 0.56 + i * 0.03));
     // Exposed upper floor: half a slab hanging on, broken joists poking out.
     const fy = Math.min(h * 0.55, 2.8);
-    parts.push(box(C.woodDark, -w * 0.18, fy, -d * 0.15, w * 0.6, 0.25, d * 0.6, { rz: 0.06 }));
-    for (let i = 0; i < 4; i++) parts.push(box(C.wood, -w * 0.4 + i * w * 0.22, fy - 0.2, d * 0.1, 0.22, 0.22, d * (0.4 + r() * 0.3), { rx: 0.08 * (r() - 0.5) }));
+    parts.push(box(C.woodDark, -w * 0.18, fy, -d * 0.12, w * 0.6, 0.25, d * 0.7));
+    for (let i = 0; i < 4; i++) parts.push(box(C.wood, -w * 0.4 + i * w * 0.16, fy - 0.2, d * 0.05, 0.22, 0.22, d * (0.5 + r() * 0.3)));
     parts.push(box(c, 0, 0, 0, w * 0.18, fy, 0.5, { ry: 0.2 })); // interior wall stub
     // Charred beams + rubble inside
     parts.push(box(C.burnt, 0, h * 0.4, 0, 0.3, 0.3, d * 1.05, { rx: 0.4 }));
@@ -118,7 +129,7 @@ const builders = {
     const { w, d, h } = p;
     return [
       box(C.white, 0, 0, 0, w, h, d),
-      part(ROOF, C.roofDark, { y: h, sx: w + 1, sy: 4.5, sz: d + 0.6 }),
+      gable(C.roofDark, 0, h, 0, w, d, 4.5),
       box(0x3a3832, 0, 2, -d / 2 - 0.02, 2.4, 4, 0.1),
       ...[-1, 1].flatMap((s) => [-5, 0, 5].map((z) => box(0x37414a, s * (w / 2 + 0.02), h * 0.45, z, 0.08, 3.2, 1.2))),
     ];
@@ -131,8 +142,8 @@ const builders = {
       part(CONE4, C.roofDark, { y: h * 0.82 + (h * 0.18) / 2, sx: w * 1.1, sy: h * 0.18, sz: w * 1.1, ry: Math.PI / 4 }),
       box(0x2a2620, 0, h * 0.55, w / 2 + 0.02, 1.8, 2.2, 0.08),
       box(0x2a2620, 0, h * 0.75, w * 0.43, 1.2, 1.6, 0.1), // belfry opening
-      box(C.wood, 0, h + 0.2, 0, 0.15, 1.6, 0.15),
-      box(C.wood, 0, h + 1.0, 0, 0.9, 0.15, 0.15),
+      box(C.wood, 0, h, 0, 0.15, 1.8, 0.15),
+      box(C.wood, 0, h + 1.0, 0, 0.9, 0.15, 0.2),
     ];
   },
   bunker(p) {
@@ -163,7 +174,7 @@ const builders = {
     const c = r() < 0.5 ? C.red : C.wood;
     return [
       box(c, 0, 0, 0, w, h * 0.62, d),
-      part(ROOF, C.metal, { y: h * 0.62, sx: w + 0.8, sy: h * 0.38, sz: d + 0.6 }),
+      gable(C.metal, 0, h * 0.62, 0, w, d, h * 0.38),
       box(C.woodDark, 0, 0, d / 2 + 0.02, w * 0.45, h * 0.5, 0.1),
       box(C.white, 0, h * 0.25, d / 2 + 0.03, w * 0.45, 0.25, 0.1, { rz: 0.6 }),
     ];
@@ -202,7 +213,7 @@ const builders = {
     return [
       box(C.burnt, 0, 0.3, 0, p.w * 0.75, 0.9, p.d * 0.85),
       box(0x2f2a25, 0, 0, 0, p.w, 0.6, p.d * 0.9),
-      part(CYL6, C.burnt, { x: (r() - 0.5) * 1.5, y: 1.6, z: -0.5, sx: 1.9, sy: 0.7, sz: 1.9, rz: 0.35 }),
+      part(CYL6, C.burnt, { x: (r() - 0.5) * 1.5, y: 1.45, z: -0.5, sx: 1.9, sy: 0.7, sz: 1.9, rz: 0.2 }),
       part(CYL6, 0x1a1816, { x: 1.4, y: 1.0, z: 1.6, sx: 0.18, sy: 3.2, sz: 0.18, rx: Math.PI / 2 - 0.5, rz: 0.4 }),
     ];
   },
@@ -210,7 +221,7 @@ const builders = {
     return [part(ICO, r() < 0.5 ? C.stoneDark : C.stone, { y: p.h * 0.35, sx: p.w / 2, sy: p.h / 2, sz: p.d / 2, ry: r() * 6 })];
   },
   tent(p) {
-    return [part(ROOF, C.canvas, { sx: p.w, sy: p.h, sz: p.d }), box(C.woodDark, 0, 0, p.d / 2 + 0.3, 0.1, p.h * 1.05, 0.1)];
+    return [part(ROOF, C.canvas, { sx: p.w, sy: p.h, sz: p.d }), box(C.woodDark, 0, 0, p.d / 2 - 0.1, 0.1, p.h * 1.05, 0.1)];
   },
   garage(p) {
     const { w, d, h } = p;
@@ -245,9 +256,11 @@ const builders = {
   },
   crates(p, r) {
     const parts = [];
+    const sizes = [];
     for (let i = 0; i < 4; i++) {
       const s = 0.9 + r() * 0.4;
-      parts.push(box(r() < 0.5 ? C.wood : 0x5a6040, (i % 2) * 1.1 - 0.5, i > 1 ? s : 0, (r() - 0.5) * 0.6, s, s, s, { ry: r() }));
+      sizes.push(s);
+      parts.push(box(r() < 0.5 ? C.wood : 0x5a6040, (i % 2) * 1.1 - 0.5, i > 1 ? sizes[i - 2] : 0, (r() - 0.5) * 0.3, s, s, s, { ry: i > 1 ? 0 : r() * 0.4 }));
     }
     return parts;
   },
@@ -256,7 +269,7 @@ const builders = {
       part(CYL10, C.stone, { y: 0.45, sx: p.w, sy: 0.9, sz: p.w }),
       part(CYL10, 0x1d2a2c, { y: 0.92, sx: p.w * 0.8, sy: 0.04, sz: p.w * 0.8 }),
       box(C.wood, -p.w * 0.45, 0, 0, 0.15, 2.4, 0.15), box(C.wood, p.w * 0.45, 0, 0, 0.15, 2.4, 0.15),
-      part(ROOF, C.roofDark, { y: 2.4, sx: p.w * 1.3, sy: 0.7, sz: p.w * 0.9, ry: Math.PI / 2 }),
+      gable(C.roofDark, 0, 2.4, 0, p.w, p.w * 0.6, 0.7, true),
       part(CYL6, C.woodDark, { y: 1.9, rz: Math.PI / 2, sx: 0.2, sy: p.w * 0.9, sz: 0.2 }),
     ];
   },
@@ -289,22 +302,22 @@ const builders = {
     }
     parts.push(part(CYL6, C.black, { y: 1.35, z: -R * 0.5, rx: Math.PI / 2, sx: 0.12, sy: 1.6, sz: 0.12 }));
     parts.push(box(C.black, 0, 1.1, -R * 0.1, 0.3, 0.3, 0.6));
-    for (const s of [-1, 1]) parts.push(box(C.black, s * 0.25, 0.4, -R * 0.2, 0.05, 0.8, 0.05, { rz: s * 0.4 }));
+    for (const s of [-1, 1]) parts.push(box(C.black, s * 0.25, 0, -R * 0.2, 0.05, 1.25, 0.05, { rz: s * 0.25 }));
     return parts;
   },
   hedgehog() {
-    const beam = (rx, ry, rz) => box(0x3a3632, 0, 0.7, 0, 0.22, 2.2, 0.22, { rx, ry, rz });
+    const beam = (rx, ry, rz) => part(BOX, 0x3a3632, { y: 0.8, rx, ry, rz, sx: 0.22, sy: 2.2, sz: 0.22 });
     return [beam(0.95, 0, 0), beam(0, 0, 0.95), beam(0.95, Math.PI / 2, 0.7)];
   },
   radio(p) {
     const { w, d, h } = p;
     return [
       box(C.olive, 0, 0, 0, w, h, d),
-      part(ROOF, C.canvas, { y: h, sx: w + 0.4, sy: 0.8, sz: d + 0.4 }),
-      part(CYL6, C.metal, { x: w * 0.7, y: 6, sx: 0.12, sy: 12, sz: 0.12 }),
-      ...[4, 7, 10].map((y) => box(C.metal, w * 0.7, y, 0, 1.4 - y * 0.08, 0.06, 0.06)),
-      box(C.wire, w * 0.7, 0, 1.2, 0.03, 12, 0.03, { rx: -0.1 }),
-      part(DOME, 0xbab8b0, { x: -w * 0.2, y: h + 0.9, z: 0, rx: -1.2, sx: 1.4, sy: 0.4, sz: 1.4 }),
+      gable(C.canvas, 0, h, 0, w, d, 0.8),
+      part(CYL6, C.metal, { x: w * 0.42, y: 6, sx: 0.12, sy: 12, sz: 0.12 }),
+      ...[4, 7, 10].map((y) => box(C.metal, w * 0.42, y, 0, 1.4 - y * 0.08, 0.06, 0.06)),
+      box(C.wire, w * 0.42, 0, 0.6, 0.03, 12, 0.03, { rx: -0.05 }),
+      part(DOME, 0xbab8b0, { x: -w * 0.2, y: h + 0.6, z: 0, rx: -1.2, sx: 1.4, sy: 0.4, sz: 1.4 }),
       box(C.black, w * 0.25, h * 0.4, d / 2 + 0.03, 0.8, 0.6, 0.06),
     ];
   },
@@ -326,7 +339,7 @@ const builders = {
     const { w, d, h } = p;
     return [
       box(C.concrete, 0, 0, 0, w, h * 0.65, d),
-      part(HALFCYL, C.metal, { y: h * 0.65, rx: Math.PI / 2, rz: Math.PI / 2, sx: w, sy: d + 0.4, sz: h * 0.7 }),
+      vault(C.metal, 0, h * 0.65, 0, w + OVER, d + OVER * 2, h * 0.35),
       box(0x3a3d36, 0, 0, d / 2 + 0.03, w * 0.4, h * 0.55, 0.08),
       box(0x3a3d36, 0, 0, -d / 2 - 0.03, w * 0.4, h * 0.55, 0.08),
       box(C.rust, w / 2 + 0.02, h * 0.3, 0, 0.05, 0.6, d * 0.6),
@@ -360,7 +373,7 @@ const builders = {
       parts.push(part(CYL10, 0x55524a, { y: 2.2, rx: Math.PI / 2, sx: w * 0.95, sy: d * 0.85, sz: w * 0.95 }));
     } else {
       parts.push(box(C.wood, 0, 0.9, 0, w, h - 0.9, d * 0.95));
-      parts.push(part(HALFCYL, C.metal, { y: h, rx: Math.PI / 2, rz: Math.PI / 2, sx: w, sy: d * 0.95, sz: 0.6 }));
+      parts.push(vault(C.metal, 0, h, 0, w + 0.1, d * 0.95 + 0.2, 0.3));
       parts.push(box(C.woodDark, w / 2 + 0.02, 1.0, 0, 0.05, h - 1.3, 2.2));
     }
     for (const t of [-0.32, 0.32]) parts.push(wheel(w * 0.42, 0.45, d * t, 0.45, 0.18), wheel(-w * 0.42, 0.45, d * t, 0.45, 0.18));
@@ -381,21 +394,22 @@ const builders = {
     return [
       part(TAPER, C.white, { y: h * 0.4, sx: w, sy: h * 0.8, sz: w }),
       part(CONE8, C.roofDark, { y: h * 0.8 + 1.2, sx: w * 0.9, sy: 2.6, sz: w * 0.9 }),
-      box(C.woodDark, 0, 0, w * 0.37, 1.2, 2.2, 0.15),
-      box(0x2a2620, 0, h * 0.45, w * 0.33, 0.7, 0.9, 0.1),
-      box(C.wood, 0, 0, w * 0.45, 2.4, 0.15, 1.2),
+      box(C.woodDark, 0, 0, w * 0.48, 1.2, 2.2, 0.15),
+      box(0x2a2620, 0, h * 0.45, w * 0.415, 0.7, 0.9, 0.12),
+      box(C.wood, 0, 0, w * 0.55, 2.4, 0.15, 1.2),
+      part(CYL6, C.woodDark, { y: h * 0.78, z: w * 0.42, rx: Math.PI / 2, sx: 0.45, sy: w * 0.3, sz: 0.45 }),
     ];
   },
   chapel(p) {
     const { w, d, h } = p;
     return [
       box(C.plaster, 0, 0, 0, w, h * 0.65, d),
-      part(ROOF, C.roof, { y: h * 0.65, sx: w + 0.6, sy: h * 0.35, sz: d + 0.5 }),
-      box(C.plaster, 0, 0, d / 2 - 1.2, 2.4, h * 1.25, 2.4),
-      part(CONE4, C.roofDark, { y: h * 1.25 + 1.1, sx: 2.6, sy: 2.2, sz: 2.6, ry: Math.PI / 4 }),
-      box(C.wood, 0, h * 1.25 + 2.2, d / 2 - 1.2, 0.12, 1.2, 0.12),
-      box(C.wood, 0, h * 1.25 + 2.6, d / 2 - 1.2, 0.6, 0.12, 0.12),
-      box(C.woodDark, 0, 0, d / 2 + 0.03, 1.2, 2.2, 0.08),
+      gable(C.roof, 0, h * 0.65, 0, w, d, h * 0.35),
+      box(C.plaster, 0, 0, d / 2 - 1.05, 2.4, h * 1.25, 2.4),
+      part(CONE4, C.roofDark, { x: 0, y: h * 1.25 + 1.1, z: d / 2 - 1.05, sx: 2.6, sy: 2.2, sz: 2.6, ry: Math.PI / 4 }),
+      box(C.wood, 0, h * 1.25 + 2.1, d / 2 - 1.05, 0.12, 1.3, 0.12),
+      box(C.wood, 0, h * 1.25 + 2.6, d / 2 - 1.05, 0.6, 0.12, 0.12),
+      box(C.woodDark, 0, 0, d / 2 + 0.18, 1.2, 2.2, 0.08),
       ...[-1, 1].map((s) => box(0x37414a, s * (w / 2 + 0.02), h * 0.3, 0, 0.06, 1.6, 0.8)),
     ];
   },
@@ -406,6 +420,7 @@ const builders = {
       box(C.glass, -w * 0.2, 0.6, d * 0.08 + 0.02, w * 0.4, 1.5, 0.06),
       box(C.red, 0, h, 0, w, 0.35, d),
       ...[[1, 1], [1, -1]].map(([sx, sz]) => box(C.metal, sx * w * 0.42, 0, sz * d * 0.35, 0.25, h, 0.25)),
+      box(C.white, -w * 0.2, h * 0.75, -d * 0.2, 0.3, h * 0.25, 0.3), // the shop holds the canopy up too
       ...[-0.5, 0.5].flatMap((t) => [box(C.red, w * 0.2, 0, t * d * 0.5, 0.6, 1.5, 0.45), box(C.white, w * 0.2, 1.1, t * d * 0.5 + 0.23, 0.4, 0.3, 0.03)]),
       box(C.metal, w * 0.55, 0, d * 0.55, 0.15, 5, 0.15),
       box(C.red, w * 0.55, 4.2, d * 0.55, 1.6, 1.0, 0.12),
@@ -414,8 +429,8 @@ const builders = {
   checkpoint(p) {
     const { w, d } = p;
     return [
-      box(C.wood, -w * 0.35, 0, 0, 2, 2.3, 2, { rz: 0.05 }),
-      part(ROOF, C.roofDark, { x: -w * 0.35, y: 2.3, sx: 2.4, sy: 0.6, sz: 2.4 }),
+      box(C.wood, -w * 0.35, 0, 0, 2, 2.3, 2),
+      gable(C.roofDark, -w * 0.35, 2.3, 0, 2, 2, 0.6),
       box(C.white, w * 0.1, 0.95, 0, w * 0.5, 0.15, 0.15, { rz: 0.5 }),
       box(C.red, w * 0.3, 1.1, 0.01, w * 0.12, 0.17, 0.17, { rz: 0.5 }),
       box(C.wood, -w * 0.12, 0, 0, 0.25, 1.1, 0.25),
@@ -429,14 +444,14 @@ const builders = {
     return [
       box(C.olive, 0, 0.8, d * 0.33, w, 1.6, d * 0.26),
       box(C.glass, 0, 1.6, d * 0.46 + 0.02, w * 0.8, 0.55, 0.05),
-      box(C.olive, 0, 0.7, -d * 0.15, w * 0.95, 0.25, d * 0.66),
-      part(HALFCYL, C.canvas, { y: 1.0, z: -d * 0.15, rx: Math.PI / 2, rz: Math.PI / 2, sx: w, sy: d * 0.64, sz: 2.2 }),
+      box(C.olive, 0, 0.7, -d * 0.14, w * 0.95, 0.25, d * 0.68),
+      vault(C.canvas, 0, 0.95, -d * 0.15, w, d * 0.62, 1.1),
       box(team, 0, 1.3, d * 0.46 + 0.03, 0.4, 0.3, 0.02),
       wheel(w / 2, 0.45, d * 0.32, 0.45), wheel(-w / 2, 0.45, d * 0.32, 0.45), wheel(w / 2, 0.45, -d * 0.3, 0.45), wheel(-w / 2, 0.45, -d * 0.3, 0.45),
     ];
   },
   radardish(p) {
-    return [box(C.concrete, 0, 0, 0, p.w, 0.6, p.d), part(CYL8, C.metal, { y: 3, sx: 0.5, sy: 5, sz: 0.5 }), box(C.olive, 0, 0.6, 0, 1.6, 1.5, 1.6)];
+    return [box(C.concrete, 0, 0, 0, p.w, 0.6, p.d), part(CYL8, C.metal, { y: 3.1, sx: 0.5, sy: 5, sz: 0.5 }), box(C.olive, 0, 0.6, 0, 1.6, 1.5, 1.6)];
   },
   // ---------- Fortress Defence ----------
   fwall(p) {
@@ -450,7 +465,7 @@ const builders = {
     const { w, d, h } = p;
     const parts = [];
     for (const sx of [-1, 1]) {
-      parts.push(box(C.woodDark, sx * w * 0.25, 0, 0, w / 2 - 0.1, h, d * 0.6));
+      parts.push(box(C.woodDark, sx * w * 0.25, 0, 0, w / 2, h, d * 0.6));
       for (const y of [0.5, h - 0.8]) parts.push(box(C.black, sx * w * 0.25, y, 0, w / 2 - 0.2, 0.25, d * 0.66));
     }
     parts.push(box(C.stoneDark, 0, h, 0, w + 1, 0.8, d + 0.4));
@@ -487,7 +502,8 @@ const builders = {
     parts.push(box(0xc9b23a, 0, 0.02, d / 2 - 0.5, w * 0.9, 0.05, 0.3)); // yellow bay line
     for (let i = 0; i < 5; i++) parts.push(box(C.olive, -w / 2 + 1.2 + i * 1.3, 0, -d / 2 + 1, 1.1, 0.8, 1.1)); // ammo crates
     for (let i = 0; i < 4; i++) parts.push(part(CYL8, C.rust, { x: w / 2 - 1.2, y: 0.55, z: -d / 2 + 1.2 + i * 1.1, sx: 0.9, sy: 1.1, sz: 0.9 }));
-    parts.push(box(C.blueTeam, 0, h - 1, -d / 2 + 0.25, w * 0.4, 0.8, 0.1)); // depot sign
+    parts.push(box(C.metal, 0, h - 1.15, -d / 2 + 0.3, w - 0.6, 0.2, 0.2)); // beam between the posts
+    parts.push(box(C.blueTeam, 0, h - 1, -d / 2 + 0.3, w * 0.4, 0.8, 0.1)); // depot sign
     return parts;
   },
   command(p) {
@@ -510,7 +526,7 @@ const builders = {
     return [
       box(C.olive, 0, 0.7, 0, w * 0.6, 0.5, 1.4),
       box(C.olive, 0, 1.1, 0.5, w * 0.8, 1.0, 0.12, { rx: -0.2 }),
-      ...[-1, 1].map((s) => box(C.olive, s * 0.5, 0.25, -d * 0.3, 0.2, 0.2, d * 0.65, { ry: s * 0.25 })),
+      ...[-1, 1].map((s) => box(C.olive, s * 0.5, 0, -d * 0.3, 0.2, 0.8, d * 0.65, { ry: s * 0.25 })),
       wheel(w / 2, 0.6, 0, 0.6, 0.25), wheel(-w / 2, 0.6, 0, 0.6, 0.25),
       ...[0, 1].map((i) => part(BOX, C.sand, { x: -w * 0.6 + i * 1.2, y: 0.22, z: d * 0.35, sx: 1.05, sy: 0.42, sz: 0.6 })),
     ];
@@ -529,16 +545,40 @@ function rubbleGeo(p, r) {
   return mergeGeometries(parts);
 }
 
-// Sit on the lowest corner so buildings don't float on slopes.
-function baseY(p) {
-  let y = Infinity;
-  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
-    const cx = p.x + (sx * p.w * 0.45 * Math.cos(p.rot) + sz * p.d * 0.45 * Math.sin(p.rot));
-    const cz = p.z + (-sx * p.w * 0.45 * Math.sin(p.rot) + sz * p.d * 0.45 * Math.cos(p.rot));
-    y = Math.min(y, groundAt(cx, cz));
+// Lowest and highest ground under a prop's footprint.
+function groundSpan(p) {
+  let lo = Infinity, hi = -Infinity;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    const cx = p.x + (sx * p.w * 0.52 * Math.cos(p.rot) + sz * p.d * 0.52 * Math.sin(p.rot));
+    const cz = p.z + (-sx * p.w * 0.52 * Math.sin(p.rot) + sz * p.d * 0.52 * Math.cos(p.rot));
+    const g = groundAt(cx, cz);
+    lo = Math.min(lo, g);
+    hi = Math.max(hi, g);
   }
-  return y - 0.05;
+  return [lo, hi];
 }
+
+// Buildings stand on the middle of the slope, on a plinth that goes well into the ground,
+// so no corner floats and no wall is buried up to its windows.
+const FOUNDATION = {
+  house: C.stoneDark, ruin: C.stoneDark, wall: C.stoneDark, church: C.stoneDark, steeple: C.stoneDark, bunker: C.concrete, barn: C.stoneDark, silo: C.concrete,
+  garage: C.concrete, factory: C.stoneDark, warehouse: C.concrete, chapel: C.stoneDark, gasstation: C.concrete, radio: C.olive, fwall: C.stoneDark,
+  ftower: C.stoneDark, fgate: C.stoneDark, fbunker: C.concrete, command: C.concrete, windmill: C.stoneDark, watertower: C.concrete, chimney: C.stoneDark,
+};
+function baseY(p) {
+  const [lo, hi] = groundSpan(p);
+  return FOUNDATION[p.type] ? lo + (hi - lo) * 0.5 : lo - 0.05;
+}
+function foundation(p, y) {
+  const c = FOUNDATION[p.type];
+  if (!c) return null;
+  const [lo] = groundSpan(p);
+  const depth = y - lo + 0.8;
+  return box(c, 0, -depth, 0, p.w + 0.3, depth + 0.18, p.d + 0.3);
+}
+
+// One geometry per prop, in prop-local space, parts included (also used by the dev check).
+export const propParts = (p, r) => builders[p.type](p, r);
 
 const chunkKey = (x, z) => `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
 
@@ -556,8 +596,11 @@ export class PropsView {
     const xf = new THREE.Matrix4();
     for (const p of PROPS) {
       const r = mulberry32(p.id * 7919 + 13);
-      const geo = mergeGeometries(builders[p.type](p, r));
       const y = baseY(p);
+      const parts = builders[p.type](p, r);
+      const base = foundation(p, y);
+      if (base) parts.push(base);
+      const geo = mergeGeometries(parts);
       this.baseYs.set(p.id, y);
       xf.compose(new THREE.Vector3(p.x, y, p.z), new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, p.rot), new THREE.Vector3(1, 1, 1));
       geo.applyMatrix4(xf);
@@ -645,7 +688,7 @@ export class PropsView {
     // Flames on burning wrecks: emissive cones that flicker, plus two shared point
     // lights that follow the nearest fires (a fixed light count avoids shader rebuilds).
     const geo = mergeGeometries([part(CONE8, 0xffb040, { y: 0.9, sx: 1.4, sy: 1.8, sz: 1.4 }), part(CONE8, 0xff7020, { x: 0.5, y: 0.6, sx: 0.9, sy: 1.2, sz: 0.9 }), part(CONE8, 0xffe080, { y: 0.6, sx: 0.6, sy: 1.0, sz: 0.6 })]);
-    this.flameMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.88 }), Math.max(1, this.flames.length + 16));
+    this.flameMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.88, depthWrite: false }), Math.max(1, this.flames.length + 16));
     this.flameMesh.count = 0;
     this.flameMesh.frustumCulled = false;
     this.scene.add(this.flameMesh);
@@ -657,32 +700,16 @@ export class PropsView {
   }
 
   buildCraters() {
-    const geo = new THREE.CircleGeometry(1, 9);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2e261d, flatShading: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
+    const geo = new THREE.RingGeometry(0.001, 1, 9, 2).rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x2e261d, flatShading: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, depthWrite: false });
     const rimGeo = new THREE.TorusGeometry(1, 0.18, 3, 9);
     rimGeo.rotateX(-Math.PI / 2);
     const rimMat = new THREE.MeshStandardMaterial({ color: 0x5b4a36, flatShading: true });
-    const holes = new THREE.InstancedMesh(geo, mat, CRATERS.length);
-    const rims = new THREE.InstancedMesh(rimGeo, rimMat, CRATERS.length);
-    const wet = CRATERS.filter((c) => c.water);
-    this.craterWaterMat = new THREE.MeshStandardMaterial({ color: 0x5a6a62, metalness: 0.85, roughness: 0.1, flatShading: true, polygonOffset: true, polygonOffsetFactor: -4 });
-    const water = new THREE.InstancedMesh(geo, this.craterWaterMat, Math.max(1, wet.length));
-    const m = new THREE.Matrix4();
-    CRATERS.forEach((c, i) => {
-      const y = heightAt(c.x, c.z) + 0.06;
-      m.makeScale(c.r, 1, c.r).setPosition(c.x, y, c.z);
-      holes.setMatrixAt(i, m);
-      m.makeScale(c.r, c.r * 0.8, c.r).setPosition(c.x, y, c.z);
-      rims.setMatrixAt(i, m);
-    });
-    wet.forEach((c, i) => {
-      m.makeScale(c.r * 0.72, 1, c.r * 0.72).setPosition(c.x, heightAt(c.x, c.z) + 0.1, c.z);
-      water.setMatrixAt(i, m);
-    });
-    water.count = wet.length;
-    holes.receiveShadow = rims.receiveShadow = true;
-    this.scene.add(holes, rims, water);
+    const items = CRATERS.map((c) => ({ x: c.x, z: c.z, s: c.r, sy: c.r * 0.8 }));
+    bakeOnGround(this.scene, geo, mat, items, { lift: 0.06 });
+    bakeOnGround(this.scene, rimGeo, rimMat, items, { lift: 0.02, solid: true });
+    this.craterWaterMat = new THREE.MeshStandardMaterial({ color: 0x5a6a62, metalness: 0.85, roughness: 0.1, flatShading: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
+    bakeOnGround(this.scene, geo, this.craterWaterMat, CRATERS.filter((c) => c.water).map((c) => ({ x: c.x, z: c.z, s: c.r * 0.72 })), { lift: 0.1, order: 2 });
   }
 
   buildRails() {
@@ -698,7 +725,7 @@ export class PropsView {
         const y = heightAt(x, z);
         parts.push(part(BOX, C.woodDark, { x, y: y + 0.08, z, ry: rot + Math.PI / 2, sx: 0.25, sy: 0.16, sz: 2.6 }));
         if (Math.round(d / 1.4) % 3 === 0) {
-          for (const s of [-0.72, 0.72]) parts.push(part(BOX, 0x4a4a46, { x: x + Math.cos(rot) * s, y: y + 0.25, z: z - Math.sin(rot) * s, ry: rot, sx: 0.1, sy: 0.12, sz: 4.3 }));
+          for (const s of [-0.72, 0.72]) parts.push(part(BOX, 0x4a4a46, { x: x + Math.cos(rot) * s, y: y + 0.21, z: z - Math.sin(rot) * s, ry: rot, sx: 0.1, sy: 0.12, sz: 4.3 }));
         }
       }
     }
@@ -719,6 +746,7 @@ export class PropsView {
         geos.push(part(BOX, 0xffffff, { x, y: groundAt(x, z) + 0.15, z, sx: 0.5, sy: 0.25, sz: (Math.PI * 2 * pt.r) / segs, ry: -a }));
       }
       const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: 0xdddddd, vertexColors: true, transparent: true, opacity: 0.7 }));
+      mesh.renderOrder = 2;
       this.scene.add(mesh);
       this.zoneRings[pt.id] = mesh;
     }

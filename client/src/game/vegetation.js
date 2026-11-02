@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Scatter, mergeParts } from './scatter.js';
+import { Scatter, mergeParts, bakeOnGround } from './scatter.js';
 import { CRATERS, FIELDS, ROADS, roadSamples, treeAllowed, TREE_NOISE, distToRoad, distToRail, fieldAt, propsNear, PROPS } from '../../../shared/props.js';
 import { heightAt, waterDepthAt, riverZ, RIVER_HALF_WIDTH, WATER_LEVEL, POINTS, BASES, PLAY_LIMIT } from '../../../shared/map.js';
 import { mulberry32, createNoise2D } from '../../../shared/noise.js';
@@ -37,7 +37,7 @@ function windMaterial(amp, opts = {}) {
 }
 
 const MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
-const DECAL = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+const DECAL = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, depthWrite: false });
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const ICO = new THREE.IcosahedronGeometry(1, 0);
@@ -45,7 +45,7 @@ const DODE = new THREE.DodecahedronGeometry(1, 0);
 const TET = new THREE.TetrahedronGeometry(1, 0);
 const cyl = (seg) => new THREE.CylinderGeometry(0.5, 0.5, 1, seg);
 const cone = (seg) => new THREE.ConeGeometry(0.5, 1, seg);
-const disc = (seg) => new THREE.CircleGeometry(1, seg).rotateX(-Math.PI / 2);
+const disc = (seg) => new THREE.RingGeometry(0.001, 1, seg, 2).rotateX(-Math.PI / 2);
 
 // ---------- Models ----------
 const MODELS = {
@@ -125,7 +125,10 @@ const MODELS = {
   croprow: () => mergeParts([{ geo: BOX, color: 0xffffff, y: 0.25, sx: 0.8, sy: 0.5, sz: 4.1 }]),
   haybale: () => mergeParts([{ geo: cyl(10), color: 0xc9a54d, y: 0.75, rz: Math.PI / 2, sx: 1.5, sy: 1.6, sz: 1.5 }]),
   haystack: () => mergeParts([{ geo: cone(7), color: 0xb89a48, y: 1.4, sx: 3.2, sy: 2.8, sz: 3.2 }, { geo: cyl(7), color: 0xc2a04c, y: 0.4, sx: 3.0, sy: 0.8, sz: 3.0 }]),
-  rut: () => mergeParts([{ geo: BOX, color: 0x3b2e22, sx: 0.4, sy: 0.04, sz: 4.3, x: -1.1 }, { geo: BOX, color: 0x3b2e22, sx: 0.4, sy: 0.04, sz: 4.3, x: 1.1 }]),
+  rut: () => {
+    const strip = new THREE.PlaneGeometry(0.4, 4.3, 1, 2).rotateX(-Math.PI / 2);
+    return mergeParts([{ geo: strip, color: 0x3b2e22, x: -1.1 }, { geo: strip, color: 0x3b2e22, x: 1.1 }]);
+  },
   scorch: () => mergeParts([{ geo: disc(7), color: 0x1e1a16, sx: 1, sz: 1 }, { geo: disc(5), color: 0x2a231d, x: 0.7, z: 0.4, sx: 0.6, sz: 0.7 }]),
   mud: () => mergeParts([{ geo: disc(8), color: 0x3a2c1e }]),
   helmet: () => mergeParts([{ geo: new THREE.SphereGeometry(0.5, 6, 3, 0, Math.PI * 2, 0, Math.PI / 2), color: 0x4a5236, sx: 0.55, sy: 0.4, sz: 0.6 }]),
@@ -325,11 +328,11 @@ export class Vegetation {
       if (waterDepthAt(x, z) > 0 || slope(x, z) > 0.3) continue;
       scorch.push({ x, z, y: heightAt(x, z) + 0.05, rot: r3() * 6, s: 1.5 + r3() * 3, sz: 0.6 + r3() * 0.6 });
     }
-    this.addLayer({ geo: MODELS.rut(), mat: DECAL, items: ruts, radius: 240 * lod });
-    this.addLayer({ geo: MODELS.mud(), mat: DECAL, items: mud, radius: 300 * lod });
-    this.addLayer({ geo: MODELS.scorch(), mat: DECAL, items: scorch, radius: 420 * lod });
-    this.puddleMat = new THREE.MeshStandardMaterial({ color: 0x8a9aa0, metalness: 0.9, roughness: 0.08, flatShading: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
-    this.addLayer({ geo: new THREE.CircleGeometry(1, 9).rotateX(-Math.PI / 2), mat: this.puddleMat, items: puddles, radius: 320 * lod });
+    bakeOnGround(this.scene, MODELS.rut(), DECAL, ruts, { lift: 0.05 });
+    bakeOnGround(this.scene, MODELS.mud(), DECAL, mud, { lift: 0.05 });
+    bakeOnGround(this.scene, MODELS.scorch(), DECAL, scorch, { lift: 0.05 });
+    this.puddleMat = new THREE.MeshStandardMaterial({ color: 0x8a9aa0, metalness: 0.9, roughness: 0.08, flatShading: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, depthWrite: false });
+    bakeOnGround(this.scene, disc(9), this.puddleMat, puddles, { lift: 0.07, order: 2 });
 
     // ---- Abandoned equipment near trenches, wrecks and points ----
     const r4 = mulberry32(97531);
