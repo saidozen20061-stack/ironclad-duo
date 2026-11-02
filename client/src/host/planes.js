@@ -371,7 +371,7 @@ export class PlaneSystem {
       p.rockets--;
       const side = p.rockets % 2 ? 1 : -1;
       const pos = new Vector3(p.x + Math.cos(p.h) * s.size.width * 0.3 * side, p.y - 0.5, p.z - Math.sin(p.h) * s.size.width * 0.3 * side);
-      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 3 }, pos, f.clone());
+      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4, air: true }, pos, f.clone());
     }
     this.rearGun(p);
     this.sixCheck(p);

@@ -338,6 +338,17 @@ export class MatchClient {
       : `You: <b>${name(mine)}</b> · ${this.role === 'driver' ? 'Gunner' : 'Driver'}: <b>${name(other)}</b> · ${Math.ceil(crew.left)}s`;
   }
 
+  // Planes are drawn slightly in the past, so shots start from where the plane appears to be.
+  fromDrawnPlane(ev) {
+    if (!ev.air) return ev;
+    const drawn = this.units?.models.get(ev.o)?.root.position;
+    const host = this.buffer.latest?.units.get(ev.o);
+    if (!drawn || !host) return ev;
+    const dx = drawn.x - host.x, dy = drawn.y - host.y, dz = drawn.z - host.z;
+    if (Math.hypot(dx, dy, dz) > 40) return ev;
+    return { ...ev, x: ev.x + dx, y: ev.y + dy, z: ev.z + dz };
+  }
+
   skipRespawn() {
     net.send({ t: 'respawnSkip' });
   }
@@ -375,10 +386,11 @@ export class MatchClient {
         if (!(this.view.isFoot && ev.o === this.view.myId)) this.sound.shot(ev.kind, ev, ev.o === myId);
         if (ev.o === myId && gunner) this.view.kick = ev.kind === 'heavy' ? 0.05 : ev.kind === 'mg' ? 0.002 : ev.kind === 'ac' ? 0.008 : 0.03;
         if (this.fx) {
-          this.fx.spawnProjectile(ev);
-          const pos = new THREE.Vector3(ev.x, ev.y, ev.z);
+          const shot = this.fromDrawnPlane(ev);
+          this.fx.spawnProjectile(shot);
+          const pos = new THREE.Vector3(shot.x, shot.y, shot.z);
           const dir = new THREE.Vector3(ev.vx, ev.vy, ev.vz).normalize();
-          this.fx.muzzleFlash(pos, dir, ev.kind);
+          this.fx.muzzleFlash(pos, dir, ev.air && ev.kind === 'mg' ? 'ac' : ev.kind);
         }
         if (ev.o === myId && driver) {
           if (ev.kind !== 'mg') this.view.addShake(ev.kind === 'heavy' ? 0.5 : ev.kind === 'ac' ? 0.05 : 0.3);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { quality } from '../settings.js';
-import { markHeat, LAYER_FX } from './thermal.js';
+import { markHeat, noHeat, LAYER_FX } from './thermal.js';
 
 // Projectiles (client-side ballistic replay of server fire events) and simple particle effects.
 const GRAVITY = 9.81;
@@ -26,7 +26,9 @@ const HEAT_DUST = { heat: 0.2, alpha: 0.1 };
 const HEAT_WATER = { heat: 0.08, alpha: 0.2 };
 const HEAT_DIRT = { heat: 0.3 };
 
-const AIR_TRACER = { len: 5, width: 0.16 };
+// Plane bullets fly straight away from the camera, so they need real size to read as a line.
+const AIR_TRACER = { len: 12, width: 0.13 };
+const AIR_ROCKET = { len: 3, width: 0.55 };
 
 const IMPACT_SIZE = { bomb: 7, ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
@@ -43,7 +45,8 @@ export class FX {
     }
     this.batches = new Map();
     // Plane guns: bright enough to read through the haze, like tracers do at dusk.
-    this.airTracerMat = new THREE.MeshBasicMaterial({ color: 0xffd070, fog: false, toneMapped: false });
+    this.airTracerMat = new THREE.MeshBasicMaterial({ color: 0xffe090, fog: false, toneMapped: false });
+    this.airGlowMat = new THREE.MeshBasicMaterial({ color: 0xff9030, fog: false, toneMapped: false, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
     this.puffGeo = new THREE.IcosahedronGeometry(1, 0);
     this.chunkGeo = new THREE.TetrahedronGeometry(0.4, 0);
     this.mats = {
@@ -52,6 +55,7 @@ export class FX {
       smoke: new THREE.MeshStandardMaterial({ color: 0x4a443c, flatShading: true, transparent: true, depthWrite: false }),
       dust: new THREE.MeshStandardMaterial({ color: 0x8a7458, flatShading: true, transparent: true, depthWrite: false }),
       water: new THREE.MeshStandardMaterial({ color: 0xcfe0e0, flatShading: true, transparent: true, depthWrite: false }),
+      trail: new THREE.MeshStandardMaterial({ color: 0xe4e0d6, flatShading: true, transparent: true, depthWrite: false }),
       spark: new THREE.MeshBasicMaterial({ color: 0xffe080 }),
       dirt: new THREE.MeshStandardMaterial({ color: 0x4a3a2a, flatShading: true }),
     };
@@ -61,12 +65,20 @@ export class FX {
   }
 
   spawnProjectile(ev) {
-    const style = ev.air ? AIR_TRACER : TRACER[ev.kind] ?? TRACER.ap;
+    const rocket = ev.air && ev.kind === 'rocket';
+    const style = rocket ? AIR_ROCKET : ev.air ? AIR_TRACER : TRACER[ev.kind] ?? TRACER.ap;
     const mesh = new THREE.Mesh(this.tracerGeo, ev.air ? this.airTracerMat : this.tracerMats[ev.kind] ?? this.tracerMats.ap);
     markHeat(mesh, ev.kind === 'bomb' ? HEAT_DIRT : HEAT_TRACER);
+    if (ev.air) {
+      // A soft glow around the core.
+      const glow = new THREE.Mesh(this.tracerGeo, this.airGlowMat);
+      glow.scale.set(2.6, 2.6, 1);
+      noHeat(glow);
+      mesh.add(glow);
+    }
     mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
-    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air ? 2.2 : 4, style, streak: ev.kind === 'mg' || ev.kind === 'ac' });
+    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && !rocket ? 2.2 : 4, air: !!ev.air, style, streak: ev.kind === 'mg' || ev.kind === 'ac' || rocket });
   }
 
   removeProjectile(id) {
@@ -223,15 +235,17 @@ export class FX {
       // Fast bullets are drawn as a streak of what they cover in a frame, and don't get
       // thinner than a line with distance, so a burst always reads as a stream of tracers.
       if (p.streak && cam) {
-        const w = p.style.width * Math.max(1, Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) / 40);
-        p.mesh.scale.set(w, w, Math.max(p.style.len, Math.hypot(p.vx, p.vy, p.vz) * dt * 1.2));
+        const w = p.style.width * Math.max(1, Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) / (p.air ? 30 : 40));
+        p.mesh.scale.set(w, w, Math.min(20, Math.max(p.style.len, Math.hypot(p.vx, p.vy, p.vz) * dt * 1.5)));
       }
       if (p.kind === 'rocket') {
         // Smoke trail
         p.trail = (p.trail ?? 0) - dt;
         if (p.trail <= 0) {
-          p.trail = 0.03;
-          this.particle({ geo: this.puffGeo, mat: this.mats.smoke, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.25, grow: 3, life: 1.2, fade: 0.5 });
+          p.trail = p.air ? 0.05 : 0.03;
+          // A plane's rocket leaves a thick pale trail you can follow across the sky.
+          if (p.air) this.particle({ geo: this.puffGeo, mat: this.mats.trail, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.45, grow: 3, life: 2.5, fade: 0.5 });
+          else this.particle({ geo: this.puffGeo, mat: this.mats.smoke, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.25, grow: 3, life: 1.2, fade: 0.5 });
         }
       } else p.vy -= GRAVITY * dt;
       p.x += p.vx * dt;

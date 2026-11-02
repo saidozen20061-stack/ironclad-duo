@@ -102,7 +102,8 @@ for (const p of Object.values(PLANES)) {
   p.guns = { ...p.guns, speed: 420 };
   p.weapon = { label: p.guns.label }; // what the HUD and shared code read
   p.bombs ??= null;
-  p.rockets ??= null;
+  // Every plane carries a few rockets, slow enough that you can watch them fly.
+  p.rockets = { damage: 240, splash: 5, splashDamage: 110, spread: 0.012, count: 4, ...p.rockets, speed: 125 };
 }
 
 export const PLANE_IDS = Object.keys(PLANES);
