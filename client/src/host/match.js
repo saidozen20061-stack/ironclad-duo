@@ -690,7 +690,8 @@ export class Match {
     // NPC shots hit softer on the lower difficulties.
     if (t.ai && !t.player && !t.crew) p = { ...p, damage: p.damage * this.skill.damage, splashDamage: (p.splashDamage ?? 0) * this.skill.damage };
     // Random cone spread, much worse with a damaged gun.
-    const gunMul = t.mods && p.kind !== 'mg' ? 1 + 4 * (1 - t.mods.gun) : 1;
+    // Planes have no 'gun' module: they work out their own spread from 'guns'.
+    const gunMul = t.mods?.gun !== undefined && p.kind !== 'mg' ? 1 + 4 * (1 - t.mods.gun) : 1;
     const sp = p.spread * gunMul * Math.sqrt(Math.random());
     const a = Math.random() * Math.PI * 2;
     const ref = Math.abs(dir.y) < 0.9 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);

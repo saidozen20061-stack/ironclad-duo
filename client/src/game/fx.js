@@ -28,7 +28,7 @@ const HEAT_DIRT = { heat: 0.3 };
 
 // Plane bullets fly straight away from the camera, so they need real size to read as a line.
 const AIR_TRACER = { len: 12, width: 0.13 };
-const AIR_ROCKET = { len: 3, width: 0.55 };
+const AIR_ROCKET = { len: 4, width: 0.3 };
 
 const IMPACT_SIZE = { bomb: 7, ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
@@ -47,6 +47,8 @@ export class FX {
     // Plane guns: bright enough to read through the haze, like tracers do at dusk.
     this.airTracerMat = new THREE.MeshBasicMaterial({ color: 0xffe090, fog: false, toneMapped: false });
     this.airGlowMat = new THREE.MeshBasicMaterial({ color: 0xff9030, fog: false, toneMapped: false, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.rocketMat = new THREE.MeshBasicMaterial({ color: 0xfff4d0, fog: false, toneMapped: false });
+    this.rocketGlowMat = new THREE.MeshBasicMaterial({ color: 0xff7a18, fog: false, toneMapped: false, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
     this.puffGeo = new THREE.IcosahedronGeometry(1, 0);
     this.chunkGeo = new THREE.TetrahedronGeometry(0.4, 0);
     this.mats = {
@@ -55,7 +57,8 @@ export class FX {
       smoke: new THREE.MeshStandardMaterial({ color: 0x4a443c, flatShading: true, transparent: true, depthWrite: false }),
       dust: new THREE.MeshStandardMaterial({ color: 0x8a7458, flatShading: true, transparent: true, depthWrite: false }),
       water: new THREE.MeshStandardMaterial({ color: 0xcfe0e0, flatShading: true, transparent: true, depthWrite: false }),
-      trail: new THREE.MeshStandardMaterial({ color: 0xe4e0d6, flatShading: true, transparent: true, depthWrite: false }),
+      trail: new THREE.MeshStandardMaterial({ color: 0xc4c0b8, flatShading: true, transparent: true, depthWrite: false }),
+      trailFire: new THREE.MeshBasicMaterial({ color: 0xff8a20, fog: false, toneMapped: false, transparent: true, depthWrite: false }),
       spark: new THREE.MeshBasicMaterial({ color: 0xffe080 }),
       dirt: new THREE.MeshStandardMaterial({ color: 0x4a3a2a, flatShading: true }),
     };
@@ -67,12 +70,12 @@ export class FX {
   spawnProjectile(ev) {
     const rocket = ev.air && ev.kind === 'rocket';
     const style = rocket ? AIR_ROCKET : ev.air ? AIR_TRACER : TRACER[ev.kind] ?? TRACER.ap;
-    const mesh = new THREE.Mesh(this.tracerGeo, ev.air ? this.airTracerMat : this.tracerMats[ev.kind] ?? this.tracerMats.ap);
+    const mesh = new THREE.Mesh(this.tracerGeo, rocket ? this.rocketMat : ev.air ? this.airTracerMat : this.tracerMats[ev.kind] ?? this.tracerMats.ap);
     markHeat(mesh, ev.kind === 'bomb' ? HEAT_DIRT : HEAT_TRACER);
     if (ev.air) {
       // A soft glow around the core.
-      const glow = new THREE.Mesh(this.tracerGeo, this.airGlowMat);
-      glow.scale.set(2.6, 2.6, 1);
+      const glow = new THREE.Mesh(this.tracerGeo, rocket ? this.rocketGlowMat : this.airGlowMat);
+      glow.scale.set(2.6, 2.6, rocket ? 1.5 : 1);
       noHeat(glow);
       mesh.add(glow);
     }
@@ -217,7 +220,7 @@ export class FX {
     mesh.frustumCulled = false;
     mesh.renderOrder = 3;
     mesh.layers.set(LAYER_FX);
-    markHeat(mesh, mat === this.mats.fire || mat === this.mats.spark ? HEAT_FIRE : mat === this.mats.smoke ? HEAT_SMOKE : mat === this.mats.dust ? HEAT_DUST : mat === this.mats.dirt ? HEAT_DIRT : HEAT_WATER);
+    markHeat(mesh, mat === this.mats.fire || mat === this.mats.trailFire || mat === this.mats.spark ? HEAT_FIRE : mat === this.mats.smoke || mat === this.mats.trail ? HEAT_SMOKE : mat === this.mats.dust ? HEAT_DUST : mat === this.mats.dirt ? HEAT_DIRT : HEAT_WATER);
     this.scene.add(mesh);
     b = { mesh, op, n: 0 };
     this.batches.set(key, b);
@@ -230,6 +233,21 @@ export class FX {
     this.particles.push({ b: this.batch(geo, mat), x: pos.x, y: pos.y, z: pos.z, rx: Math.random() * 3, ry: Math.random() * 3, vel, size, grow, life, t: 0, gravity, fade, drag, spin, ground });
   }
 
+  // A plane's rocket: flame right behind it, then smoke that hangs for a couple of seconds.
+  // Spaced by distance, so the trail stays unbroken at any speed or frame rate.
+  rocketTrail(p, dt) {
+    const speed = Math.hypot(p.vx, p.vy, p.vz);
+    const step = 4 / Math.max(0.5, quality().particles);
+    p.gap = Math.min(step * 10, (p.gap ?? step) + speed * dt);
+    while (p.gap >= step) {
+      p.gap -= step;
+      const back = p.gap / speed;
+      const pos = new THREE.Vector3(p.x - p.vx * back, p.y - p.vy * back, p.z - p.vz * back);
+      this.particle({ geo: this.puffGeo, mat: this.mats.trailFire, pos: pos.clone(), vel: new THREE.Vector3(), size: 0.55, grow: -0.6, life: 0.3, fade: 0.95 });
+      this.particle({ geo: this.puffGeo, mat: this.mats.trail, pos, vel: rand3(1).setY(0.5), size: 0.45, grow: 2.5, life: 2 + Math.random() * 0.6, fade: 0.55 });
+    }
+  }
+
   update(dt, cam) {
     for (const [id, p] of this.projectiles) {
       // Fast bullets are drawn as a streak of what they cover in a frame, and don't get
@@ -238,14 +256,13 @@ export class FX {
         const w = p.style.width * Math.max(1, Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) / (p.air ? 30 : 40));
         p.mesh.scale.set(w, w, Math.min(20, Math.max(p.style.len, Math.hypot(p.vx, p.vy, p.vz) * dt * 1.5)));
       }
-      if (p.kind === 'rocket') {
+      if (p.kind === 'rocket' && p.air) this.rocketTrail(p, dt);
+      else if (p.kind === 'rocket') {
         // Smoke trail
         p.trail = (p.trail ?? 0) - dt;
         if (p.trail <= 0) {
-          p.trail = p.air ? 0.05 : 0.03;
-          // A plane's rocket leaves a thick pale trail you can follow across the sky.
-          if (p.air) this.particle({ geo: this.puffGeo, mat: this.mats.trail, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.45, grow: 3, life: 2.5, fade: 0.5 });
-          else this.particle({ geo: this.puffGeo, mat: this.mats.smoke, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.25, grow: 3, life: 1.2, fade: 0.5 });
+          p.trail = 0.03;
+          this.particle({ geo: this.puffGeo, mat: this.mats.smoke, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.25, grow: 3, life: 1.2, fade: 0.5 });
         }
       } else p.vy -= GRAVITY * dt;
       p.x += p.vx * dt;
