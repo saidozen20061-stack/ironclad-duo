@@ -1,4 +1,4 @@
-import { TANKS, TANK_IDS, MODES, KILL_LIMITS } from '../../../shared/constants.js';
+import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../../shared/constants.js';
 import { net } from '../net.js';
 import { PAINT } from '../models/paint.js';
 import { $, $$, escapeHtml, toast, setStatus } from './screens.js';
@@ -51,6 +51,8 @@ function buildModeCards() {
   for (const b of $$('.mode-card')) b.addEventListener('click', () => net.send({ t: 'mode', mode: b.dataset.mode }));
   $('#kill-pick').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small" data-kills="${k}">${k}</button>`).join('')}`;
   for (const b of $$('[data-kills]')) b.addEventListener('click', () => net.send({ t: 'mode', killLimit: Number(b.dataset.kills) }));
+  $('#diff-pick').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small" data-diff="${id}">${d.name}</button>`).join('')}`;
+  for (const b of $$('[data-diff]')) b.addEventListener('click', () => net.send({ t: 'mode', difficulty: b.dataset.diff }));
 }
 
 export function initLobbyScreen({ onLeave }) {
@@ -119,6 +121,10 @@ export function renderLobby() {
     b.disabled = !lobby.isHost;
   }
   $('#kill-pick').style.display = s.mode === 'tdm' ? '' : 'none';
+  for (const b of $$('[data-diff]')) {
+    b.classList.toggle('on', b.dataset.diff === s.difficulty);
+    b.disabled = !lobby.isHost;
+  }
   for (const b of $$('[data-kills]')) {
     b.classList.toggle('on', Number(b.dataset.kills) === s.killLimit);
     b.disabled = !lobby.isHost;

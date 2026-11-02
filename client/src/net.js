@@ -177,7 +177,7 @@ class SimProxy {
     };
     this.worker.onerror = (e) => console.error('simulation worker error', e.message ?? e);
     const info = room.matchInfo;
-    this.worker.postMessage({ type: 'start', crews: info.crews, mode: info.mode, killLimit: info.killLimit });
+    this.worker.postMessage({ type: 'start', crews: info.crews, mode: info.mode, killLimit: info.killLimit, difficulty: info.difficulty });
   }
 
   sendSnapshot(msg) {
@@ -291,13 +291,13 @@ export class Net {
 
   // Solo: the simulation worker runs right here, no PeerJS / room. One player drives and
   // shoots; their crew's gunner seat stays empty so only one soldier bails out.
-  startSolo({ tank, paint, mode, killLimit }) {
+  startSolo({ tank, paint, mode, killLimit, difficulty }) {
     this.leave();
     this.mode = 'solo';
     this.id = 1;
     const me = { id: 1, crew: 0, role: 'driver', send: (msg) => this.deliver(msg) };
     const crew = { id: 0, team: 'blue', tank, driver: 1, gunner: 1 };
-    const room = { players: [me], matchInfo: { mode, killLimit, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
+    const room = { players: [me], matchInfo: { mode, killLimit, difficulty, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
     this.solo = new SimProxy(room);
     this.solo.playerLeft(0, 'gunner');
     this.deliver({ t: 'matchStart', solo: true, paint, ...room.matchInfo, names: { 1: this.name } });

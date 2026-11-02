@@ -5,7 +5,7 @@
 import { Vector3 } from 'three';
 import { UNITS, MATCH, TANKS } from '../../../shared/constants.js';
 import { POINTS, BASES, groundAt, heightAt, WATER_LEVEL } from '../../../shared/map.js';
-import { propsNear, circleHitsProp, FORT } from '../../../shared/props.js';
+import { propsNear, circleHitsProp, segmentHitsProp, FORT } from '../../../shared/props.js';
 import { wrapAngle, planePitchAlong, muzzlePose } from '../../../shared/tank.js';
 import { nextWaypoint, passable, distanceTo } from './nav.js';
 
@@ -36,6 +36,11 @@ function ballisticPitch(d, dy, speed) {
 
 export function unitHeight(u) {
   return u.kind === 'tank' ? u.pose.y + 1.4 : u.pose.y + (u.kind === 'inf' ? 1.3 : 1.0);
+}
+
+// A moving target's velocity, as far as an NPC gunner could judge it.
+function targetVel(t) {
+  return t.kind === 'tank' ? [Math.sin(t.h) * t.v, Math.cos(t.h) * t.v] : [0, 0];
 }
 
 // Where an objective key is: a capture point, a base ('blue' / 'red'), or the fortress.
@@ -300,10 +305,59 @@ export class ArmyAI {
       if (e.player) score *= 0.85; // the human crew draws fire
       if (score >= bestScore) continue;
       if (!lineOfSight(ux, uy, uz, e.x, unitHeight(e), e.z)) continue;
+      if (this.concealed(u, e, d)) continue;
       best = e;
       bestScore = score;
     }
     return best;
+  }
+
+  // Fog, dust, smoke and cover: a target in plain sight can still slip out of view for a
+  // moment. Far targets fade with range, smoke and buildings hide them more often.
+  concealed(u, e, d) {
+    const s = this.match.skill;
+    // Much easier to keep an eye on something already being tracked.
+    const k = u.ai.target === e ? 0.2 : 1;
+    if (d > s.sight && Math.random() < k * Math.min(0.95, ((d - s.sight) / s.sight) * 1.3)) return true;
+    if (Math.random() >= s.lose * k) return false;
+    if (this.smokeBetween(u, e)) return true;
+    const mx = (u.x + e.x) / 2, mz = (u.z + e.z) / 2;
+    for (const p of propsNear(mx, mz, d / 2 + 5)) {
+      if (!p.cover || !p.solid || this.match.propDead.has(p.id)) continue;
+      const h = segmentHitsProp(p, u.x, unitHeight(u), u.z, e.x - u.x, unitHeight(e) - unitHeight(u), e.z - u.z);
+      if (h !== null && h > 0.03 && h < 0.97) return true;
+    }
+    return false;
+  }
+
+  // Smoke from wrecks and fires on the line between two units.
+  smokeBetween(u, e) {
+    const near = (x, z, r) => {
+      const dx = e.x - u.x, dz = e.z - u.z;
+      const t = Math.max(0, Math.min(1, ((x - u.x) * dx + (z - u.z) * dz) / (dx * dx + dz * dz || 1)));
+      return Math.hypot(x - u.x - dx * t, z - u.z - dz * t) < r;
+    };
+    for (const o of this.match.units) if (o.dead && o.kind === 'tank' && near(o.x, o.z, 7)) return true;
+    for (const s of this.match.smokeZones) if (near(s.x, s.z, s.r)) return true;
+    return false;
+  }
+
+  // A fresh target takes a moment to react to; returns true while the NPC is still reacting.
+  reacting(ai, target, dt) {
+    // Losing sight for a moment doesn't reset anything; a target gone for a while does.
+    if (!target) {
+      ai.forgetT = (ai.forgetT ?? 0) + dt;
+      if (ai.forgetT > 4) ai.reactTo = null;
+      return true;
+    }
+    ai.forgetT = 0;
+    if (target !== ai.reactTo) {
+      ai.reactTo = target;
+      const [a, b] = this.match.skill.react;
+      ai.reactT = rand(a, b);
+    }
+    ai.reactT = Math.max(0, (ai.reactT ?? 0) - dt);
+    return ai.reactT > 0;
   }
 
   // ---------- Infantry ----------
@@ -446,7 +500,8 @@ export class ArmyAI {
 
     // Shooting: only when not sprinting to cover / retreating.
     const t = ai.target;
-    if (t && !t.dead && ai.state !== 'retreat' && !ai.drag && ai.cd <= 0 && ai.reloadT <= 0 && ai.throwT <= 0 && (!moving || ai.state === 'engage')) {
+    const reacting = this.reacting(ai, t, dt);
+    if (t && !t.dead && !reacting && ai.state !== 'retreat' && !ai.drag && ai.cd <= 0 && ai.reloadT <= 0 && ai.throwT <= 0 && (!moving || ai.state === 'engage')) {
       u.h = Math.atan2(t.x - u.x, t.z - u.z);
       const d = Math.hypot(t.x - u.x, t.z - u.z);
       if (d <= w.range) {
@@ -459,7 +514,7 @@ export class ArmyAI {
         const yaw = Math.atan2(t.x - ox, t.z - oz);
         // Accuracy degrades with range; rockets are slow so they lead a little.
         const dir = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-        m.fire(u, { kind: w.kind, damage: w.damage, speed: w.speed, splash: w.splash ?? 0, splashDamage: w.splashDamage ?? 0, spread: w.spread * (1 + d / 120) }, new Vector3(ox, oy, oz), dir);
+        m.fire(u, { kind: w.kind, damage: w.damage, speed: w.speed, splash: w.splash ?? 0, splashDamage: w.splashDamage ?? 0, spread: w.spread * (1 + d / 120) * (w.kind === 'rocket' ? m.skill.rocket : Math.sqrt(m.skill.aim)) }, new Vector3(ox, oy, oz), dir);
         u.gp = pitch;
         // Magazine change every few shots (rockets reload by their long interval).
         if (w.kind === 'rifle' && ++ai.shots % 6 === 0) ai.reloadT = 2.2;
@@ -607,8 +662,18 @@ export class ArmyAI {
       const { pos } = muzzlePose(t.spec, t.pose, t.x, t.z, t.ty, t.gp);
       const d = Math.hypot(tg.x - pos.x, tg.z - pos.z);
       const speed = w.speed ?? w.shells?.AP.speed ?? 800;
-      t.aim.yaw = Math.atan2(tg.x - pos.x, tg.z - pos.z) + (Math.random() - 0.5) * 0.004 * (d / 100);
-      t.aim.pitch = ballisticPitch(d, unitHeight(tg) - 0.4 - pos.y, speed);
+      // One laying error per loading of the gun, and only partly leading a moving target.
+      const skill = m.skill;
+      const loaded = t.reload <= 0;
+      if (loaded !== ai.wasLoaded || ai.errYaw === undefined) {
+        ai.wasLoaded = loaded;
+        ai.errYaw = (Math.random() - 0.5) * skill.aim * (0.004 + 0.004 * (d / 100));
+        ai.errPitch = (Math.random() - 0.5) * skill.aim * 0.002;
+      }
+      const [vx, vz] = targetVel(tg);
+      const flight = (d / speed) * skill.lead;
+      t.aim.yaw = Math.atan2(tg.x + vx * flight - pos.x, tg.z + vz * flight - pos.z) + ai.errYaw;
+      t.aim.pitch = ballisticPitch(d, unitHeight(tg) - 0.4 - pos.y, speed) + ai.errPitch;
       if (t.spec.weapon.shells) t.shell = tg.kind === 'inf' ? 'HE' : 'AP';
     } else {
       t.aim.yaw = t.h;
@@ -616,7 +681,7 @@ export class ArmyAI {
     }
     m.aimTurret(t);
     const worldYaw = t.h + t.ty;
-    const aligned = tg && !tg.dead && Math.abs(wrapAngle(t.aim.yaw - worldYaw)) < 0.02;
+    const aligned = tg && !tg.dead && !this.reacting(ai, tg, dt) && Math.abs(wrapAngle(t.aim.yaw - worldYaw)) < 0.02;
     t.trigger.main = !!aligned;
     if (aligned && t.reload === 0) t.fireQueued = true;
     t.trigger.coax = !!(aligned && tg.kind === 'inf');
@@ -640,13 +705,14 @@ export class ArmyAI {
     const want = wrapAngle(Math.atan2(tg.x - g.x, tg.z - g.z) - g.h);
     // Limited traverse: ±60°, otherwise the crew re-lays the whole gun slowly.
     const diff = wrapAngle(want - g.ty);
-    const step = g.spec.turretSpeed * dt;
+    const step = g.spec.turretSpeed * m.skill.turret * dt;
     g.ty = wrapAngle(g.ty + Math.max(-step, Math.min(step, diff)));
     if (Math.abs(g.ty) > 1.05) {
       g.h = wrapAngle(g.h + Math.sign(g.ty) * step * 0.5);
       g.ty -= Math.sign(g.ty) * step * 0.5;
     }
-    if (Math.abs(diff) < 0.03 && ai.cd <= 0) {
+    const reacting = this.reacting(ai, tg, dt);
+    if (Math.abs(diff) < 0.03 && ai.cd <= 0 && !reacting) {
       ai.cd = w.interval;
       const yaw = g.h + g.ty;
       const ox = g.x + Math.sin(yaw) * 2, oz = g.z + Math.cos(yaw) * 2, oy = g.pose.y + 1.1;
@@ -654,7 +720,7 @@ export class ArmyAI {
       const pitch = ballisticPitch(d, unitHeight(tg) - 0.4 - oy, w.speed);
       g.gp = pitch;
       const dir = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-      m.fire(g, { kind: 'ap', damage: w.damage, speed: w.speed, splash: w.splash, splashDamage: w.splashDamage, spread: w.spread * (1 + d / 200) }, new Vector3(ox, oy, oz), dir);
+      m.fire(g, { kind: 'ap', damage: w.damage, speed: w.speed, splash: w.splash, splashDamage: w.splashDamage, spread: w.spread * (1 + d / 200) * m.skill.aim * 0.7 }, new Vector3(ox, oy, oz), dir);
     }
   }
 }

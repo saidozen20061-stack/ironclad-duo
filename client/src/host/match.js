@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
+import { DIFFICULTY, TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
 import { footBlocked, nearGarage } from '../../../shared/foot.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
@@ -128,6 +128,8 @@ export class Match {
     this.room = room;
     this.mode = room.mode ?? 'flags';
     this.killLimit = room.killLimit ?? 20;
+    this.skill = DIFFICULTY[room.difficulty] ?? DIFFICULTY.easy;
+    this.smokeZones = []; // drifting smoke that hides targets from NPCs
     this.time = 0;
     this.tickNo = 0;
     this.units = [];
@@ -566,7 +568,8 @@ export class Match {
     const s = t.spec;
     // A damaged turret ring traverses slowly; a destroyed one barely moves.
     const ring = t.mods ? (t.mods.turret <= 0 ? 0.08 : 0.35 + 0.65 * t.mods.turret) : 1;
-    const maxStep = s.turretSpeed * ring * DT;
+    const npc = t.ai && !t.player && !t.crew ? this.skill.turret : 1;
+    const maxStep = s.turretSpeed * ring * npc * DT;
     const want = wrapAngle(t.aim.yaw - t.h);
     const diff = wrapAngle(want - t.ty);
     t.ty = wrapAngle(t.ty + Math.max(-maxStep, Math.min(maxStep, diff)));
@@ -575,7 +578,7 @@ export class Match {
     const worldYaw = t.h + t.ty;
     const wantElev = t.aim.pitch - planePitchAlong(t.pose.up, worldYaw);
     const elev = Math.max(s.elevation.min, Math.min(s.elevation.max, wantElev));
-    const eStep = s.turretSpeed * 0.6 * DT;
+    const eStep = s.turretSpeed * 0.6 * npc * DT;
     t.gp += Math.max(-eStep, Math.min(eStep, elev - t.gp));
   }
 
@@ -626,6 +629,8 @@ export class Match {
   // Tanks fire from their muzzle; other units pass an explicit origin + direction.
   fire(t, p, origin = null, direction = null) {
     const { pos, dir } = origin ? { pos: origin, dir: direction } : muzzlePose(t.spec, t.pose, t.x, t.z, t.ty, t.gp);
+    // NPC shots hit softer on the lower difficulties.
+    if (t.ai && !t.player && !t.crew) p = { ...p, damage: p.damage * this.skill.damage, splashDamage: (p.splashDamage ?? 0) * this.skill.damage };
     // Random cone spread, much worse with a damaged gun.
     const gunMul = t.mods && p.kind !== 'mg' ? 1 + 4 * (1 - t.mods.gun) : 1;
     const sp = p.spread * gunMul * Math.sqrt(Math.random());

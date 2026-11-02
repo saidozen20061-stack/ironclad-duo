@@ -7,7 +7,7 @@ import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking } from './ui/lobbyScreen.js';
 import { voice } from './voice.js';
 import { MatchClient } from './game/matchClient.js';
-import { TANKS, TANK_IDS, MODES, KILL_LIMITS } from '../../shared/constants.js';
+import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../shared/constants.js';
 import { PAINT } from './models/paint.js';
 
 const menuScene = new MenuScene();
@@ -60,7 +60,7 @@ $('#btn-join-back').addEventListener('click', () => backScreen());
 $('#btn-settings').addEventListener('click', () => showScreen('settings'));
 
 // ---------- Solo setup: tank, camo, mode; the match runs locally ----------
-const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20 };
+const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy' };
 const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
 function renderSolo() {
   const pick = (root, items, cur, key) => {
@@ -71,6 +71,7 @@ function renderSolo() {
   pick('#solo-modes', Object.entries(MODES).map(([id, m]) => [id, m.name]), solo.mode, 'mode');
   $('#solo-kills').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small${k === solo.killLimit ? ' on' : ''}" data-kills="${k}">${k}</button>`).join('')}`;
   $('#solo-kills').style.display = solo.mode === 'tdm' ? '' : 'none';
+  $('#solo-diff').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small${id === solo.difficulty ? ' on' : ''}" data-diff="${id}">${d.name}</button>`).join('')}`;
   menuScene.setShowcase(solo.tank, solo.paint);
 }
 $('#screen-solo').addEventListener('click', (e) => {
@@ -80,6 +81,7 @@ $('#screen-solo').addEventListener('click', (e) => {
   else if (b.dataset.paint) solo.paint = b.dataset.paint;
   else if (b.dataset.mode) solo.mode = b.dataset.mode;
   else if (b.dataset.kills) solo.killLimit = Number(b.dataset.kills);
+  else if (b.dataset.diff) solo.difficulty = b.dataset.diff;
   else return;
   renderSolo();
 });
