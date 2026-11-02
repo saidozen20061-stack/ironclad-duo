@@ -22,6 +22,11 @@ const REST_TIME = [20, 35]; // s before they look for the next target
 // A proper take-off roll: tyres and a heavy plane hold it back until it's well up to speed.
 const GROUND_THRUST = 0.5; // of the thrust in the air
 const TAKEOFF_SPEED = 0.7; // × top speed
+// Climbing out: while the climb key stays held after lift-off, the nose eases up to a gentle climb.
+const ROTATE_TIME = 2; // s for the nose to start moving at its full rate
+const CLIMB_PITCH = 0.3; // radians
+const CLIMB_HOLD = 6; // s before a held key starts steepening the climb
+const CLIMB_STEEPEN = 0.15; // radians per second after that
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
 const ROCKET_BELOW = 0.85; // × gear height under the plane: clear of every wing and its underside
 const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
@@ -50,7 +55,7 @@ export class Plane {
 
   reset() {
     const s = this.spawn, sp = this.spec;
-    Object.assign(this, { x: s.x, y: s.y, z: s.z, h: s.h, gp: 0, ty: 0, v: s.v, vy: 0, grounded: s.grounded, dead: false, wrecked: false, hp: sp.hp, burning: 0, repair: null, reload: 0, reloadTotal: 1, respawnAt: 0, spin: 0 });
+    Object.assign(this, { x: s.x, y: s.y, z: s.z, h: s.h, gp: 0, ty: 0, v: s.v, vy: 0, grounded: s.grounded, climbOut: null, dead: false, wrecked: false, hp: sp.hp, burning: 0, repair: null, reload: 0, reloadTotal: 1, respawnAt: 0, spin: 0 });
     this.throttle = s.grounded ? 0 : 0.8;
     this.fuel = 1;
     this.ammo = sp.guns.ammo;
@@ -197,7 +202,14 @@ export class PlaneSystem {
     const wingBias = (wingL - wingR) * 0.5; // left wing gone (0) => rolls left
     const turnK = 0.45 + 0.55 * Math.min(wingL, wingR);
     const rollRate = s.roll * authority * stickR * turnK + wingBias * 0.8;
-    const pitchRate = s.pitch * authority * stickP * tailK * turnK;
+    let pitchRate = s.pitch * authority * stickP * tailK * turnK;
+    if (p.climbOut != null) {
+      p.climbOut += DT;
+      if (stickP > 0) {
+        const cap = CLIMB_PITCH + Math.max(0, p.climbOut - CLIMB_HOLD) * CLIMB_STEEPEN;
+        pitchRate = Math.min(pitchRate, Math.max(0, cap - p.gp) * Math.min(1, p.climbOut / ROTATE_TIME));
+      } else p.climbOut = null; // let go: normal flying from here
+    }
     const yawRate = s.yaw * authority * stickY * tailK;
     p.ty = wrapAngle(p.ty + rollRate * DT);
     // Body rates to heading and pitch, plus the sideways pull of banked wings.
@@ -269,6 +281,7 @@ export class PlaneSystem {
     if (!gear) this.m.damage(p, s.hp * 0.25, { owner: p.lastHitBy ?? -1 });
     if (p.dead) return;
     p.grounded = true;
+    p.climbOut = null;
     p.y = surface + s.gearH;
     p.vy = 0;
     p.gp = 0;
@@ -300,8 +313,9 @@ export class PlaneSystem {
     // Rotate and lift off once fast enough.
     if (p.v > s.maxSpeed * TAKEOFF_SPEED && stickP > 0.08 && gear) {
       p.grounded = false;
-      p.gp = 0.1;
-      p.y += 0.2;
+      p.climbOut = 0;
+      p.gp = 0.01;
+      p.y += 0.05;
     } else if (!gear && p.v > 8) this.m.damage(p, s.hp * 0.03 * DT, { owner: -1 });
     // Own airfield: slow down on it and the ground crew repairs, refuels and rearms.
     const f2 = AIRFIELDS[p.team];
