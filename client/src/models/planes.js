@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PLANES } from '../../../shared/planes.js';
 import { paintMaterial } from './paint.js';
+import { buildMinigun } from './guns.js';
 
 // Procedural low-poly planes, each lofted from its own fuselage stations and wing outline.
 // Forward is +Z, up is +Y, X is the left wing, origin at the centre of gravity.
@@ -289,9 +290,36 @@ export function buildPlane(type, team = 'blue', paint = type) {
   add.dark.push(cyl(0.15, 0.15, 0.1, 8).rotateY(Math.PI / 2).translate(0, -spec.gearH + 0.72, sh.fuse[sh.fuse.length - 1][0] + 1));
   add.metal.push(box(0.06, spec.gearH * 0.45, 0.08, 0, -spec.gearH * 0.55, sh.fuse[sh.fuse.length - 1][0] + 1));
 
-  // Bombs hang under the fuselage on the planes that carry them.
-  if (spec.bombs) add.dark.push(cyl(0.2, 0.2, 1.6, 8, 0, -sh.fuse[2][2] * 0.5 - 0.22, 0.4));
-  for (const g of sh.guns ?? []) add.dark.push(cyl(0.05, 0.05, 1.2, 6, g[0], g[1], g[2]));
+  // Bombs hang under the fuselage on the planes that carry them: nose, body, tail fins, rack.
+  if (spec.bombs) {
+    const by = -sh.fuse[2][2] * 0.5 - 0.26;
+    add.dark.push(cyl(0.2, 0.2, 1.1, 8, 0, by, 0.45), new THREE.ConeGeometry(0.2, 0.42, 8).rotateX(Math.PI / 2).toNonIndexed().translate(0, by, 1.2), new THREE.ConeGeometry(0.2, 0.5, 8).rotateX(-Math.PI / 2).toNonIndexed().translate(0, by, -0.34));
+    add.dark.push(box(0.02, 0.5, 0.3, 0, by, -0.5), box(0.5, 0.02, 0.3, 0, by, -0.5));
+    add.metal.push(box(0.1, 0.16, 0.7, 0, by + 0.2, 0.45), cyl(0.21, 0.21, 0.05, 8, 0, by, 0.75));
+  }
+  // Forward guns: a blast tube and barrel out of each wing's leading edge.
+  const [gx, gy2] = sh.mark;
+  const wx = gx * 0.55;
+  const cannon = spec.guns.kind === 'ac';
+  for (const s of [-1, 1]) {
+    add.dark.push(cyl(cannon ? 0.05 : 0.03, cannon ? 0.05 : 0.03, 1.3, 6, s * wx, gy2 - 0.05, 1.45));
+    add.metal.push(cyl(cannon ? 0.085 : 0.05, cannon ? 0.085 : 0.05, 0.45, 6, s * wx, gy2 - 0.05, 0.95));
+    add.dark.push(cyl(cannon ? 0.07 : 0.042, cannon ? 0.07 : 0.042, 0.1, 6, s * wx, gy2 - 0.05, 2.1));
+    if (cannon) add.metal.push(box(0.14, 0.09, 0.4, s * wx, gy2 - 0.2, 0.7)); // ammo blister
+  }
+  for (const g of sh.guns ?? []) {
+    add.dark.push(cyl(0.035, 0.035, 1.2, 6, g[0], g[1], g[2]), cyl(0.055, 0.055, 0.08, 6, g[0], g[1], g[2] + 0.6));
+    add.metal.push(cyl(0.06, 0.06, 0.4, 6, g[0], g[1], g[2] - 0.4));
+  }
+  // Rockets on their rails, with noses and fins.
+  if (spec.rockets) {
+    for (const s of [-1, 1]) for (const k of [0, 1]) {
+      const x = s * (gx * 0.75 + k * 0.75), y = gy2 - 0.34, z = 0.2;
+      add.metal.push(box(0.05, 0.14, 1.3, x, y + 0.14, z));
+      add.dark.push(cyl(0.065, 0.065, 0.95, 6, x, y, z), new THREE.ConeGeometry(0.065, 0.24, 6).rotateX(Math.PI / 2).toNonIndexed().translate(x, y, z + 0.6));
+      add.metal.push(box(0.26, 0.015, 0.2, x, y, z - 0.42), box(0.015, 0.26, 0.2, x, y, z - 0.42));
+    }
+  }
 
   const painted = paintMaterial(paint, team, 1);
   const shaded = paintMaterial(paint, team, 0.82);
@@ -313,19 +341,16 @@ export function buildPlane(type, team = 'blue', paint = type) {
   if (add.belly.length) addMesh(add.belly, mat(sh.belly));
 
   // Rear gun on its pivot.
-  let rear = null;
+  let rear = null, rearSpin = null;
   if (spec.rear) {
     const [dx, dy, dz] = spec.door;
     rear = new THREE.Group();
     rear.position.set(dx, dy, dz);
     rear.rotation.order = 'YXZ';
     rear.rotation.y = -Math.PI / 2;
-    const barrels = [];
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      barrels.push(cyl(0.022, 0.022, 1.15, 5, Math.cos(a) * 0.055, Math.sin(a) * 0.055, 0.75));
-    }
-    rear.add(new THREE.Mesh(merged([...barrels, box(0.16, 0.18, 0.42, 0, 0, 0.02), box(0.06, 0.2, 0.06, 0, -0.16, 0)]), DARK()));
+    const minigun = buildMinigun(1.5);
+    rear.add(minigun.group);
+    rearSpin = minigun.spin;
     group.add(rear);
     // The arm that holds the gun out of the door.
     group.add(new THREE.Mesh(merged([box(Math.abs(dx), 0.07, 0.09, dx / 2, dy - 0.26, dz), box(0.07, 0.3, 0.07, dx, dy - 0.14, dz)]), METAL()));
@@ -347,7 +372,7 @@ export function buildPlane(type, team = 'blue', paint = type) {
   bar.scale.x = (sh.fuse[4][1] ?? 1) / 0.05 * 1.02;
   group.add(bar);
 
-  return { group, props, rear, engineZ, engineX, cockpitY: sh.cockpitY, spec, type, turret: null };
+  return { group, props, rear, rearSpin, engineZ, engineX, cockpitY: sh.cockpitY, spec, type, turret: null };
 }
 
 function finGeoUp(f, x = 0) {

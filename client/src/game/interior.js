@@ -146,6 +146,13 @@ class GunnerRig {
     this.breech.add(mesh(B(0.32 * big, 0.36 * big, 0.8 * big), M.steel, 0, 0, -0.1));
     this.breech.add(mesh(B(0.42 * big, 0.12 * big, 0.5 * big), M.metal, 0, -0.2 * big, 0.1));
     this.breech.add(mesh(B(0.12, 0.12, 0.2), M.brass, 0.18 * big, 0.05, -0.45 * big));
+    // Breech ring, opening lever, recoil guards and buffers along the gun.
+    this.breech.add(mesh(B(0.38 * big, 0.42 * big, 0.14 * big), M.metal, 0, 0, -0.5 * big));
+    this.breech.add(mesh(B(0.04, 0.3 * big, 0.04), M.steel, -0.24 * big, 0.08, -0.48 * big));
+    for (const s of [-1, 1]) {
+      this.breech.add(mesh(B(0.03, 0.34 * big, 0.75 * big), M.metal, s * 0.26 * big, -0.02, -0.72 * big));
+      this.breech.add(mesh(B(0.07, 0.07, 0.62 * big), M.steel, s * 0.15 * big, 0.22 * big, 0.12));
+    }
     // Spent-case deflector bag under the breech
     this.breech.add(mesh(B(0.3 * big, 0.25, 0.35), M.olive, 0, -0.38 * big, -0.4 * big));
     r.add(this.breech);

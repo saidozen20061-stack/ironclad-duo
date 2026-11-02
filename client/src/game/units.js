@@ -175,6 +175,7 @@ export class UnitsView {
         if (ev.kind !== 'mg') m.recoil = 1;
         m.barrelHeat = Math.min(1, m.barrelHeat + (ev.kind === 'mg' ? 0.015 : ev.kind === 'ac' ? 0.07 : 0.4));
       }
+      if (m?.kind === 'plane' && ev.kind === 'mg') m.gunSpin = 1;
     } else if (ev.k === 'i') {
       const m = this.models.get(ev.u);
       const u = states.get(ev.u);
@@ -252,7 +253,12 @@ export class UnitsView {
     g.position.set(u.x, u.y, u.z);
     g.rotation.order = 'YXZ';
     g.rotation.set(-u.gp, u.h, u.ty);
-    if (m.handles.rear) m.handles.rear.rotation.set(-u.gx, u.gy, 0);
+    if (m.handles.rear) {
+      m.handles.rear.rotation.set(-u.gx, u.gy, 0);
+      // The barrels whirl for a moment after every burst.
+      m.gunSpin = Math.max(0, (m.gunSpin ?? 0) - dt * 1.5);
+      m.handles.rearSpin.rotation.z += m.gunSpin * 40 * dt;
+    }
     const spin = u.dead ? 0 : 45;
     for (const p of m.handles.props) {
       p.rotation.z += spin * dt * (p.userData.dir ?? 1);

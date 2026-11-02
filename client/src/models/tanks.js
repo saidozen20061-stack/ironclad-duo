@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TANKS } from '../../../shared/constants.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { paintMaterial, bakePaintCoords } from './paint.js';
+import { tankBarrelGeometries, coaxGeometries, pintleGunGeometries } from './guns.js';
 
 // Procedural low-poly tank models. Forward is +Z, up is +Y, origin at ground centre.
 // Returned handles: group (hull root), turret (yaw pivot), gun (pitch pivot), muzzle (barrel tip).
@@ -79,10 +80,8 @@ function barrel(length, radius, material, brake = false) {
   g.add(b);
   const mantlet = box(radius * 5, radius * 5, radius * 4, material, 0, 0, radius * 1.5);
   g.add(mantlet);
-  if (brake) {
-    const mb = box(radius * 3.2, radius * 2.4, radius * 4, material, 0, 0, length);
-    g.add(mb);
-  }
+  for (const geo of tankBarrelGeometries(length, radius, brake)) g.add(new THREE.Mesh(geo, material));
+  for (const geo of coaxGeometries(radius)) g.add(new THREE.Mesh(geo, mat(0x23241f)));
   const muzzle = new THREE.Object3D();
   muzzle.position.z = length + (brake ? radius * 2 : 0);
   g.add(muzzle);
@@ -424,6 +423,13 @@ function makeTank(type, team, paint) {
     bakePaintCoords(o, handles.group);
     o.material = paintMaterial(paint, team, o.material === hullMat ? 1 : 0.62);
   });
+  // Commander's machine gun on the turret roof.
+  const [sx, sy, sz] = TANKS[type].mount.sight;
+  for (const geo of pintleGunGeometries()) {
+    const m = new THREE.Mesh(geo, mat(0x23241f));
+    m.position.set(sx + (sx <= 0 ? 0.48 : -0.48), sy - 0.1, sz - 0.12);
+    handles.turret.add(m);
+  }
   // Team marking: a coloured stripe on the turret
   const spec = TANKS[type];
   const stripe = box(spec.size.width * 0.32, 0.12, 0.12, mat(colors.mark, { emissive: colors.mark, emissiveIntensity: 0.15 }));

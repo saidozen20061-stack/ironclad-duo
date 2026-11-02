@@ -6,6 +6,7 @@ import { net } from '../net.js';
 import { settings } from '../settings.js';
 import { GunnerView } from './gunner.js';
 import { planeEye, sideGunPos } from '../models/planes.js';
+import { buildMinigunViewmodel } from '../models/guns.js';
 
 // The three ways to sit in a plane: pilot (cockpit), side gunner (door minigun + bomb sight) and
 // solo (chase camera with mouse aim, right click for the cockpit). They reuse the gunner's
@@ -463,6 +464,7 @@ function fwdOf(u, out = new THREE.Vector3()) {
 // plane manoeuvres; the gun turns anywhere on its mount except up past its stop.
 const SIDE_MAX_PITCH = 0.6;
 const SIDE_MIN_PITCH = -1.4;
+const MOUNT_Y = -0.2;
 
 export class PlaneGunnerView extends PlaneBase {
   constructor(opts) {
@@ -476,31 +478,19 @@ export class PlaneGunnerView extends PlaneBase {
     this.bindFlight();
     // The minigun, drawn over the world so it never clips into the plane.
     this.gunScene = new THREE.Scene();
-    this.gunScene.add(new THREE.HemisphereLight(0xdfe4e8, 0x4a4030, 1.5));
+    this.gunScene.add(new THREE.HemisphereLight(0xe8ecf0, 0x4a4030, 1.15));
+    const sun = new THREE.DirectionalLight(0xfff0d8, 1.9);
+    sun.position.set(0.5, 1, 0.4);
+    this.gunScene.add(sun);
     this.gunCam = new THREE.PerspectiveCamera(60, 1, 0.02, 10);
-    const dark = new THREE.MeshStandardMaterial({ color: 0x5c5e54, flatShading: true, roughness: 0.6, metalness: 0.2 });
-    const mount = new THREE.Group();
-    this.barrels = new THREE.Group();
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.7, 5).rotateX(Math.PI / 2), dark);
-      b.position.set(Math.cos(a) * 0.028, Math.sin(a) * 0.028, -0.35);
-      this.barrels.add(b);
-    }
-    this.barrels.position.z = -0.32;
-    mount.add(this.barrels);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.34), dark);
-    body.position.z = -0.16;
-    mount.add(body);
-    for (const s of [-1, 1]) {
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.03), dark);
-      grip.position.set(s * 0.09, -0.02, 0.02);
-      mount.add(grip);
-    }
-    mount.position.set(0, -0.24, -0.34);
-    mount.scale.setScalar(0.75);
-    this.mount = mount;
-    this.gunScene.add(mount);
+    const gun = buildMinigunViewmodel();
+    this.mount = gun.group;
+    this.barrels = gun.barrels;
+    this.muzzle = gun.flash;
+    // Low and to the right, angled in: the barrels run up towards the crosshair.
+    this.mount.position.set(0.17, MOUNT_Y, -0.52);
+    this.mount.rotation.set(0.14, 0.26, 0);
+    this.gunScene.add(this.mount);
   }
 
   thermalActive() {
@@ -572,6 +562,10 @@ export class PlaneGunnerView extends PlaneBase {
     // Barrels spin up while the trigger is held.
     this.spin += ((this.mouseBtn.left && !this.bombSight ? 38 : 0) - this.spin) * Math.min(1, dt * 5);
     this.barrels.rotation.z += this.spin * dt;
+    const firing = this.mouseBtn.left && !this.bombSight && (me.pl?.rear ?? 0) > 0;
+    this.muzzle.visible = firing && Math.random() < 0.6;
+    if (this.muzzle.visible) this.muzzle.rotation.z = Math.random() * 6;
+    this.mount.position.y = MOUNT_Y + (firing ? (Math.random() - 0.5) * 0.004 : 0);
     this.cockpitOn = false;
     this.mount.visible = !this.bombSight;
     this.$('.p-pipper').style.left = '50%';

@@ -301,8 +301,12 @@ const builders = {
       if (a > 1.3 && a < 1.9) continue; // gap at the back
       parts.push(part(BOX, C.sand, { x: Math.cos(a) * R, y: 0.2 + row * 0.4, z: Math.sin(a) * R, sx: 1, sy: 0.38, sz: 0.6, ry: -a + Math.PI / 2 }));
     }
-    parts.push(part(CYL6, C.black, { y: 1.35, z: -R * 0.5, rx: Math.PI / 2, sx: 0.12, sy: 1.6, sz: 0.12 }));
+    parts.push(part(CYL6, C.black, { y: 1.35, z: -R * 0.5, rx: Math.PI / 2, sx: 0.09, sy: 1.6, sz: 0.09 })); // barrel
+    parts.push(part(CYL8, C.metal, { y: 1.35, z: -R * 0.32, rx: Math.PI / 2, sx: 0.17, sy: 0.75, sz: 0.17 })); // water jacket
+    parts.push(part(CYL6, C.black, { y: 1.35, z: -R * 0.5 - 0.78, rx: Math.PI / 2, sx: 0.14, sy: 0.14, sz: 0.14 })); // flash hider
     parts.push(box(C.black, 0, 1.1, -R * 0.1, 0.3, 0.3, 0.6));
+    parts.push(box(C.olive, 0.26, 1.02, -R * 0.1, 0.2, 0.26, 0.32), box(0xb8923e, 0.13, 1.26, -R * 0.1, 0.1, 0.03, 0.22)); // ammo box and belt
+    parts.push(box(C.black, 0, 1.4, -R * 0.02, 0.03, 0.14, 0.03), box(C.black, 0, 1.05, -R * 0.1 + 0.3, 0.16, 0.14, 0.03)); // sight and grips
     for (const s of [-1, 1]) parts.push(box(C.black, s * 0.25, 0, -R * 0.2, 0.05, 1.25, 0.05, { rz: s * 0.25 }));
     return parts;
   },
@@ -506,8 +510,22 @@ const builders = {
       const a = (i / 10) * Math.PI * 2 + row * 0.3;
       parts.push(part(BOX, C.sand, { x: Math.cos(a) * R, y: 0.2 + row * 0.38, z: Math.sin(a) * R, sx: 1.05, sy: 0.38, sz: 0.55, ry: -a + Math.PI / 2 }));
     }
-    parts.push(box(C.olive, 0, 0, 0, 1.2, 0.7, 1.2), box(C.olive, 0, 0.7, 0, 0.5, 0.9, 0.9));
-    for (const s of [-1, 1]) parts.push(part(CYL6, C.black, { x: s * 0.17, y: 2.1, z: 0.85, rx: 0.85, sx: 0.12, sy: 2.6, sz: 0.12 }));
+    // Pedestal, turning platform, seat and handwheels.
+    parts.push(box(C.olive, 0, 0, 0, 1.3, 0.3, 1.3), part(CYL8, C.metal, { y: 0.55, sx: 0.6, sy: 0.5, sz: 0.6 }), part(CYL8, C.olive, { y: 0.84, sx: 1.2, sy: 0.08, sz: 1.2 }));
+    parts.push(box(C.olive, 0, 0.88, 0, 0.75, 0.72, 0.55), box(C.metal, 0, 0.88, -0.5, 0.42, 0.06, 0.34), box(C.metal, 0, 0.88, -0.4, 0.06, 0.2, 0.06));
+    for (const s of [-1, 1]) parts.push(part(CYL8, C.black, { x: s * 0.4, y: 1.2, z: -0.1, rz: Math.PI / 2, sx: 0.34, sy: 0.05, sz: 0.34 }));
+    // Twin barrels, angled up: each with cooling jacket, breech, flash hider and ammo clips.
+    for (const s of [-1, 1]) {
+      const along = (d, h) => ({ x: s * 0.2, y: 1.45 + Math.sin(0.72) * d + h, z: 0.15 + Math.cos(0.72) * d });
+      parts.push(part(CYL6, C.black, { ...along(1.35, 0), rx: 0.85, sx: 0.09, sy: 2.5, sz: 0.09 }));
+      parts.push(part(CYL8, C.metal, { ...along(0.7, 0), rx: 0.85, sx: 0.18, sy: 1, sz: 0.18 }));
+      parts.push(part(CYL6, C.black, { ...along(2.62, 0), rx: 0.85, sx: 0.17, sy: 0.22, sz: 0.17 }));
+      parts.push(part(BOX, C.olive, { ...along(0, 0), rx: 0.85, sx: 0.2, sy: 0.6, sz: 0.3 }));
+      parts.push(part(BOX, C.rust, { ...along(-0.05, 0.28), rx: 0.85, sx: 0.12, sy: 0.32, sz: 0.2 }));
+    }
+    // Ring sight between the barrels, ammo crates at the crew's feet.
+    parts.push(box(C.black, 0, 1.5, 0.6, 0.04, 0.5, 0.04), part(CYL8, C.black, { y: 2.1, z: 0.6, rx: Math.PI / 2, sx: 0.36, sy: 0.02, sz: 0.36 }));
+    for (const [x, z] of [[-1, -0.9], [-0.55, -1.15], [1, -0.85]]) parts.push(box(C.olive, x, 0, z, 0.42, 0.3, 0.26));
     return parts;
   },
   // ---------- Fortress Defence ----------
@@ -730,7 +748,18 @@ export class PropsView {
       this.animated.push({ obj: g, update: (t) => (head.rotation.y = t * 0.8), p });
     } else if (p.type === 'artillery') {
       const pivot = new THREE.Group();
-      const barrel = new THREE.Mesh(mergeGeometries([part(CYL8, C.olive, { z: 2, rx: Math.PI / 2, sx: 0.32, sy: 4.4, sz: 0.32 }), part(CYL8, C.olive, { z: 0, rx: Math.PI / 2, sx: 0.6, sy: 1.2, sz: 0.6 }), part(BOX, C.olive, { z: 4.2, sx: 0.5, sy: 0.4, sz: 0.5 })]), MAT);
+      const barrel = new THREE.Mesh(mergeGeometries([
+      part(CYL8, C.olive, { z: 2, rx: Math.PI / 2, sx: 0.3, sy: 4.4, sz: 0.3 }),
+      part(CYL8, C.metal, { z: 0.85, rx: Math.PI / 2, sx: 0.42, sy: 1.9, sz: 0.42 }), // thick chase
+      part(CYL8, C.olive, { z: 0, rx: Math.PI / 2, sx: 0.6, sy: 1.2, sz: 0.6 }), // breech ring
+      part(BOX, C.metal, { z: -0.7, sx: 0.5, sy: 0.5, sz: 0.3 }), // breech block
+      part(BOX, C.black, { x: 0.32, z: -0.7, rz: 0.5, sx: 0.08, sy: 0.4, sz: 0.08 }), // breech lever
+      part(CYL6, C.metal, { y: 0.34, z: 0.5, rx: Math.PI / 2, sx: 0.16, sy: 1.8, sz: 0.16 }), // recoil cylinders
+      part(CYL6, C.metal, { y: -0.34, z: 0.5, rx: Math.PI / 2, sx: 0.16, sy: 1.8, sz: 0.16 }),
+      part(BOX, C.olive, { z: 4.05, sx: 0.62, sy: 0.46, sz: 0.1 }), // baffled muzzle brake
+      part(BOX, C.olive, { z: 4.32, sx: 0.62, sy: 0.46, sz: 0.1 }),
+      part(BOX, C.olive, { z: 4.19, sx: 0.2, sy: 0.46, sz: 0.34 }),
+    ]), MAT);
       pivot.add(barrel);
       pivot.position.y = 1.3;
       pivot.rotation.x = -0.55;

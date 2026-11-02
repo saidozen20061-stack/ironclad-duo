@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { part, TEAM, BOX, HEAD, HELMET, TUBE, m4Parts } from './infantry.js';
+import { launcherParts } from './guns.js';
 
 // Low-poly soldier on a real skeleton (head, torso, upper/lower arms and legs, feet),
 // skinned rigidly into ONE mesh per soldier so 40+ animated soldiers stay cheap.
@@ -116,7 +117,7 @@ function rigGeometry(team, type) {
   parts.push(...B('upperL', part(BOX, t.band, 0.215, 1.33, 0, 0, 0, 0, 0.115, 0.08, 0.125))); // armband (IFF)
   if (type === 'rocket') {
     const [lx, ly, lz] = BIND.launcher;
-    parts.push(...B('launcher', part(TUBE, 0x3d4a32, lx, ly, lz + 0.15, Math.PI / 2, 0, 0, 0.13, 1.3, 0.13), part(TUBE, 0x2a2a26, lx, ly, lz + 0.82, Math.PI / 2, 0, 0, 0.2, 0.25, 0.2)));
+    parts.push(...B('launcher', ...launcherParts(lx, ly, lz + 0.15)));
   } else if (type === 'crew') {
     parts.push(skin(inHand(m4Parts(), [0, -0.105, -0.075]), 'handR'));
   } else {
