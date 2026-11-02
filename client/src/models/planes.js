@@ -64,6 +64,18 @@ function panel(x0, x1, y0, y1, rootLead, rootTrail, tipLead, tipTrail, t = 0.2, 
   return g;
 }
 
+// Height of the fuselage's underside at a point along it, from the same stations and scale as loft().
+function fuselageBottom(stations, z) {
+  for (let i = 0; i < stations.length - 1; i++) {
+    const [z0, , h0, y0 = 0] = stations[i];
+    const [z1, , h1, y1 = 0] = stations[i + 1];
+    if (z > z0 || z < z1) continue;
+    const t = (z0 - z) / (z0 - z1);
+    return y0 + (y1 - y0) * t - ((h0 + (h1 - h0) * t) / 2) * 1.08 * Math.cos(Math.PI / 12);
+  }
+  return 0;
+}
+
 const mirror = (g) => {
   const m = g.clone();
   m.scale(-1, 1, 1);
@@ -287,8 +299,13 @@ export function buildPlane(type, team = 'blue', paint = type) {
       add.dark.push(wheel(s * 1.7, 0.75, 0.36));
     }
   }
-  add.dark.push(cyl(0.15, 0.15, 0.1, 8).rotateY(Math.PI / 2).translate(0, -spec.gearH + 0.72, sh.fuse[sh.fuse.length - 1][0] + 1));
-  add.metal.push(box(0.06, spec.gearH * 0.62, 0.08, 0, -spec.gearH * 0.465, sh.fuse[sh.fuse.length - 1][0] + 1));
+  // Tail wheel: on the ground, with a strut going up into the underside of the rear fuselage.
+  const tailZ = sh.fuse[sh.fuse.length - 1][0] + 1;
+  const tailR = 0.2;
+  const wheelY = -spec.gearH + tailR;
+  const strutTop = fuselageBottom(sh.fuse, tailZ) + 0.12; // a little way inside the body
+  add.dark.push(cyl(tailR, tailR, 0.12, 8).rotateY(Math.PI / 2).translate(0, wheelY, tailZ));
+  add.metal.push(box(0.09, strutTop - wheelY, 0.11, 0, (strutTop + wheelY) / 2, tailZ));
 
   // Bombs hang under the fuselage on the planes that carry them: nose, body, tail fins, rack.
   if (spec.bombs) {

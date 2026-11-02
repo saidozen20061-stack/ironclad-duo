@@ -19,6 +19,9 @@ const PATROL = 620; // m from the middle of the map
 const TARGET_RANGE = 420; // m: only what's near their route
 const RUN_TIME = [14, 22]; // s of one attack run
 const REST_TIME = [20, 35]; // s before they look for the next target
+// A proper take-off roll: tyres and a heavy plane hold it back until it's well up to speed.
+const GROUND_THRUST = 0.5; // of the thrust in the air
+const TAKEOFF_SPEED = 0.7; // × top speed
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
 const ROCKET_BELOW = 0.85; // × gear height under the plane: clear of every wing and its underside
 const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
@@ -200,8 +203,16 @@ export class PlaneSystem {
     // Body rates to heading and pitch, plus the sideways pull of banked wings.
     const c = Math.cos(p.ty), sn = Math.sin(p.ty);
     const cp = Math.max(0.15, Math.cos(p.gp));
-    p.gp = clamp(p.gp + (pitchRate * c - yawRate * sn) * DT, -1.52, 1.52);
-    p.h = wrapAngle(p.h + (-(pitchRate * sn) + yawRate * c) / cp * DT);
+    if (k.aim) {
+      // NPCs fly by the book: the elevator pulls towards the plane's own "up", which is sideways in a bank.
+      p.gp = clamp(p.gp + (pitchRate * c - yawRate * sn) * DT, -1.52, 1.52);
+      p.h = wrapAngle(p.h + (-(pitchRate * sn) + yawRate * c) / cp * DT);
+    } else {
+      // Players: the keys mean what they say, however far the plane is banked. Up is up, down is
+      // down, and only the turn keys change direction.
+      p.gp = clamp(p.gp + pitchRate * DT, -1.52, 1.52);
+      p.h = wrapAngle(p.h + (yawRate * c) / cp * DT);
+    }
     const bankTurn = -sn * (G / Math.max(12, speed)) * 1.3 * authority * turnK;
     p.h = wrapAngle(p.h + (bankTurn / cp) * DT);
 
@@ -270,7 +281,7 @@ export class PlaneSystem {
     // Keep what the host left in the air, settling to level.
     p.ty *= 1 - Math.min(1, DT * 4);
     const friction = gear ? 2 + (p.throttle < 0.1 ? 8 : 0) : 16;
-    const thrust = s.accel * p.throttle * engines * health;
+    const thrust = s.accel * p.throttle * engines * health * GROUND_THRUST;
     p.v = Math.max(0, p.v + (thrust - friction - 0.002 * p.v * p.v) * DT);
     // Steer with rudder or stick while rolling.
     const steer = clamp(stickY - stickR);
@@ -287,7 +298,7 @@ export class PlaneSystem {
     this.hitProps(p);
     if (p.dead) return;
     // Rotate and lift off once fast enough.
-    if (p.v > s.minSpeed * 1.08 && stickP > 0.08 && gear) {
+    if (p.v > s.maxSpeed * TAKEOFF_SPEED && stickP > 0.08 && gear) {
       p.grounded = false;
       p.gp = 0.1;
       p.y += 0.2;
