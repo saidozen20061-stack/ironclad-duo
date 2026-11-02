@@ -28,6 +28,7 @@ export function decodeUnit(a) {
     y: (a[11] ?? 0) / 100,
     gy: (a[12] ?? 0) / 100, // planes: where the side gun points
     gx: (a[13] ?? 0) / 100,
+    ab: !!a[14], // planes: afterburner lit
   };
 }
 

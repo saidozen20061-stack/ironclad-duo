@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TANKS } from '../../../shared/constants.js';
 import { tankPose, wrapAngle } from '../../../shared/tank.js';
-import { groundAt } from '../../../shared/map.js';
+import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { PLANES } from '../../../shared/planes.js';
 import { buildPlane } from '../models/planes.js';
 import { buildTank, trackMaterial } from '../models/tanks.js';
@@ -98,6 +98,7 @@ export class UnitsView {
     for (const [id, m] of this.models) {
       if (!states.has(id)) {
         this.scene.remove(m.root);
+        if (m.groundShadow) this.scene.remove(m.groundShadow);
         this.models.delete(id);
       }
     }
@@ -258,6 +259,20 @@ export class UnitsView {
       // The barrels whirl for a moment after every burst.
       m.gunSpin = Math.max(0, (m.gunSpin ?? 0) - dt * 1.5);
       m.handles.rearSpin.rotation.z += m.gunSpin * 40 * dt;
+    }
+    if (m.handles.flame) {
+      m.handles.flame.visible = u.ab && !u.dead;
+      if (u.ab) m.handles.flame.scale.z = 0.8 + Math.random() * 0.5;
+    }
+    // So big that its shadow is worth drawing wherever it flies, far past the sun's shadow map.
+    if (m.handles.shadowShape) {
+      if (!m.groundShadow) {
+        m.groundShadow = m.handles.shadowShape;
+        this.scene.add(m.groundShadow);
+      }
+      m.groundShadow.visible = !u.dead;
+      m.groundShadow.position.set(u.x, Math.max(groundAt(u.x, u.z), WATER_LEVEL) + 1.5, u.z);
+      m.groundShadow.rotation.y = u.h;
     }
     const spin = u.dead ? 0 : 45;
     for (const p of m.handles.props) {

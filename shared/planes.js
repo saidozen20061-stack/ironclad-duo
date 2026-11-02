@@ -85,9 +85,31 @@ export const PLANES = {
     guns: gun('20mm + 2× MG', 21, 0.085, 0.015, 'ac', 680, 450), rear: null, engineSound: 'inline',
     stats: { speed: 5, armor: 2, firepower: 4, agility: 4 },
   },
+  leviathan: {
+    id: 'leviathan', name: 'Leviathan', class: 'Flying Fortress', inspired: 'idea of a flying fortress', seats: 2, engines: 6,
+    blurb: 'A six-engine flying wing, slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
+    hp: 7000, maxSpeed: 42, minSpeed: 18, accel: 14, roll: 0.35, pitch: 0.2, yaw: 0.08, drag: 0.8,
+    armor: { front: 0.6, side: 0.6, rear: 0.6 }, size: { length: 40, width: 82, height: 9 }, gearH: 6.5,
+    guns: gun('4× .50 cal MG', 15, 0.1, 0.024),
+    rear: { damage: 46, interval: 0.16, spread: 0.007, speed: 420, ammo: 700, kind: 'ac', splash: 2, splashDamage: 16, up: 0.98, down: -0.3 },
+    bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 3.4, sightY: 7.2 },
+    engineSound: 'drone', onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
+    hitBox: { hull: [8, 3.6], wing: [-20, 14, 2.6] },
+    stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
+  },
+  f16: {
+    id: 'f16', name: 'Talon', class: 'Jet Fighter', inspired: 'US F-16 Fighting Falcon', seats: 2, engines: 1,
+    blurb: 'By far the fastest thing in the sky, with an afterburner and double rockets. Half the armour of anything else, and it bleeds speed in a turn.',
+    hp: 300, maxSpeed: 170, minSpeed: 48, accel: 50, roll: 3, pitch: 1.1, yaw: 0.5, drag: 0.8,
+    armor: { front: 1.05, side: 1.1, rear: 1.15 }, size: { length: 14.8, width: 10, height: 4.6 }, gearH: 1.9,
+    guns: gun('20mm Rotary Cannon', 14, 0.05, 0.012, 'ac', 680, 900), rear: null,
+    rockets: { count: 16, damage: 200, splash: 5, splashDamage: 90, pair: true, cooldown: 0.9, x: 2.9 },
+    engineSound: 'jet', afterburner: 1.5, operator: true, turnK: 3, turnBleed: 0.25,
+    stats: { speed: 5, armor: 1, firepower: 5, agility: 4 },
+  },
 };
 // Where the side gun is mounted: right side of the fuselage, behind the wing (x, y, z).
-const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2] };
+const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 5.1, -3] };
 // Highest the side gun can point above the plane's own wings: it fires everywhere but up.
 export const SIDE_GUN_MAX_UP = 0.64; // sine of the angle
 
@@ -131,6 +153,8 @@ export function rocketStep(p, dt) {
 
 export const MAX_SIDE_PLANES = 2; // per team, players and NPCs together
 export const PLANE_IDS = Object.keys(PLANES);
+// The damage zones of a plane's engines: engine, engine2, engine3...
+export const engineZones = (n) => Array.from({ length: n }, (_, i) => (i ? `engine${i + 1}` : 'engine'));
 export const COOP_PLANE_IDS = PLANE_IDS.filter((id) => PLANES[id].seats === 2);
 export const isPlane = (type) => !!PLANES[type];
 

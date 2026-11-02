@@ -41,7 +41,7 @@ const HUD = `
   <div class="p-hint"></div>
 `;
 
-const MODS = { engine: 'ENG', engine2: 'EN2', wingL: 'L.W', wingR: 'R.W', tail: 'TAIL', fuel: 'FUEL', gear: 'GEAR', guns: 'GUN', crew: 'CREW' };
+const MODS = { engine: 'ENG', engine2: 'EN2', engine3: 'EN3', engine4: 'EN4', engine5: 'EN5', engine6: 'EN6', wingL: 'L.W', wingR: 'R.W', tail: 'TAIL', fuel: 'FUEL', gear: 'GEAR', guns: 'GUN', crew: 'CREW' };
 
 function planeQuaternion(u, out = new THREE.Quaternion()) {
   return out.setFromEuler(_e.set(-u.gp, u.h, u.ty));
@@ -364,6 +364,11 @@ class PlaneBase extends GunnerView {
       this.showBanner(settings.firstPerson ? '1ST PERSON' : '3RD PERSON');
     }
     this.followPlane(self);
+    if (this.plane.afterburner) {
+      const ab = !!me.pl?.ab;
+      if (ab && !this.abOn) this.showBanner('AFTERBURNER');
+      this.abOn = ab;
+    }
     const inCockpit = settings.firstPerson || !!this.mouseBtn.right;
     this.inCockpit = inCockpit;
     const cam = this.camera;
@@ -588,14 +593,55 @@ export class PlaneGunnerView extends PlaneBase {
 
   refreshHints() {
     this.$('.g-pingcd b').textContent = keyName('door.ping');
+    if (this.plane.operator) {
+      this.$('.p-hint').textContent = `Mouse turns the camera · ${keyName('door.fire')} fires 2 rockets along the nose · ${keyName('door.thermal')} thermal · ${keyName('door.ping')} ping · ${keyName('door.bail')} bail out`;
+      return;
+    }
     this.$('.p-hint').textContent = `Mouse turns the gun · ${keyName('door.fire')} fires${this.plane.bombs ? ` · ${keyName('door.sight')} bomb sight (${keyName('door.fire')} drops)` : ''} · ${keyName('door.thermal')} thermal · ${keyName('door.ping')} ping · ${keyName('door.bail')} bail out`;
   }
 
   onLook(dx, dy) {
     if (this.bombSight) return;
     const k = 0.0022 * settings.sensitivity;
+    const rear = this.plane.rear;
+    const max = this.plane.operator ? 1.45 : rear?.up ? Math.asin(rear.up) : SIDE_MAX_PITCH;
+    const min = this.plane.operator ? -1.45 : rear?.down !== undefined ? Math.asin(rear.down) : SIDE_MIN_PITCH;
     this.aim.yaw = wrapAngle(this.aim.yaw - dx * k);
-    this.aim.pitch = Math.max(SIDE_MIN_PITCH, Math.min(SIDE_MAX_PITCH, this.aim.pitch - dy * k));
+    this.aim.pitch = Math.max(min, Math.min(max, this.aim.pitch - dy * k));
+  }
+
+  // Weapons operator: a camera under the nose. It turns with the plane, the mouse looks around from
+  // there, and the rockets leave along the nose. Thermal comes from the base class.
+  updateOperator(dt, self, me) {
+    const k = this.keys;
+    this.readButtons('door.fire');
+    if (!this.paused) {
+      if (k.hit('door.ping')) this.onPing?.();
+      if (k.hit('door.bail')) net.send({ t: 'jump' });
+    }
+    this.followPlane(self);
+    const cam = this.camera;
+    this.planePoint(self, 0, -1.1, this.plane.size.length * 0.42, cam.position);
+    cam.quaternion.setFromEuler(_e.set(this.aim.pitch, this.aim.yaw + Math.PI, 0));
+    cam.fov += (45 - cam.fov) * Math.min(1, dt * 8);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    this.showOwn(false);
+    this.world.update(cam.position, cam);
+    if (!this.paused) {
+      const rocket = !!this.mouseBtn.left;
+      const now = performance.now();
+      if (rocket !== this.lastSend.key || now - this.lastSend.at > 50) {
+        const dir = cam.getWorldDirection(_v);
+        net.send({ t: 'rear', dir: [+dir.x.toFixed(3), +dir.y.toFixed(3), +dir.z.toFixed(3)], fire: false, bomb: false, rocket });
+        this.lastSend = { key: rocket, at: now };
+      }
+    }
+    this.mount.visible = false;
+    this.cockpitOn = false;
+    this.$('.p-pipper').style.left = '50%';
+    this.$('.p-pipper').style.top = '50%';
+    this.planeHud(self, me);
   }
 
   update(dt, states, me) {
@@ -605,9 +651,11 @@ export class PlaneGunnerView extends PlaneBase {
     this.thermalKey();
     const self = states.get(me.id);
     if (!self) return;
+    if (this.plane.operator) return this.updateOperator(dt, self, me);
+    const topTurret = !this.plane.door[0];
     if (!this.aim.initialised) {
-      this.aim.yaw = self.h - Math.PI / 2; // starts looking out of the door
-      this.aim.pitch = -0.1;
+      this.aim.yaw = topTurret ? self.h : self.h - Math.PI / 2; // ahead, or out of the door
+      this.aim.pitch = topTurret ? 0.05 : -0.1;
       this.aim.initialised = true;
     }
     const k = this.keys;
@@ -626,7 +674,7 @@ export class PlaneGunnerView extends PlaneBase {
     this.showOwn(true);
     if (this.bombSight) {
       // Straight down through the floor, zoomed.
-      this.planePoint(self, 0, -1.2, 0.5, cam.position);
+      this.planePoint(self, 0, -(this.plane.bombs.sightY ?? 1.2), 0.5, cam.position);
       cam.quaternion.setFromEuler(_e.set(-Math.PI / 2, self.h + Math.PI, 0));
       cam.fov += (22 - cam.fov) * Math.min(1, dt * 8);
       // Which way should the pilot steer: a bank shifts the fall line.
@@ -634,7 +682,7 @@ export class PlaneGunnerView extends PlaneBase {
       this.$('.p-drift').textContent = Math.abs(this.drift) < 0.05 ? 'STEADY' : this.drift > 0 ? 'STEER LEFT ◂' : '▸ STEER RIGHT';
     } else {
       // At the door, just over and outboard of the gun, looking along the aim.
-      this.planePoint(self, dx - 0.2, dy + 0.42, dz - 0.1, cam.position);
+      this.planePoint(self, dx - (topTurret ? 0 : 0.2), dy + (topTurret ? 1.6 : 0.42), dz - 0.1, cam.position);
       cam.quaternion.setFromEuler(_e.set(this.aim.pitch, this.aim.yaw + Math.PI, 0));
       cam.fov += (66 - cam.fov) * Math.min(1, dt * 8);
     }

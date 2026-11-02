@@ -205,7 +205,8 @@ export function renderLobby() {
     // Planes are greyed out once a side has its share; single-seat fighters are solo only.
     const side = (c) => (fortress ? 'blue' : c.team);
     const onSide = crew ? s.crews.filter((c) => c !== crew && (c.driver != null || c.gunner != null) && PLANES[c.tank] && side(c) === side(crew)).length : 0;
-    card.classList.toggle('taken', !!PLANES[card.dataset.tank] && onSide >= MAX_SIDE_PLANES);
+    const twin = crew && PLANES[card.dataset.tank]?.onePerTeam && s.crews.some((c) => c !== crew && (c.driver != null || c.gunner != null) && c.tank === card.dataset.tank && side(c) === side(crew));
+    card.classList.toggle('taken', (!!PLANES[card.dataset.tank] && onSide >= MAX_SIDE_PLANES) || !!twin);
     card.style.display = PLANES[card.dataset.tank] && s.style !== 'solo' && !COOP_PLANE_IDS.includes(card.dataset.tank) ? 'none' : '';
     card.disabled = !crew;
   }

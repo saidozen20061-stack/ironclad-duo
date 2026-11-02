@@ -128,7 +128,7 @@ export class MatchClient {
     if (this.war) this.war.sound = this.sound;
     this.distantT = 3;
     this.lastReload = 0;
-    showTutorial(planeSpec ? (role === 'solo' ? 'planeSolo' : role === 'gunner' ? 'planeGunner' : 'pilot') : role, this.hud);
+    showTutorial(planeSpec ? (role === 'solo' ? 'planeSolo' : role === 'gunner' ? (planeSpec.operator ? 'planeOperator' : 'planeGunner') : 'pilot') : role, this.hud);
 
     // Tank destroyed: both crew members choose between waiting for a tank and bailing out.
     this.choiceEl = document.createElement('div');
@@ -342,6 +342,26 @@ export class MatchClient {
     if (this.paused) this.view.setPaused?.(true);
   }
 
+  // The host gave the crew another vehicle (their plane can't be replaced).
+  setVehicle(type) {
+    this.tank = type;
+    this.sound.stopPlane();
+    if (!this.view.isFoot) this.setFoot(false);
+  }
+
+  // The plane's gone for good: the choice now offers a tank, and everyone in the crew is told once.
+  showNoPlanes() {
+    this.noPlanesShown = true;
+    this.choiceEl.querySelector('h2').textContent = 'LEVIATHAN LOST';
+    this.choiceEl.querySelector('p').textContent = 'Leviathan lost - assigned to tank crew';
+    this.choiceEl.querySelector('button[data-pick="tank"]').innerHTML = `<b>${keyName('death.respawn')}</b>RESPAWN WITH RANDOM TANK<small>No more planes this match. New tank at base after 15 s</small>`;
+    const row = document.createElement('div');
+    row.className = 'feed-row';
+    row.textContent = 'Leviathan lost - assigned to tank crew';
+    this.feed.prepend(row);
+    setTimeout(() => row.remove(), 7000);
+  }
+
   // Ends the choice countdown once the whole crew has pressed it.
   skipChoice() {
     net.send({ t: 'bailSkip' });
@@ -358,7 +378,7 @@ export class MatchClient {
     const mine = crew.picks?.[this.solo ? 'driver' : this.role];
     const other = crew.picks?.[this.role === 'driver' ? 'gunner' : 'driver'];
     for (const b of this.choiceEl.querySelectorAll('button')) b.classList.toggle('sel', b.dataset.pick === mine);
-    const name = (p) => (p === 'foot' ? 'GO ON FOOT' : p === 'tank' ? `RESPAWN WITH ${PLANES[this.tank] ? 'PLANE' : 'TANK'}` : '…');
+    const name = (p) => (p === 'foot' ? 'GO ON FOOT' : p === 'tank' ? (this.noPlanesShown ? 'RANDOM TANK' : `RESPAWN WITH ${PLANES[this.tank] ? 'PLANE' : 'TANK'}`) : '…');
     this.choiceEl.querySelector('.bail-picks').innerHTML = this.solo
       ? `You: <b>${name(mine)}</b> · ${Math.ceil(crew.left)}s`
       : `You: <b>${name(mine)}</b> · ${this.role === 'driver' ? 'Gunner' : 'Driver'}: <b>${name(other)}</b> · ${Math.ceil(crew.left)}s`;
@@ -384,6 +404,8 @@ export class MatchClient {
     // Reload finished: clank for the crew.
     if (this.me && this.me.reload > 0 && msg.me.reload === 0 && !msg.me.dead) this.sound.reloadClank();
     this.me = msg.me;
+    if (msg.me.noPlanes && !this.noPlanesShown) this.showNoPlanes();
+    if (msg.me.vehicle && msg.me.vehicle !== this.tank && !this.ended) this.setVehicle(msg.me.vehicle);
     const foot = msg.me.crew?.mode === 'foot';
     if (foot !== !!this.view.isFoot && !this.ended) this.setFoot(foot);
     this.updateChoice(msg.me.crew);
@@ -643,6 +665,27 @@ export class MatchClient {
     while (this.feed.children.length > 5) this.feed.lastChild.remove();
   }
 
+  // A Leviathan is heard across the whole map and shakes the ground when it comes over low;
+  // a jet on afterburner is a roar. Your own engines are already in the plane sound.
+  updateBigFlyers(states, worldView) {
+    const l = this.sound.listener;
+    let drone = Infinity, roar = Infinity, shake = 0;
+    for (const u of states.values()) {
+      if (u.dead || u.id === this.me?.id) continue;
+      const spec = PLANES[u.type];
+      if (!spec || (spec.engineSound !== 'drone' && !u.ab)) continue;
+      const d = Math.hypot(u.x - l.x, u.y - l.y, u.z - l.z);
+      if (spec.engineSound === 'drone') {
+        drone = Math.min(drone, d);
+        const low = 1 - (u.y - groundAt(u.x, u.z)) / 70;
+        const near = 1 - Math.hypot(u.x - l.x, u.z - l.z) / 170;
+        if (low > 0 && near > 0) shake = Math.max(shake, low * near * 0.5);
+      } else roar = Math.min(roar, d);
+    }
+    this.sound.updateFlyers(drone, roar);
+    if (shake > 0 && worldView) this.camShake = Math.max(this.camShake ?? 0, shake);
+  }
+
   onMatchEnd() {
     // Freeze input behind the end screen without opening the pause menu.
     this.paused = true;
@@ -719,7 +762,7 @@ export class MatchClient {
       else if (this.view.isFoot) this.sound.updatePlane(dt, { th: 0, speedFrac: 0, dive: 0, alive: false, stall: false });
       else {
         const pl = this.me.pl ?? {};
-        this.sound.updatePlane(dt, { th: pl.th ?? 0, speedFrac: Math.min(1.4, Math.abs(this.me.v) / spec.maxSpeed), dive: Math.max(0, -(pl.vy ?? 0) / Math.max(10, Math.abs(this.me.v))), alive: !this.me.dead && (this.me.mods?.engine ?? 1) > 0, stall: !!pl.stall });
+        this.sound.updatePlane(dt, { th: pl.th ?? 0, speedFrac: Math.min(1.4, Math.abs(this.me.v) / spec.maxSpeed), dive: Math.max(0, -(pl.vy ?? 0) / Math.max(10, Math.abs(this.me.v))), alive: !this.me.dead && (this.me.mods?.engine ?? 1) > 0, stall: !!pl.stall, ab: !!pl.ab });
       }
       // World ambience around the tank.
       let fire = Infinity;
@@ -730,6 +773,7 @@ export class MatchClient {
       const edge = Math.max(Math.abs(self.x), Math.abs(self.z));
       this.edgeEl.classList.toggle('show', !self.dead && !this.view.isPlane && edge > PLAY_LIMIT - 45 && !nearGarage(self.x, self.z, this.team) && !inAirfield(self.x, self.z, 30));
     }
+    this.updateBigFlyers(states, worldView);
     this.sound.updateRadio(dt);
     // The driver has no view of the sky but still hears the distant war.
     if (!worldView && (this.distantT -= dt) <= 0) {

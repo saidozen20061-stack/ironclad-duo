@@ -1,4 +1,4 @@
-import { COOP_PLANE_IDS, PLANE_IDS, MAX_SIDE_PLANES } from '../../../shared/planes.js';
+import { COOP_PLANE_IDS, PLANE_IDS, PLANES, MAX_SIDE_PLANES } from '../../../shared/planes.js';
 import { ROOM_CODE_LETTERS, ROOM_CODE_LENGTH, MAX_NAME_LENGTH, ROLES, TANK_IDS, MAX_CREWS, MAX_PLAYERS, MODES, KILL_LIMITS, DIFFICULTY, PLAY_STYLES } from '../../../shared/constants.js';
 
 // Lobby logic, run inside the HOST player's browser. A Player's transport is just a
@@ -142,12 +142,17 @@ export class Room {
   // the later crew goes back to a tank.
   limitPlanes() {
     const taken = { blue: 0, red: 0 };
+    const unique = new Set();
     for (const c of this.occupied()) {
       if (!PLANE_IDS.includes(c.tank)) continue;
-      if (!this.planeIds().includes(c.tank) || taken[this.sideOf(c)] >= MAX_SIDE_PLANES) {
+      const key = `${this.sideOf(c)}|${c.tank}`;
+      if (!this.planeIds().includes(c.tank) || taken[this.sideOf(c)] >= MAX_SIDE_PLANES || (PLANES[c.tank].onePerTeam && unique.has(key))) {
         c.tank = 'medium';
         this.unready(c);
-      } else taken[this.sideOf(c)]++;
+      } else {
+        taken[this.sideOf(c)]++;
+        unique.add(key);
+      }
     }
   }
 
@@ -256,6 +261,9 @@ export class Room {
     if (player.crew !== crewId && !this.isHost(player)) return;
     if (PLANE_IDS.includes(tank) && this.occupied().filter((c) => c !== crew && PLANE_IDS.includes(c.tank) && this.sideOf(c) === this.sideOf(crew)).length >= MAX_SIDE_PLANES) {
       return player.send({ t: 'error', msg: `Your side already has ${MAX_SIDE_PLANES} planes.` });
+    }
+    if (PLANES[tank]?.onePerTeam && this.occupied().some((c) => c !== crew && c.tank === tank && this.sideOf(c) === this.sideOf(crew))) {
+      return player.send({ t: 'error', msg: `Your side already has a ${PLANES[tank].name}.` });
     }
     crew.tank = tank;
     this.unready(crew);

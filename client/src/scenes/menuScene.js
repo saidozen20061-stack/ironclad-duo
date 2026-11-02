@@ -273,7 +273,10 @@ export class MenuScene {
     this.showcase = buildVehicle(type, 'blue', paint);
     this.showcase.paint = paint;
     this.showcase.type = type;
-    this.showcase.baseY = PLANES[type] ? PLANES[type].gearH : 0;
+    // Anything far wider than the other vehicles is shown smaller, so it still fits the menu.
+    const fit = PLANES[type] ? Math.min(1, 22 / PLANES[type].size.width) : 1;
+    this.showcase.group.scale.setScalar(fit);
+    this.showcase.baseY = PLANES[type] ? PLANES[type].gearH * fit : 0;
     this.scene.add(this.showcase.group);
     this.preview.set(`${type}|${paint}`, () => buildVehicle(type, 'blue', paint).group);
   }
@@ -295,7 +298,7 @@ export class MenuScene {
       const tank = buildVehicle(c.tank, team(c));
       if (PLANES[c.tank]) {
         // Planes taxi out of the hangar door at the back of their bay, wings folded to fit.
-        const k = 0.5;
+        const k = Math.min(0.5, 11 / PLANES[c.tank].size.width);
         tank.group.scale.setScalar(k);
         tank.group.position.set(x, 0.2 + PLANES[c.tank].gearH * k, -9);
         const door = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 0.2), new THREE.MeshStandardMaterial({ color: 0x4a4e44, flatShading: true }));

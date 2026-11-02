@@ -1,5 +1,5 @@
 import { Vector3, Euler, Quaternion } from 'three';
-import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET, MAX_SIDE_PLANES } from '../../../shared/planes.js';
+import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET, MAX_SIDE_PLANES, engineZones } from '../../../shared/planes.js';
 import { TICK_RATE } from '../../../shared/constants.js';
 import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES } from '../../../shared/map.js';
 import { PROPS, propsNear, segmentHitsProp, FORT } from '../../../shared/props.js';
@@ -69,11 +69,13 @@ export class Plane {
     this.rearCd = 0;
     this.bombCd = 0;
     this.rocketCd = 0;
-    this.mods = { engine: 1, wingL: 1, wingR: 1, tail: 1, fuel: 1, gear: 1, guns: 1, crew: 1 };
-    if (sp.engines === 2) this.mods.engine2 = 1;
+    this.mods = { wingL: 1, wingR: 1, tail: 1, fuel: 1, gear: 1, guns: 1, crew: 1 };
+    for (const z of engineZones(sp.engines)) this.mods[z] = 1;
+    this.ab = false;
+    this.opRocket = false;
     this.ctl = { th: 0, pitch: 0, roll: 0, yaw: 0, fire: false, bomb: false, rocket: false, aim: null };
     this.rear = { dir: null, fire: false };
-    this.gunYaw = -Math.PI / 2; // pointing out of the door
+    this.gunYaw = sp.door?.[0] ? -Math.PI / 2 : 0; // out of the door, or a top turret facing ahead
     this.gunPitch = 0;
     this.stall = false;
     this.warnEdge = false;
@@ -91,6 +93,12 @@ export class Plane {
 // Where a body-space hit lands (x left, z forward).
 function zoneAt(p, lx, lz) {
   const s = p.spec.size;
+  // Six engines along the wing: which one depends on how far out the hit is.
+  if (p.spec.engines > 2 && Math.abs(lx) > s.width * 0.1 && Math.abs(lx) < s.width * 0.42) {
+    const pair = Math.min(2, Math.floor(((Math.abs(lx) - s.width * 0.1) / (s.width * 0.32)) * 3));
+    if (Math.random() < 0.5) return engineZones(p.spec.engines)[pair * 2 + (lx > 0 ? 0 : 1)];
+    return lx > 0 ? 'wingL' : 'wingR';
+  }
   if (Math.abs(lx) > s.width * 0.14) {
     if (p.spec.engines === 2 && Math.abs(lx) < s.width * 0.3 && lz > -s.length * 0.1) return lx > 0 ? 'engine' : 'engine2';
     return lx > 0 ? 'wingL' : 'wingR';
@@ -144,6 +152,7 @@ export class PlaneSystem {
     } else if (role === 'gunner' && msg.t === 'rear') {
       if (Array.isArray(msg.dir) && msg.dir.length === 3 && msg.dir.every((v) => Math.abs(v) <= 2) && Math.hypot(...msg.dir) > 0.01) p.rear.dir = new Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
       p.rear.fire = !!msg.fire;
+      p.opRocket = !!msg.rocket;
       if (msg.bomb) this.dropBomb(p);
     } else if (role === 'gunner' && msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
       this.m.setPing(c, msg.x, msg.z);
@@ -172,11 +181,14 @@ export class PlaneSystem {
   // ---------- Flight model ----------
   fly(p) {
     const s = p.spec, k = p.ctl, mods = p.mods;
-    const engines = s.engines === 2 ? (mods.engine > 0 ? 0.5 : 0) + (mods.engine2 > 0 ? 0.5 : 0) : mods.engine > 0 ? 1 : 0;
-    const health = s.engines === 2 ? (0.5 + 0.5 * (mods.engine + mods.engine2) / 2) : 0.5 + 0.5 * mods.engine;
+    const zones = engineZones(s.engines);
+    const engines = zones.filter((z) => mods[z] > 0).length / zones.length;
+    const health = 0.5 + (0.5 * zones.reduce((sum, z) => sum + mods[z], 0)) / zones.length;
     p.throttle = clamp(p.throttle + k.th * DT * 0.55, 0, 1);
     if (p.fuel <= 0) p.throttle = 0;
-    p.fuel = Math.max(0, p.fuel - (p.throttle * DT) / FLIGHT.fuelSeconds * (mods.fuel < 0.5 ? 4 : 1));
+    // Afterburner: keep asking for more throttle once it's already full. It drinks fuel.
+    p.ab = !!s.afterburner && k.th > 0 && p.throttle >= 0.99 && engines > 0 && !p.grounded;
+    p.fuel = Math.max(0, p.fuel - (p.throttle * DT) / FLIGHT.fuelSeconds * (mods.fuel < 0.5 ? 4 : 1) * (p.ab ? 3 : 1));
 
     // Mouse aim (solo, NPCs): turn the aim direction into stick movements.
     let stickP = k.pitch, stickR = k.roll, stickY = k.yaw;
@@ -225,14 +237,15 @@ export class PlaneSystem {
       p.gp = clamp(p.gp + pitchRate * DT, -1.52, 1.52);
       p.h = wrapAngle(p.h + (yawRate * c) / cp * DT);
     }
-    const bankTurn = -sn * (G / Math.max(12, speed)) * 1.3 * authority * turnK;
+    const bankTurn = -sn * (G / Math.max(12, speed)) * 1.3 * authority * turnK * (s.turnK ?? 1);
     p.h = wrapAngle(p.h + (bankTurn / cp) * DT);
 
     // Speed: thrust against drag, gravity along the flight path.
     const thin = 1 - clamp((p.y - FLIGHT.maxAlt + 60) / 60, 0, 1);
-    const thrust = s.accel * p.throttle * engines * health * thin;
+    const thrust = s.accel * p.throttle * engines * health * thin * (p.ab ? s.afterburner : 1);
     const dragA = s.accel * s.drag * (speed / s.maxSpeed) ** 2;
-    const turnDrag = Math.abs(pitchRate) * speed * 0.03;
+    // A jet pays for a hard turn with speed: that's when it can be caught.
+    const turnDrag = Math.abs(pitchRate) * speed * 0.03 + (s.turnBleed ?? 0) * Math.abs(sn) * speed;
     p.v = Math.max(4, speed + (thrust - dragA - turnDrag - G * Math.sin(p.gp)) * DT);
 
     // Stall: below flying speed the nose drops and the plane mushes down.
@@ -399,37 +412,46 @@ export class PlaneSystem {
       m.fire(p, { kind: g.kind, damage: g.damage, speed: g.speed + p.v, splash: g.kind === 'ac' ? 1 : 0, splashDamage: g.kind === 'ac' ? g.damage * 0.3 : 0, spread, life: 2.2, air: true }, pos, dir.clone());
     }
     if (k.bomb) this.dropBomb(p);
-    if (k.rocket && p.rocketCd <= 0 && p.rockets > 0 && !p.grounded) {
-      const r = s.rockets;
-      p.rocketCd = 0.28;
-      p.rockets--;
-      // Dropped below the wings, close to the fuselage. Its line is set now, once: from where the motor
-      // will light to a point on the nose line ahead, so both sides' rockets meet where the plane aimed.
-      const off = Math.min(ROCKET_OFFSET, s.size.width * 0.12) * (p.rockets % 2 ? 1 : -1);
-      _e.set(-p.gp, p.h, p.ty, 'YXZ');
-      const pos = new Vector3(off, -s.gearH * ROCKET_BELOW, 0).applyEuler(_e);
-      pos.x += p.x;
-      pos.y += p.y;
-      pos.z += p.z;
-      const fallV = ROCKET.gravity * ROCKET.drop;
-      const lit = pos.clone().addScaledVector(f, p.v * ROCKET.drop);
-      lit.y -= (fallV * ROCKET.drop) / 2 + (fallV * ROCKET.ramp) / 2;
-      const dir = new Vector3(p.x + f.x * ROCKET_CONVERGE, p.y + f.y * ROCKET_CONVERGE, p.z + f.z * ROCKET_CONVERGE).sub(lit).normalize();
-      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4 + ROCKET.drop, air: true, coast: ROCKET.drop, coastV: [f.x * p.v, f.y * p.v, f.z * p.v] }, pos, dir);
+    if ((k.rocket || p.opRocket) && p.rocketCd <= 0 && p.rockets > 0 && !p.grounded) {
+      p.rocketCd = s.rockets.cooldown ?? 0.28;
+      for (let i = s.rockets.pair ? 2 : 1; i > 0 && p.rockets > 0; i--) this.fireRocket(p, f);
     }
     this.rearGun(p);
     this.sixCheck(p);
   }
 
+  fireRocket(p, f) {
+    const s = p.spec, m = this.m, r = s.rockets;
+    p.rockets--;
+    // Dropped below the wings, close to the fuselage. Its line is set now, once: from where the motor
+    // will light to a point on the nose line ahead, so both sides' rockets meet where the plane aimed.
+    const off = (r.x ?? Math.min(ROCKET_OFFSET, s.size.width * 0.12)) * (p.rockets % 2 ? 1 : -1);
+    _e.set(-p.gp, p.h, p.ty, 'YXZ');
+    const pos = new Vector3(off, -s.gearH * ROCKET_BELOW, 0).applyEuler(_e);
+    pos.x += p.x;
+    pos.y += p.y;
+    pos.z += p.z;
+    const fallV = ROCKET.gravity * ROCKET.drop;
+    const lit = pos.clone().addScaledVector(f, p.v * ROCKET.drop);
+    lit.y -= (fallV * ROCKET.drop) / 2 + (fallV * ROCKET.ramp) / 2;
+    const dir = new Vector3(p.x + f.x * ROCKET_CONVERGE, p.y + f.y * ROCKET_CONVERGE, p.z + f.z * ROCKET_CONVERGE).sub(lit).normalize();
+    m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4 + ROCKET.drop, air: true, coast: ROCKET.drop, coastV: [f.x * p.v, f.y * p.v, f.z * p.v] }, pos, dir);
+  }
+
   dropBomb(p) {
     const s = p.spec;
     if (!s.bombs || p.bombs <= 0 || p.bombCd > 0 || p.grounded) return;
-    p.bombCd = p.spec.id === 'mitchell' ? 0.3 : 0.6;
-    p.bombs--;
-    const f = fwd(p.h, p.gp);
-    const pos = new Vector3(p.x - f.x * 0.5, p.y - 1.4, p.z - f.z * 0.5);
     const b = s.bombs;
-    this.m.fire(p, { kind: 'bomb', damage: b.damage, speed: Math.max(15, p.v), splash: b.splash, splashDamage: b.splashDamage, spread: b.spread * (p.ai ? this.m.skill.aim * 0.5 : 1), life: 14 }, pos, f);
+    p.bombCd = b.reload ?? (p.spec.id === 'mitchell' ? 0.3 : 0.6);
+    const f = fwd(p.h, p.gp);
+    const c = Math.cos(p.h), sn = Math.sin(p.h);
+    // One bomb, or a salvo spread out across the bomb bays.
+    for (const [side, along] of b.pattern ?? [[0, -0.5]]) {
+      if (p.bombs <= 0) break;
+      p.bombs--;
+      const pos = new Vector3(p.x + c * side + f.x * along, p.y - (b.drop ?? 1.4), p.z - sn * side + f.z * along);
+      this.m.fire(p, { kind: 'bomb', damage: b.damage, speed: Math.max(15, p.v), splash: b.splash, splashDamage: b.splashDamage, spread: b.spread * (p.ai ? this.m.skill.aim * 0.5 : 1), life: 14 }, pos, f);
+    }
   }
 
   // The side gun: the gunner's aim, or automatic at nearby enemy planes (solo, NPC, empty seat).
@@ -466,7 +488,7 @@ export class PlaneSystem {
       p.gunPitch = Math.asin(clamp(_l.y));
     }
     if (!fire || !dir || p.rearCd > 0 || p.rearAmmo <= 0 || p.mods.crew <= 0 || p.grounded) return;
-    if (_l.y > SIDE_GUN_MAX_UP) return;
+    if (_l.y > (s.rear.up ?? SIDE_GUN_MAX_UP) || _l.y < (s.rear.down ?? -1)) return;
     p.rearCd = s.rear.interval;
     p.rearAmmo--;
     p.coaxBelt = p.rearAmmo;
@@ -474,7 +496,7 @@ export class PlaneSystem {
     pos.x += p.x;
     pos.y += p.y;
     pos.z += p.z;
-    m.fire(p, { kind: 'mg', damage: s.rear.damage, speed: s.rear.speed, splash: 0, splashDamage: 0, spread, life: 2.2, air: true }, pos.addScaledVector(dir, 1.2), dir.clone());
+    m.fire(p, { kind: s.rear.kind ?? 'mg', damage: s.rear.damage, speed: s.rear.speed, splash: s.rear.splash ?? 0, splashDamage: s.rear.splashDamage ?? 0, spread, life: 2.2, air: true }, pos.addScaledVector(dir, 1.2), dir.clone());
   }
 
   // "Enemy on our six!": a warning when a hostile plane sits behind us.
@@ -522,8 +544,9 @@ export class PlaneSystem {
       }
       return t0;
     };
-    const fus = box([-1, -1.1, -s.length / 2], [1, 1.1, s.length / 2]);
-    const wing = box([-s.width / 2, -0.7, -1.2], [s.width / 2, 0.7, 1.8]);
+    const hb = p.spec.hitBox;
+    const fus = hb ? box([-hb.hull[0], -hb.hull[1], -s.length / 2], [hb.hull[0], hb.hull[1], s.length / 2]) : box([-1, -1.1, -s.length / 2], [1, 1.1, s.length / 2]);
+    const wing = hb ? box([-s.width / 2, -hb.wing[2], hb.wing[0]], [s.width / 2, hb.wing[2], hb.wing[1]]) : box([-s.width / 2, -0.7, -1.2], [s.width / 2, 0.7, 1.8]);
     const t = fus === null ? wing : wing === null ? fus : Math.min(fus, wing);
     if (t === null) return null;
     const lx = o[0] + d[0] * t, lz = o[2] + d[2] * t;
@@ -535,12 +558,12 @@ export class PlaneSystem {
     if (!(zone in p.mods)) zone = 'fuel';
     const before = p.mods[zone];
     if (before <= 0) return;
-    const after = Math.max(0, before - dmg / (p.spec.hp * 0.4));
+    const after = Math.max(0, before - dmg / (p.spec.hp * (p.spec.zoneK ?? 0.4)));
     p.mods[zone] = after;
     const crossed = (l) => before >= l && after < l;
     if (crossed(0.5) || after === 0) m.events.push({ k: 'mod', u: p.id, m: zone, state: after === 0 ? 'destroyed' : 'damaged' });
     if (zone === 'fuel' && after < 0.5 && Math.random() < 0.35) p.burning = 12;
-    if ((zone === 'engine' || zone === 'engine2') && after < 0.3 && Math.random() < 0.5) p.burning = 10;
+    if (zone.startsWith('engine') && after < 0.3 && Math.random() < 0.5) p.burning = 10;
     if ((zone === 'wingL' || zone === 'wingR') && after === 0) {
       // Wing gone: nothing keeps this one in the air.
       m.events.push({ k: 'wing', u: p.id, side: zone });
@@ -568,7 +591,8 @@ export class PlaneSystem {
       m.events.push({ k: 'flak', x: r2(b.x), y: r2(b.y), z: r2(b.z) });
       for (const p of air) {
         if (p.team !== b.team) {
-          const d = Math.hypot(p.x - b.x, p.y - b.y, p.z - b.z);
+          // A shell bursting anywhere near a very wide plane still hits some of it.
+          const d = Math.max(0, Math.hypot(p.x - b.x, p.y - b.y, p.z - b.z) - (p.spec.hitBox ? p.radius * 0.5 : 0));
           if (d < 20) {
             const dmg = 40 * m.skill.damage * (1 - d / 20);
             p.lastHitBy = -1;

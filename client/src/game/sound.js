@@ -145,7 +145,7 @@ export class SoundScape {
     g.gain.value = 0;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = spec.engineSound === 'radial' ? 520 : 800;
+    lp.frequency.value = { radial: 520, drone: 260, jet: 2200 }[spec.engineSound] ?? 800;
     lp.connect(g).connect(this.out);
     const o1 = ctx.createOscillator();
     o1.type = 'sawtooth';
@@ -181,15 +181,16 @@ export class SoundScape {
     this.engGain.gain.value = 0;
   }
 
-  updatePlane(dt, { th, speedFrac, dive, alive, stall }) {
+  updatePlane(dt, { th, speedFrac, dive, alive, stall, ab = false }) {
     const a = this.planeAudio;
     if (!a) return;
     const t = this.ctx.currentTime;
-    const f = (this.planeSpec.engineSound === 'radial' ? 38 : 58) + th * 60 + speedFrac * 22;
+    const voice = this.planeSpec.engineSound;
+    const f = voice === 'drone' ? 24 + th * 12 + speedFrac * 4 : voice === 'jet' ? 130 + th * 150 + speedFrac * 90 + (ab ? 120 : 0) : (voice === 'radial' ? 38 : 58) + th * 60 + speedFrac * 22;
     a.o1.frequency.setTargetAtTime(f, t, 0.2);
     a.o2.frequency.setTargetAtTime(f * (this.planeSpec.engines === 2 ? 1.012 : 0.5), t, 0.2);
-    a.g.gain.setTargetAtTime(alive ? 0.1 + th * 0.17 : 0, t, 0.25);
-    a.wg.gain.setTargetAtTime(alive ? speedFrac * speedFrac * 0.14 + dive * 0.13 : 0, t, 0.3);
+    a.g.gain.setTargetAtTime(alive ? 0.1 + th * 0.17 + (ab ? 0.1 : 0) : 0, t, 0.25);
+    a.wg.gain.setTargetAtTime(alive ? speedFrac * speedFrac * 0.14 + dive * 0.13 + (ab ? 0.3 : 0) : 0, t, 0.3);
     a.wf.frequency.setTargetAtTime(600 + speedFrac * 800 + dive * 900, t, 0.3);
     // The Stuka's siren climbs as it dives.
     const howl = alive && this.planeSpec.siren && dive > 0.15;
@@ -202,6 +203,55 @@ export class SoundScape {
         this.tone({ freq: 880, dur: 0.18, gain: 0.08, type: 'square', bus: this.out });
       }
     }
+  }
+
+  // The vehicle's no longer a plane: its engine goes quiet for good.
+  stopPlane() {
+    const a = this.planeAudio;
+    if (!a) return;
+    const t = this.ctx.currentTime;
+    a.g.gain.setTargetAtTime(0, t, 0.1);
+    a.wg.gain.setTargetAtTime(0, t, 0.1);
+    a.sg.gain.setTargetAtTime(0, t, 0.1);
+    this.planeAudio = null;
+    this.planeSpec = null;
+  }
+
+  // Other aircraft you hear from anywhere: a Leviathan's deep drone (distances in m, Infinity = none)
+  // and a jet's afterburner.
+  updateFlyers(drone, roar) {
+    const ctx = this.ctx;
+    if (!this.flyers) {
+      if (drone === Infinity && roar === Infinity) return;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 170;
+      const droneGain = ctx.createGain();
+      droneGain.gain.value = 0;
+      lp.connect(droneGain).connect(this.out);
+      const oscs = [29, 29.7, 44].map((freq) => {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = freq;
+        o.connect(lp);
+        o.start();
+        return o;
+      });
+      const src = noise(ctx);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'lowpass';
+      bp.frequency.value = 1500;
+      const roarGain = ctx.createGain();
+      roarGain.gain.value = 0;
+      src.connect(bp).connect(roarGain).connect(this.out);
+      src.start();
+      this.flyers = { droneGain, roarGain };
+      this.ambientExtra = [...(this.ambientExtra ?? []), ...oscs, src];
+    }
+    const t = ctx.currentTime;
+    const fade = (d, far) => (d === Infinity ? 0 : Math.max(0, 1 - d / far) ** 2);
+    this.flyers.droneGain.gain.setTargetAtTime(drone === Infinity ? 0 : 0.04 + 0.3 * fade(drone, 2800), t, 0.4);
+    this.flyers.roarGain.gain.setTargetAtTime(0.3 * fade(roar, 900), t, 0.2);
   }
 
   // The war never stops: a low, slowly swelling rumble behind everything.

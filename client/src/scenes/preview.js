@@ -156,6 +156,8 @@ export class VehiclePreview {
     const needed = (this.radius * 1.14) / (half * Math.min(1, aspect));
     const up = (this.height * 0.5 + this.radius * Math.sin(ELEVATION) + 0.6) / half;
     const dist = Math.max(needed, up);
+    cam.far = Math.max(300, dist + this.radius * 3); // the widest planes need the camera a long way back
+    cam.updateProjectionMatrix();
     const cy = this.height * 0.42;
     cam.position.set(0, cy + Math.sin(ELEVATION) * dist, Math.cos(ELEVATION) * dist);
     cam.lookAt(0, cy, 0);

@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { DIFFICULTY, TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
+import { DIFFICULTY, TANKS, TANK_IDS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
 import { footBlocked, nearGarage } from '../../../shared/foot.js';
 import { WarDirector } from './war.js';
 import { PlaneSystem } from './planes.js';
@@ -128,6 +128,7 @@ class Crew {
     this.team = info.team;
     this.tankType = info.tank;
     this.tank = tank;
+    this.noPlanes = false; // lost a plane that can't be replaced: tanks only from now on
     this.seats = { driver: true, gunner: true };
     // 'tank' (in or waiting for a tank), 'choice' (just destroyed), 'foot' (bailed out).
     this.bail = { mode: 'tank', until: 0, picks: {}, foot: {} };
@@ -341,9 +342,10 @@ export class Match {
         if ((b.picks.driver && b.picks.gunner) || this.time >= b.until) this.resolveBail(c);
       } else if (b.mode === 'foot') this.updateFoot(c);
       else if (this.time >= t.respawnAt) {
-        t.respawn();
-        if (t.kind === 'tank') this.clearSpawn(t);
-        this.events.push({ k: 'spawn', u: t.id });
+        const next = c.noPlanes && t.kind === 'plane' ? this.assignRandomTank(c) : t;
+        if (next === t) t.respawn();
+        if (next.kind === 'tank') this.clearSpawn(next);
+        this.events.push({ k: 'spawn', u: next.id });
       }
     } else if (t.kind !== 'plane') {
       this.driveTank(t);
@@ -357,6 +359,18 @@ export class Match {
       const reached = near.some((u) => Math.hypot(u.x - c.ping.x, u.z - c.ping.z) < PING.reachRadius);
       if (reached || this.time - c.ping.t0 > PING.lifetime) c.ping = null;
     }
+  }
+
+  // The crew's plane is gone for good: they take whichever tank the base has for them.
+  assignRandomTank(c) {
+    const b = BASES[c.team];
+    const type = TANK_IDS[Math.floor(Math.random() * TANK_IDS.length)];
+    const t = this.addTank(new Tank(c.team, type, b.x, b.z + 45 * (c.team === 'blue' ? 1 : -1), b.heading, { player: true }));
+    t.crewId = c.id;
+    this.units = this.units.filter((u) => u !== c.tank);
+    c.tank = t;
+    c.tankType = type;
+    return t;
   }
 
   // Something parked on the spawn point: the new tank comes in beside it instead.
@@ -954,7 +968,8 @@ export class Match {
       const u = hit.unit;
       ev.u = u.id;
       if (u.kind === 'plane') {
-        const dmg = p.damage * u.spec.armor.side;
+        const smallArms = p.kind === 'mg' || p.kind === 'rifle' ? u.spec.smallArms ?? 1 : 1;
+        const dmg = p.damage * u.spec.armor.side * smallArms;
         ev.dmg = Math.round(dmg);
         u.lastHitBy = p.owner;
         this.planes.damageZone(u, hit.zone, dmg);
@@ -1043,6 +1058,7 @@ export class Match {
       u.diedAt = this.time;
       const victimCrew = this.crewOf(u);
       if (victimCrew) victimCrew.stats.deaths++;
+      if (victimCrew && u.spec.noPlaneRespawn) victimCrew.noPlanes = true;
       if (u.player && victimCrew) {
         u.respawnAt = this.time + 15;
         victimCrew.bail = { mode: 'choice', until: this.time + FOOT.choiceTime, picks: {}, foot: {} };
@@ -1158,6 +1174,8 @@ export class Match {
       id: t.id,
       crewId: c.id,
       team: c.team,
+      vehicle: t.type,
+      noPlanes: c.noPlanes,
       v: r2(t.v),
       boost: r2(t.boost),
       reload: r2(t.reload),
@@ -1176,7 +1194,7 @@ export class Match {
       ping: c.ping && { id: c.ping.id, x: r2(c.ping.x), z: r2(c.ping.z), age: r2(this.time - c.ping.t0) },
       pingCd: r2(Math.max(0, c.pingReadyAt - this.time)),
       crew: this.crewSnapshot(c),
-      ...(t.kind === 'plane' ? { pl: { y: r2(t.y), th: r2(t.throttle), fuel: r2(t.fuel), bombs: t.bombs, rockets: t.rockets, ammo: Math.round(t.ammo), rear: Math.round(t.rearAmmo), stall: t.stall, ground: t.grounded, edge: t.warnEdge, low: t.warnLow, six: t.six, vy: r2(t.vy) } } : {}),
+      ...(t.kind === 'plane' ? { pl: { y: r2(t.y), th: r2(t.throttle), fuel: r2(t.fuel), bombs: t.bombs, rockets: t.rockets, ammo: Math.round(t.ammo), rear: Math.round(t.rearAmmo), stall: t.stall, ground: t.grounded, edge: t.warnEdge, low: t.warnLow, six: t.six, vy: r2(t.vy), ab: t.ab } } : {}),
     };
   }
 
@@ -1193,7 +1211,7 @@ export class Match {
     const u = this.units.map((u) => {
       const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], Math.round(u.x * 10), Math.round(u.z * 10), Math.round(u.h * 1000), Math.round(u.ty * 1000), Math.round(u.gp * 1000), Math.round((u.hp / u.spec.hp) * 100), u.dead ? 1 : 0, u.crewId != null ? u.crewId + 1 : 0];
       if (u.crew) a.push(Math.round(u.jy * 100));
-      else if (u.kind === 'plane') a.push(Math.round(u.y * 100), Math.round(u.gunYaw * 100), Math.round(u.gunPitch * 100));
+      else if (u.kind === 'plane') a.push(Math.round(u.y * 100), Math.round(u.gunYaw * 100), Math.round(u.gunPitch * 100), u.ab ? 1 : 0);
       return a;
     });
     const crews = {};

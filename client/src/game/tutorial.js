@@ -14,7 +14,7 @@ const hints = () => ({
   ],
   pilot: [
     `You are the PILOT. On the runway hold ${K('plane.up')}: it builds up speed and lifts off on its own.`,
-    `In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle. Too slow and you stall!`,
+    `In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle. Too slow and you stall! On a jet, keep holding ${K('plane.more')} at full throttle for the afterburner.`,
     `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} drops bombs, ${K('plane.rocket')} fires rockets along the nose. ${K('plane.view')} switches 1st/3rd person, ${K('plane.ahead')} looks ahead again.`,
     'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
     `About to go down? ${K('plane.bail')} bails both of you out with parachutes.`,
@@ -22,6 +22,10 @@ const hints = () => ({
   planeGunner: [
     `You are the SIDE GUNNER on the door minigun. Mouse turns the gun anywhere except straight up, ${K('door.fire')} fires. Call out enemies on your six!`,
     `On bombers, ${K('door.sight')} switches to the bomb sight looking straight down: ${K('door.fire')} drops, and tell the pilot to steer.`,
+    `${K('door.thermal')} switches thermal. ${K('door.ping')} pings a spot on the pilot's compass. ${K('door.bail')} bails out.`,
+  ],
+  planeOperator: [
+    `You are the WEAPONS OPERATOR on the targeting camera. Mouse looks around, ${K('door.fire')} fires 2 rockets along the nose, so call the turns to your pilot.`,
     `${K('door.thermal')} switches thermal. ${K('door.ping')} pings a spot on the pilot's compass. ${K('door.bail')} bails out.`,
   ],
   planeSolo: [
