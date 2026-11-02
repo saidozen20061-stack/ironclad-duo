@@ -7,6 +7,7 @@ import { settings } from '../settings.js';
 import { terrainImage, worldToImage } from './mapImage.js';
 import { propsNear, segmentHitsProp } from '../../../shared/props.js';
 import { Spotter } from './spot.js';
+import { ThermalRenderer, noHeat, seeAllLayers } from './thermal.js';
 
 const ZOOMS = [1, 2, 6];
 const BASE_FOV = 62;
@@ -27,6 +28,7 @@ const HUD_HTML = `
   <div class="g-hitmark">✕</div>
   <div class="g-range"><span>RNG</span> <b>----</b> m</div>
   <div class="g-zoom">1×</div>
+  <div class="g-thermal">THERMAL</div>
   <div class="g-banner"></div>
   <div class="g-weapon panel">
     <div class="w-name"></div>
@@ -64,6 +66,9 @@ export class GunnerView {
     // from fighting each other, most of all through the 6× sight.
     this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.5, 4600);
     this.camera.rotation.order = 'YXZ';
+    seeAllLayers(this.camera);
+    this.thermal = false;
+    this.renderDt = 0.016;
     this.zoomIdx = 0;
     this.aim = { yaw: 0, pitch: 0, initialised: false };
     this.lastAimSent = { yaw: NaN, pitch: NaN, at: 0 };
@@ -96,6 +101,7 @@ export class GunnerView {
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.5;
     g.add(beam, ring);
+    noHeat(g);
     g.visible = false;
     this.pingMarker = g;
     this.pingRing = ring;
@@ -198,6 +204,26 @@ export class GunnerView {
     net.send({ t: 'trigger', ...this.trigger });
   }
 
+  // T switches the thermal sight; no time limit.
+  thermalKey() {
+    if (!this.keys.took('KeyT') || this.paused) return;
+    this.thermal = !this.thermal;
+    this.showBanner(this.thermal ? 'THERMAL ON' : 'THERMAL OFF');
+  }
+
+  thermalActive() {
+    return this.thermal;
+  }
+
+  // An explosion in view washes the thermal picture out for a moment.
+  thermalFlash(x, y, z, size) {
+    if (!this.thermalActive() || !this.world.thermal) return;
+    const d = Math.hypot(x - this.camera.position.x, y - this.camera.position.y, z - this.camera.position.z);
+    const p = new THREE.Vector3(x, y, z).project(this.camera);
+    if (p.z > 1 || Math.abs(p.x) > 1.2 || Math.abs(p.y) > 1.2) return;
+    this.world.thermal.addFlash(Math.min(0.92, (size * 70 * Math.max(1, this.camera.fov < 20 ? 3 : 1)) / Math.max(20, d)));
+  }
+
   setPaused(p) {
     this.paused = p;
     if (p) {
@@ -229,6 +255,8 @@ export class GunnerView {
 
   update(dt, states, me) {
     this.me = me;
+    this.renderDt = dt;
+    this.thermalKey();
     const self = me && states.get(me.id);
     if (!self) return;
 
@@ -348,6 +376,7 @@ export class GunnerView {
     $('.g-lock').style.display = this.aiming() || this.paused ? 'none' : '';
     $('.g-scope').classList.toggle('on', zoom > 1);
     $('.g-zoom').textContent = `${zoom}×`;
+    $('.g-thermal').classList.toggle('on', this.thermalActive());
     $('.g-range b').textContent = this.range ? String(Math.round(this.range)).padStart(4, ' ') : '----';
 
     // Weapon panel
@@ -486,7 +515,8 @@ export class GunnerView {
   }
 
   render(renderer) {
-    renderer.render(this.world.scene, this.camera);
+    if (this.thermalActive()) (this.world.thermal ??= new ThermalRenderer(this.world)).render(this.world.scene, this.camera, this.renderDt);
+    else renderer.render(this.world.scene, this.camera);
   }
 
   dispose() {

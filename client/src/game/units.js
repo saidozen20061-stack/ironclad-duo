@@ -6,6 +6,7 @@ import { buildTank, trackMaterial } from '../models/tanks.js';
 import { buildATGun } from '../models/infantry.js';
 import { SoldierRig } from '../models/rig.js';
 import { quality } from '../settings.js';
+import { markHeat } from './thermal.js';
 
 const burnt = new THREE.MeshStandardMaterial({ color: 0x1d1b19, flatShading: true, roughness: 1 });
 const kindOf = (type) => (TANKS[type] ? 'tank' : type === 'atgun' ? 'atgun' : 'inf');
@@ -29,6 +30,7 @@ const trackTex = (() => {
 
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
+const _v = new THREE.Vector3();
 
 // Owns the 3D models for every unit and applies interpolated state each frame.
 // Soldiers are animated rigs (full detail close by, cheaper further out); tanks get
@@ -73,6 +75,11 @@ export class UnitsView {
         m.acc = 0;
         if (u.dead) m.rig.die({ fromAngle: Math.PI });
       }
+      // Heat for the thermal sight, kept up to date in updateHeat while it is in use.
+      m.heatSrc = kind === 'tank' ? { heat: 0.5, engine: new THREE.Vector4(), hotE: 1, barrel: new THREE.Vector4(), hotB: 0 } : { heat: kind === 'inf' ? 0.82 : 0.3 };
+      m.barrelHeat = 0;
+      m.coolT = 0;
+      markHeat(m.root, m.heatSrc);
       this.scene.add(m.root);
       this.models.set(u.id, m);
     }
@@ -92,14 +99,50 @@ export class UnitsView {
       const dist = Math.hypot(u.x - this.camPos.x, u.z - this.camPos.z);
       // Past the end of the fog nothing is drawn at all; small things go earlier (LOD).
       const fogEnd = this.scene.fog?.far ?? quality().drawDistance;
-      m.root.visible = dist < Math.min(fogEnd, m.kind === 'tank' ? Infinity : m.kind === 'inf' ? 650 : 900);
+      const seeThroughFog = this.thermal ? 2 : 1;
+      m.root.visible = dist < Math.min(fogEnd * seeThroughFog, m.kind === 'tank' ? Infinity : m.kind === 'inf' ? 650 : 900);
+      if (u.dead) m.coolT += dt;
+      else m.coolT = 0;
+      m.barrelHeat *= Math.exp(-dt / 25); // barrels hold their heat for a long time
       if (!m.root.visible) continue;
       if (m.kind === 'tank') this.updateTank(m, u, dt);
       else if (m.kind === 'atgun') this.updateGun(m, u);
       else this.updateSoldier(m, u, dt, dist);
       m.last.x = u.x;
       m.last.z = u.z;
+      if (this.thermal) this.updateHeat(m, u);
     }
+  }
+
+  updateHeat(m, u) {
+    const src = m.heatSrc;
+    if (m.kind === 'inf') {
+      // Body heat; a body cools down over a minute or so.
+      src.heat = u.dead ? 0.12 + 0.7 * Math.exp(-m.coolT / 25) : 0.82;
+      return;
+    }
+    if (m.kind !== 'tank') {
+      src.heat = u.dead ? 0.1 + 0.25 * Math.exp(-m.coolT / 40) : 0.3;
+      return;
+    }
+    const spec = TANKS[u.type];
+    if (u.dead) {
+      // A wreck starts out burning hot and cools down over a couple of minutes.
+      src.heat = 0.14 + 0.82 * Math.exp(-m.coolT / 45);
+      src.engine.w = 0;
+    } else {
+      // A running engine and rear hull are the hottest thing on the field; driving warms
+      // the rest of the hull.
+      src.heat = 0.48 + 0.14 * Math.min(1, Math.abs(m.v) / 8);
+      _v.set(0, spec.size.height * 0.55, -spec.size.length * 0.34).applyMatrix4(m.root.matrixWorld);
+      src.engine.set(_v.x, _v.y, _v.z, spec.size.width * 0.85);
+      src.hotE = 1;
+    }
+    if (m.barrelHeat > 0.03) {
+      m.handles.muzzle.getWorldPosition(_v);
+      src.barrel.set(_v.x, _v.y, _v.z, spec.mount.barrel + 0.6);
+      src.hotB = 0.42 + 0.56 * m.barrelHeat;
+    } else src.barrel.w = 0;
   }
 
   // Match events that drive animation: shots (recoil), hits (flinch), kills (death style).
@@ -107,7 +150,10 @@ export class UnitsView {
     if (ev.k === 'f') {
       const m = this.models.get(ev.o);
       if (m?.rig) m.rig.shoot();
-      else if (m?.kind === 'tank' && ev.kind !== 'mg') m.recoil = 1;
+      else if (m?.kind === 'tank') {
+        if (ev.kind !== 'mg') m.recoil = 1;
+        m.barrelHeat = Math.min(1, m.barrelHeat + (ev.kind === 'mg' ? 0.015 : ev.kind === 'ac' ? 0.07 : 0.4));
+      }
     } else if (ev.k === 'i') {
       const m = this.models.get(ev.u);
       const u = states.get(ev.u);

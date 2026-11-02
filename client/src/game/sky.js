@@ -3,6 +3,7 @@ import { mergeParts } from './scatter.js';
 import { heightAt, HALF } from '../../../shared/map.js';
 import { createNoise2D, mulberry32 } from '../../../shared/noise.js';
 import { quality } from '../settings.js';
+import { noHeat } from './thermal.js';
 
 // Everything beyond and above the battlefield: a terrain skirt past the map edge,
 // distant mountain ranges, drifting low-poly clouds, bird flocks and wind-blown debris.
@@ -107,6 +108,7 @@ export class SkyLife {
     this.skirt = buildSkirt();
     scene.add(this.skirt);
     this.mountains = buildMountains();
+    noHeat(this.mountains);
     scene.add(this.mountains);
 
     // Clouds: a few shapes, many instances, drifting with the wind.
@@ -117,6 +119,7 @@ export class SkyLife {
     this.cloudMeshes = [0, 1, 2].map(() => {
       const im = new THREE.InstancedMesh(cloudGeo(rand), cloudMat, 18);
       im.frustumCulled = false;
+      noHeat(im);
       scene.add(im);
       return im;
     });

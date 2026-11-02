@@ -101,8 +101,15 @@ export class SoloView extends GunnerView {
     return t * len;
   }
 
+  // Thermal works through the gun sight (right click).
+  thermalActive() {
+    return this.thermal && this.sight;
+  }
+
   update(dt, states, me) {
     this.me = me;
+    this.renderDt = dt;
+    this.thermalKey();
     const self = me && states.get(me.id);
     if (!self) return;
     if (!this.aim.initialised) {

@@ -7,6 +7,7 @@ import { quality } from '../settings.js';
 import { renderer } from '../render.js';
 import { SkyLife } from './sky.js';
 import { BASE_FLAG_SPOTS } from './props.js';
+import { markHeat, noHeat } from './thermal.js';
 
 // The outdoor battlefield scene (what the gunner sees).
 const colorNoise = createNoise2D(777);
@@ -227,6 +228,7 @@ export class World {
     // Shadow map axes: the same ones the shadow camera ends up with when it looks at the sun.
     this.sunRight = new THREE.Vector3(0, 1, 0).cross(this.sunDir).normalize();
     this.sunUp = this.sunDir.clone().cross(this.sunRight);
+    noHeat(this.sky);
     this.scene.add(this.sky);
 
     const terrain = new THREE.Mesh(buildTerrainGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
@@ -242,6 +244,7 @@ export class World {
     water.rotation.x = -Math.PI / 2;
     water.position.y = WATER_LEVEL;
     water.receiveShadow = true;
+    markHeat(water, { heat: 0.04 });
     this.scene.add(water);
 
     for (const b of BRIDGES) this.scene.add(buildBridge(b));

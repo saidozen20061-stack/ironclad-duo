@@ -8,6 +8,7 @@ import { settings } from '../settings.js';
 import { terrainImage } from './mapImage.js';
 import { GunnerView } from './gunner.js';
 import { buildM4Viewmodel, M4_SIGHT_Y } from '../models/infantry.js';
+import { seeAllLayers } from './thermal.js';
 
 // First-person crew member on foot after bailing out. Movement is predicted here and
 // reported to the host; shots, grenades, damage and ammo are decided by the host.
@@ -48,6 +49,7 @@ export class SoldierView {
     this.deadProps = props.dead;
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.2, 4600);
     this.camera.rotation.order = 'YXZ';
+    seeAllLayers(this.camera);
     this.aim = { yaw: 0, pitch: 0 };
     this.pos = null;
     this.jy = 0;

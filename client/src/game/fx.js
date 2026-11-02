@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { quality } from '../settings.js';
+import { markHeat, LAYER_FX } from './thermal.js';
 
 // Projectiles (client-side ballistic replay of server fire events) and simple particle effects.
 const GRAVITY = 9.81;
@@ -15,6 +16,14 @@ const TRACER = {
   rocket: { color: 0xffc060, len: 1.4, width: 0.22 },
   grenade: { color: 0x2f3a26, len: 0.14, width: 0.1 },
 };
+
+// In the thermal sight, smoke and dust are mostly see-through, but a thick cloud still hides a bit.
+const HEAT_TRACER = { heat: 0.95 };
+const HEAT_FIRE = { heat: 1 };
+const HEAT_SMOKE = { heat: 0.3, alpha: 0.18 };
+const HEAT_DUST = { heat: 0.2, alpha: 0.1 };
+const HEAT_WATER = { heat: 0.08, alpha: 0.2 };
+const HEAT_DIRT = { heat: 0.3 };
 
 const IMPACT_SIZE = { ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
@@ -48,6 +57,7 @@ export class FX {
   spawnProjectile(ev) {
     const style = TRACER[ev.kind] ?? TRACER.ap;
     const mesh = new THREE.Mesh(this.tracerGeo, this.tracerMats[ev.kind] ?? this.tracerMats.ap);
+    markHeat(mesh, HEAT_TRACER);
     mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
     this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: 4 });
@@ -169,6 +179,9 @@ export class FX {
     m.position.copy(pos);
     m.scale.setScalar(size);
     m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+    m.layers.set(LAYER_FX);
+    m.userData.heatSrc = mat === this.mats.fire || mat === this.mats.spark ? HEAT_FIRE : mat === this.mats.smoke ? HEAT_SMOKE : mat === this.mats.dust ? HEAT_DUST : mat === this.mats.dirt ? HEAT_DIRT : HEAT_WATER;
+    markHeat(m, m.userData.heatSrc);
     this.scene.add(m);
     this.particles.push({ m, vel, size, grow, life, t: 0, gravity, fade, drag, spin, ground, cloned: fade < 1 });
   }

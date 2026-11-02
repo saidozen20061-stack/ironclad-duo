@@ -6,6 +6,7 @@ import { mulberry32 } from '../../../shared/noise.js';
 import { quality } from '../settings.js';
 import { Vegetation } from './vegetation.js';
 import { bakeOnGround } from './scatter.js';
+import { markHeat, noHeat } from './thermal.js';
 
 // Buildings and other solid props. Static props are merged per 120 m map chunk (one
 // draw call per chunk); a chunk is re-merged when one of its props is destroyed.
@@ -691,6 +692,7 @@ export class PropsView {
     this.flameMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.88, depthWrite: false }), Math.max(1, this.flames.length + 16));
     this.flameMesh.count = 0;
     this.flameMesh.frustumCulled = false;
+    markHeat(this.flameMesh, { heat: 1 });
     this.scene.add(this.flameMesh);
     this.fireLights = [0, 1].map(() => {
       const l = new THREE.PointLight(0xff9a40, 0, 45, 1.6);
@@ -747,6 +749,7 @@ export class PropsView {
       }
       const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: 0xdddddd, vertexColors: true, transparent: true, opacity: 0.7 }));
       mesh.renderOrder = 2;
+      noHeat(mesh);
       this.scene.add(mesh);
       this.zoneRings[pt.id] = mesh;
     }

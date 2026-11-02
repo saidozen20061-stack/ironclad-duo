@@ -337,6 +337,7 @@ export class MatchClient {
       case 'i':
         this.sound.impact(ev, ev.u === myId);
         if (['he', 'heavy', 'ap', 'rocket'].includes(ev.kind)) this.world?.skyLife.scare(ev, ev.kind === 'heavy' ? 260 : 160);
+        if (['he', 'heavy', 'rocket', 'grenade'].includes(ev.kind)) this.view.thermalFlash?.(ev.x, ev.y, ev.z, ev.kind === 'heavy' ? 1 : 0.5);
         if (this.fx) {
           this.fx.removeProjectile(ev.id);
           this.fx.impact(ev);
@@ -388,6 +389,7 @@ export class MatchClient {
         break;
       case 'boom': {
         const pos = new THREE.Vector3(ev.x, ev.y, ev.z);
+        this.view.thermalFlash?.(ev.x, ev.y, ev.z, 2);
         this.fx?.explosion(pos, ev.size);
         this.world?.skyLife.scare(pos, 350);
         this.sound.explosion(pos, 1.6);
@@ -399,7 +401,10 @@ export class MatchClient {
       }
       case 'k': {
         const latest = this.buffer.latest?.units.get(ev.u);
-        if (latest && TANKS[ev.type]) this.sound.explosion(latest, 1);
+        if (latest && TANKS[ev.type]) {
+          this.sound.explosion(latest, 1);
+          this.view.thermalFlash?.(latest.x, groundAt(latest.x, latest.z) + 1.5, latest.z, 1.2);
+        }
         if (latest && this.fx) {
           const m = this.units.get(ev.u);
           this.fx.explosion(new THREE.Vector3(latest.x, (m?.pose.y ?? 0) + 1.5, latest.z), 6);
@@ -544,6 +549,7 @@ export class MatchClient {
     const worldView = this.view instanceof GunnerView || this.view.isFoot;
     if (this.units && worldView) {
       this.units.camPos.copy(this.view.camera.position);
+      this.units.thermal = !!this.view.thermalActive?.();
       this.units.update(states, dt);
     }
     this.fx?.update(dt);

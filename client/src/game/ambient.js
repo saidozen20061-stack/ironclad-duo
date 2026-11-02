@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { quality } from '../settings.js';
+import { noHeat } from './thermal.js';
 
 // Background war beyond the playable area: artillery flashes on the horizon, tracer
 // streams arcing across the sky, planes flying over, and flares drifting down.
@@ -142,6 +143,7 @@ export class AmbientWar {
   }
 
   add(mesh, life, step) {
+    noHeat(mesh);
     this.scene.add(mesh);
     this.items.push({ mesh, life, step, age: 0, flare: !!mesh.userData.flare });
   }

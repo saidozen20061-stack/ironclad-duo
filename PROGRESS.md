@@ -5,7 +5,7 @@ Each finished phase is committed, pushed and live.
 
 - [x] Phase 1: flicker, structure gaps, far tanks (dev check: `structureCheck.js`)
 - [x] Phase 2: Easy/Normal/Hard NPC difficulty
-- [ ] Phase 3: thermal view (T)
+- [x] Phase 3: thermal view (T)
 - [ ] Phase 3.5: turntable tank preview
 - [ ] Phase 4: war atmosphere
 - [ ] Phase 5: planes
