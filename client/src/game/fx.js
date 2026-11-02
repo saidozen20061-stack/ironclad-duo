@@ -27,7 +27,7 @@ const HEAT_WATER = { heat: 0.08, alpha: 0.2 };
 const HEAT_DIRT = { heat: 0.3 };
 
 // Plane bullets fly straight away from the camera, so they need real size to read as a line.
-const AIR_TRACER = { len: 12, width: 0.13 };
+const AIR_TRACER = { len: 12, width: 0.065 };
 
 // Rockets and bombs are real models. Far away they grow a bit so they don't shrink to a speck.
 const MUNITION = {
