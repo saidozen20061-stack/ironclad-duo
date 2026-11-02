@@ -84,8 +84,20 @@ function buildCockpit(spec) {
   add(new THREE.BoxGeometry(1.2, 0.05, 0.05), dark, 0, 0.47, -0.7);
   add(new THREE.BoxGeometry(1.16, 0.05, 0.05), dark, 0, 0.5, 0.05);
   add(new THREE.BoxGeometry(0.03, 0.07, 0.03), dark, 0, -0.03, -0.78); // gun sight post
+  // The tub the pilot sits in: floor, footwell under the panel, side walls, seat and pedals.
+  // The plane itself is hidden from this seat, so without these you'd look straight through to the ground.
+  const floor = new THREE.MeshStandardMaterial({ color: 0x5c6052, flatShading: true, roughness: 0.9 });
+  add(new THREE.BoxGeometry(1.56, 0.06, 3.1), floor, 0, -1.02, 0.65);
+  add(new THREE.BoxGeometry(1.56, 0.96, 0.06), floor, 0, -0.56, -0.82); // front wall, behind the panel
+  for (const s of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.06, 0.8, 3.1), paint, s * 0.78, -0.62, 0.65);
+    add(new THREE.BoxGeometry(0.24, 0.05, 0.1), dark, s * 0.2, -0.95, -0.6, -0.5); // rudder pedals
+    add(new THREE.BoxGeometry(0.04, 0.3, 1.4), dark, s * 0.72, -0.72, 0.2); // floor ribs along the walls
+  }
+  add(new THREE.BoxGeometry(0.72, 0.1, 0.56), paint, 0, -0.72, 0.2); // seat cushion
+  add(new THREE.BoxGeometry(0.6, 0.3, 0.46), dark, 0, -0.88, 0.2); // seat base
   // Stick and throttle.
-  add(new THREE.CylinderGeometry(0.02, 0.025, 0.42, 6), dark, 0, -0.7, -0.35, -0.2);
+  add(new THREE.CylinderGeometry(0.02, 0.025, 0.62, 6), dark, 0, -0.72, -0.35, -0.2);
   const lever = add(new THREE.BoxGeometry(0.035, 0.035, 0.2), new THREE.MeshStandardMaterial({ color: 0x8a3a2a, flatShading: true }), -0.62, -0.47, -0.25);
   // Seat armour behind the head: the pilot can't see behind the plane.
   add(new THREE.BoxGeometry(0.72, 0.62, 0.08), dark, 0, -0.42, 0.5);
