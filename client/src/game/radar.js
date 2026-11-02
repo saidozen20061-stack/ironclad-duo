@@ -157,7 +157,7 @@ export class Radar {
     ctx.font = 'bold 26px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const pt of POINTS) {
+    for (const pt of this.hidePoints ? [] : POINTS) {
       let [sx, sy] = toScreen(pt.x, pt.z);
       const dist = Math.hypot(pt.x - tank.x, pt.z - tank.z);
       const col = this.pointColor?.(pt.id) ?? 'rgba(230,230,200,0.9)';

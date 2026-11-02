@@ -448,7 +448,7 @@ export class GunnerView {
     ctx.font = 'bold 13px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const pt of POINTS) {
+    for (const pt of this.hidePoints ? [] : POINTS) {
       let [px, py] = toMap(pt.x, pt.z);
       const out = px < 8 || px > S - 8 || py < 8 || py > S - 8;
       px = Math.max(10, Math.min(S - 10, px));

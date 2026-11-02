@@ -1058,6 +1058,7 @@ export class Match {
 
   // ---------- Capture points ----------
   updateCapture() {
+    if (this.mode !== 'flags') return; // only Flag Capture has capture points
     for (const pt of this.points) {
       const def = POINTS.find((p) => p.id === pt.id);
       const weight = { blue: 0, red: 0 };

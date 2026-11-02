@@ -335,6 +335,9 @@ export class World {
 
     // Base flags
     this.flags = Object.values(this.pointMarkers).map((m) => m.userData.flag);
+    this.showFlags = (on) => {
+      for (const m of Object.values(this.pointMarkers)) m.visible = on;
+    };
     for (const [team, x, z] of BASE_FLAG_SPOTS) {
       const m = buildPointMarker({ x, z });
       m.userData.flag.material = new THREE.MeshStandardMaterial({ color: team === 'blue' ? 0x3f7fd0 : 0xc84a3f, side: THREE.DoubleSide, flatShading: true });

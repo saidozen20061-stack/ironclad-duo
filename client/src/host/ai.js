@@ -15,6 +15,7 @@ const ENEMY = { blue: 'red', red: 'blue' };
 const FIELD_OF_VIEW = (65 * Math.PI) / 180; // to each side of where it's facing
 const TRACK_MEMORY = 2; // s: a target that just left the view isn't forgotten instantly
 const NOTICE_CLOSE = 10; // m: you can hear someone this close
+const CROWD = 40; // m a target counts as further away per NPC already on it: they spread their fire
 const STORM_RANGE = 30; // m: Fortress attackers keep walking until a target is this close
 
 // ---------- Helpers ----------
@@ -61,6 +62,11 @@ function chooseObjective(match, u) {
   const team = u.team;
   // Fortress Defence: Red storms the Blue base, Blue NPCs man the walls.
   if (match.mode === 'fortress') return team === 'red' ? 'blue' : 'fortress';
+  // Team Deathmatch: nothing to capture, so the armies roam from place to place looking for a fight.
+  if (match.mode === 'tdm') {
+    const others = match.points.filter((p) => p.id !== u.ai?.objective);
+    return others[Math.floor(Math.random() * others.length)].id;
+  }
   const cls = u.kind === 'tank' ? 'tank' : 'inf';
   const notOurs = match.points.filter((p) => p.owner !== team);
   const pool = notOurs.length ? notOurs : match.points;
@@ -154,6 +160,12 @@ export class ArmyAI {
   update(dt) {
     const m = this.match;
     const fortress = m.mode === 'fortress';
+    // How many NPCs are on each target right now.
+    this.aimedAt = new Map();
+    for (const u of m.units) {
+      const t = u.ai?.target;
+      if (t && !u.dead) this.aimedAt.set(t.id, (this.aimedAt.get(t.id) ?? 0) + 1);
+    }
     for (const team of ['blue', 'red']) {
       // In Fortress Defence the waves bring Red; Blue only fields wall defenders.
       if (fortress && team === 'red') continue;
@@ -319,7 +331,7 @@ export class ArmyAI {
       let score = d;
       if (prefer === 'armor' && e.kind === 'inf') score += 400;
       if (prefer === 'soft' && e.kind !== 'inf') score += d < 60 ? 80 : 1000;
-      if (e.player) score *= 0.85; // the human crew draws fire
+      score += this.crowding(u, e);
       if (shotAtUs) score *= 0.4; // whoever is shooting at us comes first
       if (score >= bestScore) continue;
       if (!lineOfSight(ux, uy, uz, e.x, unitHeight(e), e.z)) continue;
@@ -328,6 +340,13 @@ export class ArmyAI {
       bestScore = score;
     }
     return best;
+  }
+
+  // Everyone on the battlefield counts the same, player or not; the more NPCs already
+  // on a target, the less attractive it gets to the next one.
+  crowding(u, e) {
+    const n = (this.aimedAt?.get(e.id) ?? 0) - (u.ai?.target === e ? 1 : 0);
+    return Math.max(0, n) * CROWD;
   }
 
   // NPCs see like players do: only what's in front of them. A tank looks where its turret
@@ -439,7 +458,8 @@ export class ArmyAI {
       }
       if (ai.state !== 'retreat') {
         const objPt = m.points.find((p) => p.id === ai.objective);
-        if (!objPt || (objPt.owner === u.team && Math.random() < 0.08)) ai.objective = chooseObjective(m, u);
+        const roam = m.mode === 'tdm' && ai.state === 'hold' && Math.random() < 0.04;
+        if (!objPt || roam || (objPt.owner === u.team && Math.random() < 0.08)) ai.objective = chooseObjective(m, u);
         if (ai.target && storming) {
           // Shooting on the move, closing in on the walls, no sitting in cover.
           ai.cover = null;
@@ -703,7 +723,8 @@ export class ArmyAI {
       else if (ai.state === 'retreat' && t.hp > t.spec.hp * 0.7) ai.state = 'move';
       if (ai.state !== 'retreat') {
         const objPt = m.points.find((p) => p.id === ai.objective);
-        if (!objPt || (objPt.owner === t.team && Math.random() < 0.05)) ai.objective = chooseObjective(m, t);
+        const roam = m.mode === 'tdm' && ai.state === 'hold' && Math.random() < 0.03;
+        if (!objPt || roam || (objPt.owner === t.team && Math.random() < 0.05)) ai.objective = chooseObjective(m, t);
         const pt = objPoint(ai.objective);
         const inZone = !!pt && Math.hypot(pt.x - t.x, pt.z - t.z) < pt.r * 0.7;
         // Fortress attackers keep closing in; elsewhere tanks stop to fight at long range.

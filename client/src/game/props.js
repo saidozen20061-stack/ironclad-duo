@@ -826,6 +826,10 @@ export class PropsView {
     this.scene.add(mesh);
   }
 
+  showZones(on) {
+    for (const ring of Object.values(this.zoneRings)) ring.visible = on;
+  }
+
   buildZones() {
     this.zoneRings = {};
     for (const pt of POINTS) {

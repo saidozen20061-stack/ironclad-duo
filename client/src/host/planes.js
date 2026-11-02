@@ -14,6 +14,11 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a = -1, b = 1) => (v < a ? a : v > b ? b : v);
 const r2 = (v) => Math.round(v * 100) / 100;
 
+// NPC planes roam the map: an attack run on whatever they meet, then off somewhere else.
+const PATROL = 620; // m from the middle of the map
+const TARGET_RANGE = 420; // m: only what's near their route
+const RUN_TIME = [14, 22]; // s of one attack run
+const REST_TIME = [20, 35]; // s before they look for the next target
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
 const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
 
@@ -611,11 +616,21 @@ export class PlaneSystem {
 
   npc(p) {
     const m = this.m, ai = p.ai, s = p.spec;
+    const fortress = m.mode === 'fortress';
     ai.think -= DT;
+    ai.restT = (ai.restT ?? 0) - DT;
+    // One pass, then away across the map: a plane doesn't circle over the same target.
+    if (ai.target) {
+      ai.runT -= DT;
+      if (ai.runT <= 0 && !fortress) this.endRun(p);
+    }
     if (ai.think <= 0) {
       ai.think = rand(0.5, 0.9);
       if (ai.target?.dead || (ai.target && !m.units.includes(ai.target))) ai.target = null;
-      if (!ai.target || Math.random() < 0.08) ai.target = this.pickTarget(p);
+      if (!ai.target && ai.restT <= 0) {
+        ai.target = this.pickTarget(p);
+        ai.runT = rand(RUN_TIME[0], RUN_TIME[1]);
+      }
     }
     const k = p.ctl;
     k.th = p.throttle < 0.95 ? 1 : 0;
@@ -649,7 +664,10 @@ export class PlaneSystem {
           const fall = Math.sqrt((2 * Math.max(5, alt)) / G);
           if (Math.abs(hd - p.v * Math.cos(p.gp) * fall) < 14 && align > 0.5 && !reacting) k.bomb = true;
         }
-        if (hd < 90) ai.climbT = 3.5; // break off
+        if (hd < 90) {
+          ai.climbT = 3.5; // break off
+          if (!fortress) this.endRun(p);
+        }
       }
       if (!reacting && align > 0.992 - 0.003 * m.skill.aim && d < 340) {
         k.fire = true;
@@ -680,9 +698,23 @@ export class PlaneSystem {
     p.throttle = Math.max(p.throttle, 0.8);
   }
 
+  endRun(p) {
+    p.ai.target = null;
+    p.ai.restT = rand(REST_TIME[0], REST_TIME[1]);
+    p.ai.wp = null;
+  }
+
+  // Fortress raiders stay over the fortress; otherwise a string of points all over the map,
+  // each a long way from the last.
   patrolPoint(p) {
-    const fortress = this.m.mode === 'fortress';
-    return fortress ? { x: FORT.center.x, z: FORT.center.z } : { x: Math.sin(p.id) * 300, z: Math.cos(p.id) * 200 };
+    if (this.m.mode === 'fortress') return { x: FORT.center.x, z: FORT.center.z };
+    const ai = p.ai;
+    if (ai.wp && Math.hypot(ai.wp.x - p.x, ai.wp.z - p.z) > 160) return ai.wp;
+    for (let k = 0; k < 8; k++) {
+      ai.wp = { x: rand(-PATROL, PATROL), z: rand(-PATROL, PATROL) };
+      if (Math.hypot(ai.wp.x - p.x, ai.wp.z - p.z) > 500) break;
+    }
+    return ai.wp;
   }
 
   pickTarget(p) {
@@ -691,7 +723,7 @@ export class PlaneSystem {
     for (const e of m.units) {
       if (e.dead || e.team === p.team) continue;
       const d = Math.hypot(e.x - p.x, e.z - p.z);
-      if (d > 950) continue;
+      if (d > TARGET_RANGE) continue;
       if (!m.army.inView(p, e, d)) continue;
       let score = d;
       if (e.kind === 'plane') {
@@ -701,7 +733,7 @@ export class PlaneSystem {
       } else if (e.kind === 'tank') score *= ai.role === 'attack' ? 0.5 : 1.2;
       else if (e.kind === 'inf') score += ai.role === 'attack' ? 250 : 600;
       else score += 200;
-      if (e.player) score *= 0.85;
+      score += m.army.crowding(p, e);
       if (score < bs) {
         bs = score;
         best = e;

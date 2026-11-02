@@ -41,7 +41,7 @@ const HINTS = {
     'Press Q (or middle mouse) to PING a spot on the driver\'s radar. 5 s cooldown.',
     'Press T for the thermal sight: warm targets glow through fog and smoke.',
     'The hull indicator (bottom centre) shows which way the driver is facing.',
-    `Stand in the A/B/C zones to capture them. Hold ${keyLabel(settings.pttKey)} to talk.`,
+    `In Flag Capture, stand in the A/B/C zones to capture them. Hold ${keyLabel(settings.pttKey)} to talk.`,
   ],
 };
 

@@ -62,7 +62,7 @@ export class MatchClient {
     const tdm = this.mode === 'tdm';
     this.capEl.innerHTML = `
       <div class="tix blue"><small>BLUE${tdm ? ' KILLS' : ''}</small><b>${tdm ? 0 : 500}</b></div>
-      ${POINTS.map((p) => `<div class="cap" data-pt="${p.id}"><span>${p.id}</span></div>`).join('')}
+      ${tdm ? '' : POINTS.map((p) => `<div class="cap" data-pt="${p.id}"><span>${p.id}</span></div>`).join('')}
       <div class="tix red"><small>RED${tdm ? ' KILLS' : ''}</small><b>${tdm ? 0 : 500}</b></div>
       <div class="clock">20:00</div>${tdm ? `<div class="goal">First to ${this.info.killLimit}</div>` : ''}`;
     if (this.mode === 'fortress') {
@@ -201,6 +201,9 @@ export class MatchClient {
     this.war.onNearBlast = (k) => this.nearBlast(k);
     this.props.setEnvMap(this.world.envMap);
     for (const p of this.points) this.recolorPoint(p.id, p.owner);
+    // Capture flags and zones belong to Flag Capture only.
+    this.world.showFlags(this.mode === 'flags');
+    this.props.showZones(this.mode === 'flags');
   }
 
   makeTankView() {
@@ -217,8 +220,12 @@ export class MatchClient {
       v = new GunnerView({ world: this.world, units: this.units, tank, hud: this.hud, keys: this.keys });
       v.deadProps = this.props.dead;
     } else v = new DriverView({ tank, hud: this.hud, keys: this.keys });
-    if (v.radar) v.radar.pointColor = this.pointColor;
+    if (v.radar) {
+      v.radar.pointColor = this.pointColor;
+      v.radar.hidePoints = this.mode !== 'flags';
+    }
     v.pointColor = this.pointColor;
+    v.hidePoints = this.mode !== 'flags';
     v.drawExtraMinimap = (ctx, toMap) => this.drawTeamPings(ctx, toMap);
     v.team = this.team;
     return v;
@@ -323,6 +330,7 @@ export class MatchClient {
       this.view = new SoldierView({ world: this.world, units: this.units, props: this.props, sound: this.sound, hud: this.hud, keys: this.keys, role: this.solo ? 'driver' : this.role, team: this.team });
       this.view.noPing = this.solo;
       this.view.pointColor = this.pointColor;
+      this.view.hidePoints = this.mode !== 'flags';
       const mate = this.view.drawExtraMinimap;
       this.view.drawExtraMinimap = (ctx, toMap) => {
         mate(ctx, toMap);
