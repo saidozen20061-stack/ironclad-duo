@@ -43,6 +43,7 @@ export const ACTIONS = [
     ['ping', 'Ping', 'KeyQ', ['Mouse1']],
   ]),
   ...list('solo', [
+    ['view', '1st / 3rd person view', 'KeyF'],
     ['sight', 'Gun sight (hold)', 'Mouse2'],
     ['mg', 'Machine gun', 'Mouse1'],
   ]),
@@ -56,6 +57,7 @@ export const ACTIONS = [
     ['fire', 'Fire guns', 'Mouse0'],
     ['bomb', 'Drop bombs', 'Space'],
     ['rocket', 'Fire rockets', 'KeyR'],
+    ['view', '1st / 3rd person view', 'KeyF'],
     ['ahead', 'Look ahead again', 'KeyC'],
     ['bail', 'Bail out', 'KeyX'],
   ]),

@@ -3,7 +3,7 @@ import { PLANES, FLIGHT } from '../../../shared/planes.js';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
-import { settings } from '../settings.js';
+import { settings, saveSettings } from '../settings.js';
 import { keyName } from '../keybinds.js';
 import { GunnerView } from './gunner.js';
 import { planeEye, sideGunPos } from '../models/planes.js';
@@ -349,6 +349,56 @@ class PlaneBase extends GunnerView {
     });
   }
 
+  // Flying a plane, from the seat or from behind. The view button stays until it's pressed again;
+  // `hold` is an extra button for a quick look from the cockpit (solo).
+  flyUpdate(dt, states, me, hold = null) {
+    this.me = me;
+    this.states = states;
+    this.renderDt = dt;
+    const self = states.get(me.id);
+    if (!self) return;
+    this.readButtons('plane.fire', hold);
+    if (!this.paused && this.keys.hit('plane.view')) {
+      settings.firstPerson = !settings.firstPerson;
+      saveSettings();
+      this.showBanner(settings.firstPerson ? '1ST PERSON' : '3RD PERSON');
+    }
+    this.followPlane(self);
+    const inCockpit = settings.firstPerson || !!this.mouseBtn.right;
+    this.inCockpit = inCockpit;
+    const cam = this.camera;
+    const dir = _v.set(Math.sin(this.aim.yaw) * Math.cos(this.aim.pitch), Math.sin(this.aim.pitch), Math.cos(this.aim.yaw) * Math.cos(this.aim.pitch));
+    if (inCockpit) {
+      this.planePoint(self, 0, planeEye(this.tank) + 0.55, this.plane.size.length * 0.03, cam.position);
+      const look = this.lookFromSeat(self);
+      planeQuaternion(self, _q);
+      cam.quaternion.copy(_q).multiply(FLIP);
+      cam.rotateY(look.yaw);
+      cam.rotateX(look.pitch);
+      this.showOwn(false);
+      this.updateCockpit(dt, self, me, look);
+    } else {
+      this.cockpitOn = false;
+      this.showOwn(true);
+      const want = this.plane.size.length * 1.5 + 9;
+      const up = this.plane.size.height * 0.9 + 1.5;
+      const px = self.x - dir.x * want, pz = self.z - dir.z * want;
+      let py = self.y - dir.y * want + up;
+      py = Math.max(py, Math.max(groundAt(px, pz), WATER_LEVEL) + 1.2);
+      cam.position.set(px, py, pz);
+      cam.rotation.order = 'YXZ';
+      // Looks along the aim direction, so the crosshair stays in the centre.
+      cam.rotation.set(this.aim.pitch, this.aim.yaw + Math.PI, 0);
+    }
+    cam.fov += (70 - cam.fov) * Math.min(1, dt * 6);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    this.world.update(cam.position, cam);
+    if (!this.paused) this.sendControls(self, me);
+    this.placeNose(self);
+    this.planeHud(self, me);
+  }
+
   // Send a control message at 20 Hz, or at once when it changes.
   sendFly(msg) {
     const key = JSON.stringify(msg);
@@ -485,31 +535,11 @@ export class PilotView extends PlaneBase {
   }
 
   refreshHints() {
-    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
+    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('plane.view')} 1st/3rd person · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
   }
 
   update(dt, states, me) {
-    this.me = me;
-    this.states = states;
-    this.renderDt = dt;
-    const self = states.get(me.id);
-    if (!self) return;
-    this.readButtons('plane.fire');
-    this.followPlane(self);
-    const look = this.lookFromSeat(self);
-    const cam = this.camera;
-    this.planePoint(self, 0, planeEye(this.tank) + 0.55, this.plane.size.length * 0.03, cam.position);
-    planeQuaternion(self, _q);
-    cam.quaternion.copy(_q).multiply(FLIP);
-    cam.rotateY(look.yaw);
-    cam.rotateX(look.pitch);
-    cam.updateMatrixWorld();
-    this.showOwn(false);
-    this.world.update(cam.position, cam);
-    this.updateCockpit(dt, self, me, look);
-    if (!this.paused) this.sendControls(self, me);
-    this.placeNose(self);
-    this.planeHud(self, me);
+    this.flyUpdate(dt, states, me);
   }
 }
 
@@ -669,54 +699,16 @@ export class PlaneSoloView extends PlaneBase {
   }
 
   thermalActive() {
-    return this.thermal && this.mouseBtn?.right;
+    return this.thermal && this.inCockpit;
   }
 
   refreshHints() {
-    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('planeSolo.cockpit')} cockpit · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
+    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('plane.view')} 1st/3rd person · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
   }
 
   update(dt, states, me) {
-    this.me = me;
-    this.states = states;
-    this.renderDt = dt;
     this.thermalKey();
-    const self = states.get(me.id);
-    if (!self) return;
-    this.readButtons('plane.fire', 'planeSolo.cockpit');
-    this.followPlane(self);
-    const inCockpit = !!this.mouseBtn.right;
-    const cam = this.camera;
-    const dir = _v.set(Math.sin(this.aim.yaw) * Math.cos(this.aim.pitch), Math.sin(this.aim.pitch), Math.cos(this.aim.yaw) * Math.cos(this.aim.pitch));
-    if (inCockpit) {
-      this.planePoint(self, 0, planeEye(this.tank) + 0.55, this.plane.size.length * 0.03, cam.position);
-      const look = this.lookFromSeat(self);
-      planeQuaternion(self, _q);
-      cam.quaternion.copy(_q).multiply(FLIP);
-      cam.rotateY(look.yaw);
-      cam.rotateX(look.pitch);
-      this.showOwn(false);
-      this.updateCockpit(dt, self, me, look);
-    } else {
-      this.cockpitOn = false;
-      this.showOwn(true);
-      const want = this.plane.size.length * 1.5 + 9;
-      const up = this.plane.size.height * 0.9 + 1.5;
-      const px = self.x - dir.x * want, pz = self.z - dir.z * want;
-      let py = self.y - dir.y * want + up;
-      py = Math.max(py, Math.max(groundAt(px, pz), WATER_LEVEL) + 1.2);
-      cam.position.set(px, py, pz);
-      cam.rotation.order = 'YXZ';
-      // Looks along the aim direction, so the crosshair stays in the centre.
-      cam.rotation.set(this.aim.pitch, this.aim.yaw + Math.PI, 0);
-    }
-    cam.fov += (70 - cam.fov) * Math.min(1, dt * 6);
-    cam.updateProjectionMatrix();
-    cam.updateMatrixWorld();
-    this.world.update(cam.position, cam);
-    if (!this.paused) this.sendControls(self, me);
-    this.placeNose(self);
-    this.planeHud(self, me);
+    this.flyUpdate(dt, states, me, 'planeSolo.cockpit');
   }
 }
 

@@ -8,6 +8,7 @@ const DEFAULTS = {
   micId: '',
   voiceMode: 'ptt',
   pttKey: 'KeyV',
+  firstPerson: false, // the view button's choice: inside the vehicle, or behind it
   keybinds: {}, // action id -> key or mouse code, where it differs from the default
   quality: 'medium',
   autoQuality: true,

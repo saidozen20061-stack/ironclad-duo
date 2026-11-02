@@ -314,9 +314,8 @@ export class Net {
     this.id = 1;
     const me = { id: 1, crew: 0, role: 'driver', send: (msg) => this.deliver(msg) };
     const crew = { id: 0, team: mode === 'fortress' ? 'blue' : team, tank, driver: 1, gunner: 1 };
-    const room = { players: [me], matchInfo: { mode, killLimit, difficulty, airStart, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
+    const room = { players: [me], matchInfo: { style: 'solo', mode, killLimit, difficulty, airStart, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
     this.solo = new SimProxy(room);
-    this.solo.playerLeft(0, 'gunner');
     this.deliver({ t: 'matchStart', solo: true, paint, ...room.matchInfo, names: { 1: this.name } });
   }
 
@@ -324,7 +323,6 @@ export class Net {
     if (this.mode === 'solo') {
       if (msg.t === 'leave') return this.leave();
       if (!this.solo || ['hello', 'hb', 'toLobby', 'signal'].includes(msg.t)) return;
-      // Gun inputs act as the gunner seat, everything else (drive, bail-out, on foot) as the driver.
       return this.solo.onMessage({ crew: 0 }, msg);
     }
     switch (msg.t) {

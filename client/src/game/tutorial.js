@@ -15,7 +15,7 @@ const hints = () => ({
   pilot: [
     `You are the PILOT. On the runway hold ${K('plane.up')}: it throttles up and lifts off at speed.`,
     `In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle. Too slow and you stall!`,
-    `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} drops bombs, ${K('plane.rocket')} fires rockets along the nose. ${K('plane.ahead')} looks ahead again.`,
+    `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} drops bombs, ${K('plane.rocket')} fires rockets along the nose. ${K('plane.view')} switches 1st/3rd person, ${K('plane.ahead')} looks ahead again.`,
     'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
     `About to go down? ${K('plane.bail')} bails both of you out with parachutes.`,
   ],
@@ -26,12 +26,12 @@ const hints = () => ({
   ],
   planeSolo: [
     `SOLO PLANE: on the runway hold ${K('plane.up')}: it throttles up and lifts off at speed. In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle.`,
-    `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} bombs, ${K('plane.rocket')} rockets along the nose. ${K('planeSolo.cockpit')} for the cockpit, ${K('plane.ahead')} looks ahead again. The side gun fires by itself.`,
+    `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} bombs, ${K('plane.rocket')} rockets along the nose. ${K('plane.view')} switches 1st/3rd person, ${K('plane.ahead')} looks ahead again. The side gun fires by itself.`,
     `Land on your own runway and stop to repair, refuel and rearm. ${K('plane.bail')} bails out.`,
   ],
   solo: [
     `SOLO: you drive and shoot. ${K('drive.forward')}/${K('drive.back')} throttle · ${K('drive.left')}/${K('drive.right')} steer · ${K('drive.boost')} boost · ${K('drive.brake')} brake.`,
-    `Mouse aims the turret where the camera looks. ${K('gun.fire')} fires. Hold ${K('solo.sight')} for the gun sight.`,
+    `Mouse aims the turret where the camera looks. ${K('gun.fire')} fires. ${K('solo.view')} switches 1st/3rd person, hold ${K('solo.sight')} for a quick look through the sight.`,
     'The orange circle is where the gun really points — wait for it to turn green before firing.',
     `Took damage? Stop and hold ${K('drive.repair')} to repair the worst module. ${K('gun.ap')} / ${K('gun.he')} switch AP / HE, ${K('solo.mg')} = machine gun.`,
     `Press ${K('gun.thermal')} for the thermal sight: in the gun sight, warm targets glow through fog and smoke.`,

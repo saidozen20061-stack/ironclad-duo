@@ -6,6 +6,7 @@ import { propsNear, segmentHitsProp } from '../../../shared/props.js';
 import { net } from '../net.js';
 import { GunnerView } from './gunner.js';
 import { keyName } from '../keybinds.js';
+import { settings, saveSettings } from '../settings.js';
 
 // Solo: one player drives AND shoots. A third-person camera orbits behind and above the
 // tank and the turret follows where the camera looks; holding right click drops into the
@@ -22,7 +23,7 @@ export class SoloView extends GunnerView {
     super(opts);
     this.solo = true;
     this.sight = false;
-    this.sightZoom = 1;
+    this.sightZoom = 0;
     this.camDist = null;
     this.aimSend = { yaw: 0, pitch: 0 };
     this.lastDrive = { key: '', at: 0 };
@@ -35,13 +36,19 @@ export class SoloView extends GunnerView {
   pollGun() {
     const on = this.aiming(), k = this.keys;
     this.setTrigger('main', on && k.on('gun.fire'));
-    this.sight = on && k.on('solo.sight');
+    if (!this.paused && k.hit('solo.view')) {
+      settings.firstPerson = !settings.firstPerson;
+      saveSettings();
+      this.showBanner(settings.firstPerson ? '1ST PERSON' : '3RD PERSON');
+    }
+    // The view button stays until it's pressed again; the hold button is just a quick look through the sight.
+    this.sight = settings.firstPerson || (on && k.on('solo.sight'));
     if (this.spec.weapon.coax) this.setTrigger('coax', on && k.on('solo.mg'));
   }
 
   // Scroll picks the sight magnification (2× / 6×).
   cycleZoom(dir) {
-    this.sightZoom = Math.max(1, Math.min(SIGHT_ZOOMS.length - 1, this.sightZoom + dir));
+    this.sightZoom = Math.max(0, Math.min(SIGHT_ZOOMS.length - 1, this.sightZoom + dir));
   }
 
   setPaused(p) {
@@ -108,7 +115,8 @@ export class SoloView extends GunnerView {
       if (this.keys.hit('gun.he')) net.send({ t: 'shell', shell: 'HE' });
     }
     if (!this.paused) this.sendDrive();
-    this.zoomIdx = this.sight ? this.sightZoom : 0;
+    // First person starts unzoomed; holding the sight always magnifies.
+    this.zoomIdx = !this.sight ? 0 : settings.firstPerson ? this.sightZoom : Math.max(1, this.sightZoom);
     this.el.classList.toggle('third', !this.sight);
 
     tankPose(this.spec, self.x, self.z, self.h, this.pose);
