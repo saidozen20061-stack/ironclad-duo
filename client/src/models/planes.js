@@ -33,14 +33,14 @@ function loft(stations, sides = 8) {
     const r0 = ring(stations[s]), r1 = ring(stations[s + 1]);
     for (let i = 0; i < sides; i++) {
       const j = (i + 1) % sides;
-      tri(r0[i], r0[j], r1[j]);
-      tri(r0[i], r1[j], r1[i]);
+      tri(r0[i], r1[j], r0[j]);
+      tri(r0[i], r1[i], r1[j]);
     }
   }
   for (const [st, flip] of [[stations[0], true], [stations[stations.length - 1], false]]) {
     const r = ring(st);
     const c = [0, st[3] ?? 0, st[0]];
-    for (let i = 0; i < sides; i++) (flip ? tri(c, r[(i + 1) % sides], r[i]) : tri(c, r[i], r[(i + 1) % sides]));
+    for (let i = 0; i < sides; i++) (flip ? tri(c, r[i], r[(i + 1) % sides]) : tri(c, r[(i + 1) % sides], r[i]));
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

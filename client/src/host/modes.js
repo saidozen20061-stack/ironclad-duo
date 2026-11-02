@@ -94,12 +94,8 @@ function installFortress(m) {
       t.boss = true;
       f.alive.push(t);
     }
-    // From wave 3 on the enemy comes by air as well: bombers, then fighter cover.
-    if (f.wave >= 3) {
-      const bombers = Math.min(3, 1 + Math.floor((f.wave - 3) / 3));
-      for (let i = 0; i < bombers; i++) f.alive.push(m.planes.spawnNpc('red', 'attack'));
-      if (f.wave >= 5) for (let i = 0; i < Math.min(2, Math.floor((f.wave - 3) / 2)); i++) f.alive.push(m.planes.spawnNpc('red', 'fighter'));
-    }
+    // From wave 3 on the enemy also comes by air: one plane at a time, bomber or fighter in turn.
+    if (f.wave >= 3 && !m.planes.sideHasPlane('red')) f.alive.push(m.planes.spawnNpc('red', f.wave % 2 ? 'attack' : 'fighter'));
     f.arty = !!w.arty;
     f.artyT = 10;
     m.events.push({ k: 'wave', n: f.wave, boss: !!w.boss, arty: f.arty });

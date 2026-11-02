@@ -5,7 +5,7 @@ import { groundAt, heightAt, POINTS, BASES } from '../../../shared/map.js';
 import { mulberry32 } from '../../../shared/noise.js';
 import { quality } from '../settings.js';
 import { Vegetation } from './vegetation.js';
-import { bakeOnGround } from './scatter.js';
+import { bakeOnGround, markCullable } from './scatter.js';
 import { markHeat, noHeat } from './thermal.js';
 
 // Buildings and other solid props. Static props are merged per 120 m map chunk (one
@@ -692,6 +692,11 @@ export class PropsView {
     ch.mesh = new THREE.Mesh(mergeGeometries(geos), MAT);
     ch.mesh.castShadow = true;
     ch.mesh.receiveShadow = true;
+    ch.mesh.geometry.computeBoundingSphere();
+    const bs = ch.mesh.geometry.boundingSphere;
+    // A rebuilt chunk keeps its culling entry.
+    if (ch.cull) ch.cull.mesh = ch.mesh;
+    else ch.cull = markCullable(this.scene, ch.mesh, bs.center.x, bs.center.z, bs.radius);
     this.scene.add(ch.mesh);
   }
 
@@ -750,7 +755,7 @@ export class PropsView {
     this.flameMesh.frustumCulled = false;
     markHeat(this.flameMesh, { heat: 1 });
     this.scene.add(this.flameMesh);
-    this.fireLights = [0, 1].map(() => {
+    this.fireLights = [0].map(() => {
       const l = new THREE.PointLight(0xff9a40, 0, 45, 1.6);
       this.scene.add(l);
       return l;

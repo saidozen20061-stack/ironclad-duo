@@ -126,7 +126,24 @@ export class Room {
     };
   }
 
+  sideOf(crew) {
+    return this.mode === 'fortress' ? 'blue' : crew.team;
+  }
+
+  // One plane per side: if team changes put two together, the later crew goes back to a tank.
+  limitPlanes() {
+    const taken = new Set();
+    for (const c of this.occupied()) {
+      if (!COOP_PLANE_IDS.includes(c.tank)) continue;
+      if (taken.has(this.sideOf(c))) {
+        c.tank = 'medium';
+        this.unready(c);
+      } else taken.add(this.sideOf(c));
+    }
+  }
+
   sync() {
+    this.limitPlanes();
     this.broadcast(this.lobbyState());
   }
 
@@ -158,6 +175,9 @@ export class Room {
     const crew = this.crews[crewId];
     if (this.phase !== 'lobby' || !crew || !(TANK_IDS.includes(tank) || COOP_PLANE_IDS.includes(tank))) return;
     if (player.crew !== crewId && !this.isHost(player)) return;
+    if (COOP_PLANE_IDS.includes(tank) && this.occupied().some((c) => c !== crew && COOP_PLANE_IDS.includes(c.tank) && this.sideOf(c) === this.sideOf(crew))) {
+      return player.send({ t: 'error', msg: 'Your side already has a plane.' });
+    }
     crew.tank = tank;
     this.unready(crew);
     this.sync();

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLANES, FLIGHT } from '../../../shared/planes.js';
+import { PLANES, FLIGHT, PLANE_KMH } from '../../../shared/planes.js';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
@@ -132,7 +132,7 @@ function drawInstruments(cp, self, me, spec, pingBearing) {
   const W = 720, H = 240;
   ctx.fillStyle = '#20221c';
   ctx.fillRect(0, 0, W, H);
-  drawGauge(ctx, 92, 120, 84, 'SPEED', Math.abs(self.v ?? me.v) / (spec.maxSpeed * 1.4), `${Math.round(Math.abs(me.v) * 3.6 * 1.7)}`);
+  drawGauge(ctx, 92, 120, 84, 'SPEED', Math.abs(self.v ?? me.v) / (spec.maxSpeed * 1.4), `${Math.round(Math.abs(me.v) * PLANE_KMH)}`);
   drawGauge(ctx, 268, 120, 84, 'ALT', (pl.y ?? 0) / FLIGHT.maxAlt, `${Math.round(pl.y ?? 0)}`);
   // Artificial horizon.
   ctx.save();
@@ -282,7 +282,7 @@ class PlaneBase extends GunnerView {
     const $ = this.$;
     $('.g-lock').style.display = this.aiming() || this.paused ? 'none' : '';
     $('.g-thermal').classList.toggle('on', this.thermalActive());
-    $('.p-speed').textContent = Math.round(Math.abs(me.v) * 3.6 * 1.7);
+    $('.p-speed').textContent = Math.round(Math.abs(me.v) * PLANE_KMH);
     $('.p-alt').textContent = Math.round((pl.y ?? 0) - Math.max(groundAt(self.x, self.z), WATER_LEVEL));
     $('.p-th').style.width = `${(pl.th ?? 0) * 100}%`;
     $('.p-fuel').style.width = `${(pl.fuel ?? 0) * 100}%`;

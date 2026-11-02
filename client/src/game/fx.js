@@ -39,6 +39,7 @@ export class FX {
     for (const [k, v] of Object.entries(TRACER)) {
       this.tracerMats[k] = new THREE.MeshBasicMaterial({ color: v.color });
     }
+    this.batches = new Map();
     this.puffGeo = new THREE.IcosahedronGeometry(1, 0);
     this.chunkGeo = new THREE.TetrahedronGeometry(0.4, 0);
     this.mats = {
@@ -173,18 +174,44 @@ export class FX {
     this.lightT = 0.08;
   }
 
+  // Everything of one geometry + material shares a draw call; opacity is per instance.
+  batch(geo, mat) {
+    const key = geo.uuid + mat.uuid;
+    let b = this.batches.get(key);
+    if (b) return b;
+    const cap = Math.round(700 * quality().particles) + 8;
+    const g = geo.clone();
+    const op = new THREE.InstancedBufferAttribute(new Float32Array(cap).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('iOp', op);
+    const m = mat.clone();
+    m.transparent = true;
+    m.depthWrite = false;
+    m.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float iOp;\nvarying float vOp;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOp = iOp;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vOp;')
+        .replace('#include <opaque_fragment>', 'diffuseColor.a *= vOp;\n#include <opaque_fragment>');
+    };
+    m.customProgramCacheKey = () => 'fx-puff';
+    const mesh = new THREE.InstancedMesh(g, m, cap);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 3;
+    mesh.layers.set(LAYER_FX);
+    markHeat(mesh, mat === this.mats.fire || mat === this.mats.spark ? HEAT_FIRE : mat === this.mats.smoke ? HEAT_SMOKE : mat === this.mats.dust ? HEAT_DUST : mat === this.mats.dirt ? HEAT_DIRT : HEAT_WATER);
+    this.scene.add(mesh);
+    b = { mesh, op, n: 0 };
+    this.batches.set(key, b);
+    return b;
+  }
+
   particle({ geo, mat, pos, vel, size, grow = 0, life, gravity = 0, fade = 1, drag = 0, spin = false, ground = false }) {
     // Hard cap so huge firefights can't tank the frame rate.
     if (this.particles.length > 700 * quality().particles) return;
-    const m = new THREE.Mesh(geo, fade < 1 ? mat.clone() : mat);
-    m.position.copy(pos);
-    m.scale.setScalar(size);
-    m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
-    m.layers.set(LAYER_FX);
-    m.userData.heatSrc = mat === this.mats.fire || mat === this.mats.spark ? HEAT_FIRE : mat === this.mats.smoke ? HEAT_SMOKE : mat === this.mats.dust ? HEAT_DUST : mat === this.mats.dirt ? HEAT_DIRT : HEAT_WATER;
-    markHeat(m, m.userData.heatSrc);
-    this.scene.add(m);
-    this.particles.push({ m, vel, size, grow, life, t: 0, gravity, fade, drag, spin, ground, cloned: fade < 1 });
+    this.particles.push({ b: this.batch(geo, mat), x: pos.x, y: pos.y, z: pos.z, rx: Math.random() * 3, ry: Math.random() * 3, vel, size, grow, life, t: 0, gravity, fade, drag, spin, ground });
   }
 
   update(dt) {
@@ -207,35 +234,39 @@ export class FX {
       if (p.life <= 0 || p.y < Math.max(groundAt(p.x, p.z), WATER_LEVEL) - 1) this.removeProjectile(id);
     }
 
+    for (const b of this.batches.values()) b.n = 0;
     const keep = [];
     for (const p of this.particles) {
       p.t += dt;
       const k = p.t / p.life;
-      if (k >= 1) {
-        this.scene.remove(p.m);
-        if (p.cloned) p.m.material.dispose();
-        continue;
-      }
+      if (k >= 1) continue;
       if (p.gravity) p.vel.y -= GRAVITY * p.gravity * dt;
       if (p.drag) p.vel.multiplyScalar(Math.max(0, 1 - p.drag * dt));
-      p.m.position.addScaledVector(p.vel, dt);
+      p.x += p.vel.x * dt;
+      p.y += p.vel.y * dt;
+      p.z += p.vel.z * dt;
       if (p.ground) {
-        const g = groundAt(p.m.position.x, p.m.position.z);
-        if (p.m.position.y < g) {
-          p.m.position.y = g;
+        const g = groundAt(p.x, p.z);
+        if (p.y < g) {
+          p.y = g;
           p.vel.set(0, 0, 0);
         }
       }
-      if (p.spin) p.m.rotation.x += dt * 8;
-      p.m.scale.setScalar(p.size * (1 + p.grow * k));
-      if (p.cloned) {
-        p.m.material.opacity = p.fade * (1 - k);
-      } else if (p.m.material.transparent) {
-        p.m.material.opacity = 1;
-      }
+      if (p.spin) p.rx += dt * 8;
+      const b = p.b;
+      const s = p.size * (1 + p.grow * k);
+      _m.compose(_p.set(p.x, p.y, p.z), _q.setFromEuler(_e.set(p.rx, p.ry, 0)), _s.set(s, s, s));
+      b.mesh.setMatrixAt(b.n, _m);
+      b.op.setX(b.n, p.fade < 1 ? p.fade * (1 - k) : 1);
+      b.n++;
       keep.push(p);
     }
     this.particles = keep;
+    for (const b of this.batches.values()) {
+      b.mesh.count = b.n;
+      b.mesh.instanceMatrix.needsUpdate = true;
+      b.op.needsUpdate = true;
+    }
 
     if (this.lightT > 0) {
       this.lightT -= dt;
@@ -244,10 +275,16 @@ export class FX {
   }
 
   dispose() {
-    for (const p of this.particles) this.scene.remove(p.m);
+    for (const b of this.batches.values()) this.scene.remove(b.mesh);
     for (const id of [...this.projectiles.keys()]) this.removeProjectile(id);
   }
 }
+
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const _p = new THREE.Vector3();
+const _s = new THREE.Vector3();
 
 function rand3(s) {
   return new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s);

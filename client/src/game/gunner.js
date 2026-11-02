@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TANKS, UNITS } from '../../../shared/constants.js';
+import { TANKS, UNITS, GUN_MAX_ELEVATION } from '../../../shared/constants.js';
 import { PLANES } from '../../../shared/planes.js';
 import { tankPose, muzzlePose, sightPos, wrapAngle } from '../../../shared/tank.js';
 import { groundAt, WATER_LEVEL, POINTS, BASES, MAP_SIZE } from '../../../shared/map.js';
@@ -160,7 +160,7 @@ export class GunnerView {
       const k = 0.0022 * settings.sensitivity / zoom;
       // Mouse right turns right: yaw decreases (yaw increases towards +X, which is left).
       this.aim.yaw = wrapAngle(this.aim.yaw - e.movementX * k);
-      this.aim.pitch = Math.max(-0.45, Math.min(0.55, this.aim.pitch - e.movementY * k));
+      this.aim.pitch = Math.max(-0.45, Math.min(GUN_MAX_ELEVATION, this.aim.pitch - e.movementY * k));
     };
     this.onMouseDown = (e) => {
       if (!this.aiming()) {

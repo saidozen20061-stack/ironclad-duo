@@ -196,7 +196,7 @@ export class WarFX {
 
     // Fog and smoke banks that wander across the map with the wind.
     this.banks = [];
-    const nBanks = Math.round(44 * this.k);
+    const nBanks = Math.round(30 * this.k);
     for (let i = 0; i < nBanks; i++) this.banks.push(this.newBank(null, true));
 
     // Burning buildings: a fixed set picked from the map, same for everyone.
@@ -268,8 +268,6 @@ export class WarFX {
     this.flaks = [];
     this.flashes = [];
     this.flares = [];
-    this.flareLight = new THREE.PointLight(0xffe0a0, 0, 500, 1.3);
-    this.scene.add(this.flareLight);
     this.falling = [];
     this.fallGeo = new THREE.CylinderGeometry(0.16, 0.26, 1.5, 6).rotateX(Math.PI / 2);
     this.fallMat = new THREE.MeshStandardMaterial({ color: 0x2c2c26, flatShading: true });
@@ -617,7 +615,7 @@ export class WarFX {
       this.soft.add(f.x + WIND.x * f.t * 2, f.y + f.t, f.z + WIND.y * f.t * 2, f.size * (0.5 + k), 0.06, 0.055, 0.05, Math.min(1, f.t * 12) * (1 - k) * 0.85);
       return true;
     });
-    // Flares drift down, lighting up the haze; they share one light, one at a time.
+    // Flares drift down, glowing in the haze.
     if ((this.nextFlare -= dt) <= 0 && !this.flares.length) {
       this.nextFlare = rand(14, 30);
       const a = rand(0, Math.PI * 2), r = rand(120, 380);
@@ -633,16 +631,13 @@ export class WarFX {
       const a = Math.min(1, k * 10, (1 - k) * 4);
       this.glow.add(f.x, f.y, f.z, 7 + Math.sin(this.t * 19) * 0.8, 1, 0.94, 0.72, a);
       this.glow.add(f.x, f.y, f.z, 80, 1, 0.8, 0.5, a * 0.3);
-      this.flareLight.position.set(f.x, f.y, f.z);
-      this.flareLight.intensity = a * 2600 * (0.95 + Math.random() * 0.1);
       return true;
     });
-    if (!this.flares.length) this.flareLight.intensity = 0;
   }
 
   dispose() {
     for (const f of this.falling) this.scene.remove(f.m);
     for (const r of this.rings) this.scene.remove(r.m);
-    this.scene.remove(this.soft.mesh, this.glow.mesh, this.ash.pts, this.embers.pts, this.planeMesh, this.tracerMesh, this.flareLight);
+    this.scene.remove(this.soft.mesh, this.glow.mesh, this.ash.pts, this.embers.pts, this.planeMesh, this.tracerMesh);
   }
 }

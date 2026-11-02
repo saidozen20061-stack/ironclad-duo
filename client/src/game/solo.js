@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { tankPose, muzzlePose, sightPos } from '../../../shared/tank.js';
 import { groundAt } from '../../../shared/map.js';
+import { GUN_MAX_ELEVATION } from '../../../shared/constants.js';
 import { propsNear, segmentHitsProp } from '../../../shared/props.js';
 import { net } from '../net.js';
 import { GunnerView } from './gunner.js';
@@ -138,7 +139,9 @@ export class SoloView extends GunnerView {
       // Behind and above the tank, looking where the player aims.
       const pivot = new THREE.Vector3(self.x, this.pose.y + this.spec.size.height + 0.9, self.z);
       const want = 7 + this.spec.size.length * 0.9;
-      const back = dir.clone().negate();
+      // Aiming steeply up, the camera stays behind the tank instead of sinking into the ground.
+      const orbit = Math.min(this.aim.pitch, 0.3);
+      const back = new THREE.Vector3(-Math.sin(this.aim.yaw) * Math.cos(orbit), -Math.sin(orbit), -Math.cos(this.aim.yaw) * Math.cos(orbit));
       back.y += 0.25;
       back.normalize();
       const free = this.collide(pivot, pivot.clone().addScaledVector(back, want));
@@ -170,7 +173,7 @@ export class SoloView extends GunnerView {
     const P = cam.position.clone().addScaledVector(look, hit);
     if (!this.sight) {
       this.aimSend.yaw = Math.atan2(P.x - sight.x, P.z - sight.z);
-      this.aimSend.pitch = Math.max(-0.45, Math.min(0.55, Math.atan2(P.y - sight.y, Math.hypot(P.x - sight.x, P.z - sight.z))));
+      this.aimSend.pitch = Math.max(-0.45, Math.min(GUN_MAX_ELEVATION, Math.atan2(P.y - sight.y, Math.hypot(P.x - sight.x, P.z - sight.z))));
     }
     this.range = this.raycast(cam.position, look, states, me.id) === null ? null : P.distanceTo(sight);
 

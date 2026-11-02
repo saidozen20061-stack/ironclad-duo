@@ -7,6 +7,7 @@ import { quality } from '../settings.js';
 import { renderer } from '../render.js';
 import { SkyLife } from './sky.js';
 import { BASE_FLAG_SPOTS } from './props.js';
+import { markCullable, setScatterRange } from './scatter.js';
 import { markHeat, noHeat } from './thermal.js';
 
 // Battlefield fog: distance fog that gets thicker in low ground (valleys, the river) and
@@ -131,6 +132,39 @@ export function buildTerrainGeometry() {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.computeVertexNormals();
   return geo;
+}
+
+// The map as a grid of separate meshes, so what's behind the camera or past the fog costs nothing.
+function splitTerrain(geo, scene, material) {
+  const CELLS = 30;
+  const FLOATS = 18; // two triangles per cell
+  const pos = geo.attributes.position.array, col = geo.attributes.color.array, nor = geo.attributes.normal.array;
+  const meshes = [];
+  for (let cj = 0; cj < GRID; cj += CELLS) {
+    for (let ci = 0; ci < GRID; ci += CELLS) {
+      const n = Math.min(CELLS, GRID - ci) * Math.min(CELLS, GRID - cj) * FLOATS;
+      const p = new Float32Array(n), c = new Float32Array(n), m = new Float32Array(n);
+      let o = 0;
+      for (let j = cj; j < Math.min(GRID, cj + CELLS); j++) {
+        const start = (j * GRID + ci) * FLOATS, len = Math.min(CELLS, GRID - ci) * FLOATS;
+        p.set(pos.subarray(start, start + len), o);
+        c.set(col.subarray(start, start + len), o);
+        m.set(nor.subarray(start, start + len), o);
+        o += len;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(m, 3));
+      g.computeBoundingSphere();
+      const mesh = new THREE.Mesh(g, material);
+      mesh.receiveShadow = true;
+      markCullable(scene, mesh, g.boundingSphere.center.x, g.boundingSphere.center.z, g.boundingSphere.radius);
+      scene.add(mesh);
+      meshes.push(mesh);
+    }
+  }
+  return meshes;
 }
 
 function buildSky() {
@@ -268,10 +302,15 @@ export class World {
     noHeat(this.sky);
     this.scene.add(this.sky);
 
-    const terrain = new THREE.Mesh(buildTerrainGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
-    terrain.receiveShadow = true;
-    this.terrain = terrain;
-    this.scene.add(terrain);
+    this.terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+    splitTerrain(buildTerrainGeometry(), this.scene, this.terrainMat);
+    this.seeFar = 1; // 2 while the thermal sight looks through the fog
+    this.cullAt = new THREE.Vector3(1e9, 0, 1e9);
+    this.cullRange = 0;
+    // Moving shadows are redrawn every second frame: half the cost, and it doesn't show.
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+    this.frame = 0;
 
     this.envMap = skyEnvironment(this.sky);
     const water = new THREE.Mesh(
@@ -329,6 +368,19 @@ export class World {
     const far = this.fogFarGround * (1 - low * 0.22) * (1 + up * 2.2);
     this.scene.fog.far = far;
     this.scene.fog.near = this.fogNear + up * 200;
+    if (++this.frame % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    this.cull(focus, far * 1.15 * this.seeFar);
+  }
+
+  // Switch off everything whose whole area is past the end of the fog.
+  cull(focus, range) {
+    setScatterRange(range);
+    if (Math.abs(range - this.cullRange) < 15 && Math.hypot(focus.x - this.cullAt.x, focus.z - this.cullAt.z) < 12) return;
+    this.cullRange = range;
+    this.cullAt.copy(focus);
+    for (const e of this.scene.userData.cullable ?? []) {
+      if (e.mesh) e.mesh.visible = Math.hypot(e.x - focus.x, e.z - focus.z) - e.r < range + 15;
+    }
   }
 
   // Explosions light the haze from inside for a moment.
@@ -344,7 +396,7 @@ export class World {
     if (this.fogFlashK > 0.001) fc.lerp(FLASH_COLOR, this.fogFlashK * 0.28);
     this.sky.material.uniforms.fogCol.value.copy(fc);
     this.flags.forEach((f, i) => {
-      if (Math.hypot(f.parent.position.x - cam.x, f.parent.position.z - cam.z) < 500) waveFlag(f, this.t, i * 1.7);
+      if (Math.hypot(f.parent.position.x - cam.x, f.parent.position.z - cam.z) < 160) waveFlag(f, this.t, i * 1.7);
     });
     this.skyLife.update(dt, cam);
   }

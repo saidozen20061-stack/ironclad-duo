@@ -85,7 +85,14 @@ export const PLANES = {
     stats: { speed: 5, armor: 2, firepower: 4, agility: 4 },
   },
 };
+// Planes fly at about half their listed speed, so tanks and flak get a real chance at them.
+// The cockpit still shows believable numbers.
+const SPEED_SCALE = 0.55;
+export const PLANE_KMH = (3.6 * 1.7) / SPEED_SCALE;
 for (const p of Object.values(PLANES)) {
+  p.maxSpeed *= SPEED_SCALE;
+  p.minSpeed *= SPEED_SCALE;
+  p.accel *= SPEED_SCALE * 1.1;
   p.weapon = { label: p.guns.label }; // what the HUD and shared code read
   p.bombs ??= null;
   p.rockets ??= null;
@@ -106,10 +113,9 @@ export const FLIGHT = {
   stallWarn: 1.18, // × min speed
 };
 
-// NPC air forces per team.
+// NPC planes per team. Each side has one plane at most, player or NPC.
 export const NPC_PLANES = {
   blue: { fighter: ['mustang', 'spitfire'], attack: ['dauntless', 'mitchell', 'mosquito'] },
   red: { fighter: ['messer', 'messer'], attack: ['stuka', 'sturmovik', 'heavyfighter'] },
-  cap: { fighter: 2, attack: 1 },
   every: 40,
 };

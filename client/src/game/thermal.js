@@ -207,6 +207,7 @@ export class ThermalRenderer {
     // The heat pass needs neither shadows nor the sky.
     const shadowUpdate = renderer.shadowMap.autoUpdate;
     renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = false;
     const bg = scene.background;
     const over = scene.overrideMaterial;
     const mask = camera.layers.mask;
@@ -231,6 +232,7 @@ export class ThermalRenderer {
     renderer.autoClear = autoClear;
     renderer.setRenderTarget(null);
     renderer.shadowMap.autoUpdate = shadowUpdate;
+    // Picture just made is thermal; the normal view redraws shadows when it comes back.
 
     const f = this.finalMat.uniforms;
     f.uTexel.value.set(1 / w, 1 / h);

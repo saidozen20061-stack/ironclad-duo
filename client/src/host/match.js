@@ -243,7 +243,7 @@ export class Match {
     } else if (player.role === 'gunner') {
       if (msg.t === 'aim') {
         if (Number.isFinite(msg.yaw)) t.aim.yaw = msg.yaw;
-        if (Number.isFinite(msg.pitch)) t.aim.pitch = Math.max(-0.5, Math.min(0.6, msg.pitch));
+        if (Number.isFinite(msg.pitch)) t.aim.pitch = Math.max(-0.5, Math.min(1.25, msg.pitch));
       } else if (msg.t === 'trigger') {
         t.trigger.main = !!msg.main;
         t.trigger.coax = !!msg.coax;

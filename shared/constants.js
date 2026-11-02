@@ -26,7 +26,7 @@ export const WAR = {
   firstBomber: [45, 80],
   bomberEvery: [70, 130],
   bomberBombs: [6, 11],
-  bomberSpeed: 75,
+  bomberSpeed: 45,
   bomberAlt: 170,
   bombFall: 3.4,
   nearPointChance: 0.12,
@@ -283,6 +283,10 @@ export const TANKS = {
     stats: { speed: 1, armor: 5, firepower: 5, reload: 1 },
   },
 };
+
+// Tank guns can swing right up at the sky, so crews can shoot at planes.
+export const GUN_MAX_ELEVATION = deg(68);
+for (const t of Object.values(TANKS)) t.elevation.max = GUN_MAX_ELEVATION;
 
 export const TANK_IDS = Object.keys(TANKS);
 

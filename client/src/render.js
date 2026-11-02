@@ -6,7 +6,7 @@ export const renderer = new THREE.WebGLRenderer({ canvas: document.getElementByI
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const resizeHandlers = new Set();
 let active = null; // { update(dt), render(), resize?() }
@@ -30,9 +30,10 @@ export function autoQuality(dt) {
   const fps = autoFrames / autoTime;
   autoFrames = 0;
   autoTime = 0;
-  if (fps < 32) {
+  if (fps < 45) {
     autoGood = 0;
-    if (autoScale > 0.56) {
+    // Mild trims while the game is merely below target; the rest only when it's really slow.
+    if (autoScale > (fps < 32 ? 0.56 : 0.71)) {
       autoScale -= 0.15;
       applyQuality();
     } else if (fps < 26 && settings.quality !== 'low') {
@@ -49,7 +50,7 @@ export function autoQuality(dt) {
 
 function applyQuality() {
   const q = quality();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * q.pixelRatio * autoScale);
+  renderer.setPixelRatio(Math.min(q.maxRatio, Math.min(window.devicePixelRatio, 2) * q.pixelRatio) * autoScale);
   renderer.shadowMap.enabled = q.shadows;
   resize();
 }

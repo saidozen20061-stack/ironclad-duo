@@ -13,6 +13,18 @@ import { heightAt } from '../../../shared/map.js';
 // { fall, fallDir, falling } and animate trees / poles falling over.
 
 const CELL = 40;
+let rangeLimit = Infinity;
+// Nothing further than this gets placed: it would be fully inside the fog anyway.
+export function setScatterRange(r) {
+  rangeLimit = r;
+}
+
+// Meshes switched off when their whole area is past the fog (see World.cull).
+export function markCullable(scene, mesh, x, z, r) {
+  const entry = { mesh, x, z, r };
+  (scene.userData.cullable ??= []).push(entry);
+  return entry;
+}
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -78,12 +90,15 @@ export class Scatter {
   // Refill instance buffers around the camera when it has moved enough.
   update(cam, force = false) {
     const moved = Math.hypot(cam.x - this.last.x, cam.z - this.last.z);
-    if (!force && !this.dirty && moved < Math.max(4, this.radius * 0.08)) return;
+    const nearR = Math.min(this.radius, rangeLimit), farR = Math.min(this.farRadius, rangeLimit);
+    const rangeMoved = Math.abs(Math.max(nearR, farR) - (this.lastRange ?? 0)) > 25;
+    if (!force && !this.dirty && !rangeMoved && moved < Math.max(4, this.radius * 0.08)) return;
     this.last.copy(cam);
+    this.lastRange = Math.max(nearR, farR);
     this.dirty = false;
-    const outer = Math.max(this.radius, this.farRadius);
-    const r2 = this.radius * this.radius;
-    const f2 = this.farRadius * this.farRadius;
+    const outer = Math.max(nearR, farR);
+    const r2 = nearR * nearR;
+    const f2 = farR * farR;
     const nearArr = this.near.instanceMatrix.array;
     const farArr = this.far?.instanceMatrix.array;
     const nearCap = this.near.instanceMatrix.count;
@@ -266,6 +281,8 @@ export function bakeOnGround(scene, geo, mat, items, { lift = 0.05, order = 1, s
     const mesh = new THREE.Mesh(g, mat);
     mesh.receiveShadow = true;
     if (!solid) mesh.renderOrder = order;
+    g.computeBoundingSphere();
+    markCullable(scene, mesh, g.boundingSphere.center.x, g.boundingSphere.center.z, g.boundingSphere.radius);
     scene.add(mesh);
     meshes.push(mesh);
   }

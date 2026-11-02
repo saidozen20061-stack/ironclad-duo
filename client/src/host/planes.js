@@ -90,6 +90,7 @@ export class PlaneSystem {
     this.flak = PROPS.filter((p) => p.type === 'aagun').map((p) => ({ p, cd: rand(1, 4) }));
     this.flakQueue = [];
     this.planes = [];
+    this.nextRole = { blue: 'fighter', red: 'attack' };
     this.airStart = !!match.room.airStart;
     // Fortress Defence: bomber and fighter waves are added by modes.js through spawnNpc.
   }
@@ -190,7 +191,7 @@ export class PlaneSystem {
     const cp = Math.max(0.15, Math.cos(p.gp));
     p.gp = clamp(p.gp + (pitchRate * c - yawRate * sn) * DT, -1.52, 1.52);
     p.h = wrapAngle(p.h + (-(pitchRate * sn) + yawRate * c) / cp * DT);
-    const bankTurn = -sn * (G / Math.max(18, speed)) * 1.3 * authority * turnK;
+    const bankTurn = -sn * (G / Math.max(12, speed)) * 1.3 * authority * turnK;
     p.h = wrapAngle(p.h + (bankTurn / cp) * DT);
     // Wings level themselves slightly in hands-off flight.
     if (Math.abs(stickR) < 0.05 && !k.aim) p.ty -= p.ty * Math.min(1, DT * 0.5);
@@ -569,12 +570,16 @@ export class PlaneSystem {
       this.nextNpc[team] -= DT;
       if (this.nextNpc[team] > 0) continue;
       this.nextNpc[team] = NPC_PLANES.every;
-      const mine = this.planes.filter((p) => p.team === team && !p.player && !p.dead);
-      const fighters = mine.filter((p) => p.ai?.role === 'fighter').length;
-      const attackers = mine.length - fighters;
-      if (fighters < NPC_PLANES.cap.fighter) this.spawnNpc(team, 'fighter');
-      else if (attackers < NPC_PLANES.cap.attack) this.spawnNpc(team, 'attack');
+      if (!this.sideHasPlane(team)) {
+        this.spawnNpc(team, this.nextRole[team]);
+        this.nextRole[team] = this.nextRole[team] === 'fighter' ? 'attack' : 'fighter';
+      }
     }
+  }
+
+  // One plane per side: a player crew's plane holds the slot even while it waits to respawn.
+  sideHasPlane(team) {
+    return this.m.units.some((u) => u.kind === 'plane' && u.team === team && (u.player || !u.dead));
   }
 
   spawnNpc(team, role) {

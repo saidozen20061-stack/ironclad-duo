@@ -5,6 +5,7 @@ import { planeViewFor } from './planeViews.js';
 import { POINTS, groundAt, riverZ, RIVER_HALF_WIDTH, PLAY_LIMIT, inAirfield } from '../../../shared/map.js';
 import { PROPS, TREE_NOISE, setFortress } from '../../../shared/props.js';
 import { net } from '../net.js';
+import { renderer } from '../render.js';
 import { voice } from '../voice.js';
 import { SnapshotBuffer } from './snapshots.js';
 import { World } from './world.js';
@@ -141,9 +142,15 @@ export class MatchClient {
       <div class="bail-timer"><i></i></div>
       <div class="bail-picks"></div>`;
     this.choiceEl.addEventListener('click', (e) => {
+      // Mouse only: a click made by the keyboard (Space on a focused button) has no detail.
+      if (e.detail === 0) return;
       const b = e.target.closest('button[data-pick]');
       if (b) net.send({ t: 'bail', pick: b.dataset.pick });
     });
+    // These buttons never hold keyboard focus, so Space (brake, jump, bombs) can't reach them.
+    this.choiceEl.addEventListener('mousedown', (e) => e.preventDefault());
+    for (const b of this.choiceEl.querySelectorAll('button')) b.tabIndex = -1;
+    document.activeElement?.blur?.();
     this.hud.appendChild(this.choiceEl);
 
     this.onLockChange = () => {
@@ -608,6 +615,7 @@ export class MatchClient {
     if (this.units && worldView) {
       this.units.camPos.copy(this.view.camera.position);
       this.units.thermal = !!this.view.thermalActive?.();
+      this.world.seeFar = this.units.thermal ? 2 : 1;
       this.units.update(states, dt);
     }
     this.fx?.update(dt);
@@ -706,6 +714,7 @@ export class MatchClient {
     if (document.pointerLockElement) document.exitPointerLock();
     this.keys.dispose();
     this.view.dispose();
+    renderer.shadowMap.autoUpdate = true;
     this.fx?.dispose();
     this.ambient?.dispose();
     this.war?.dispose();

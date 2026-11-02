@@ -28,7 +28,7 @@ function buildTankCards() {
   root.innerHTML = '';
   for (const id of [...TANK_IDS, ...COOP_PLANE_IDS]) {
     const t = TANKS[id] ?? PLANES[id];
-    if (id === COOP_PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', '<h3 class="pick-head">Planes <small>pilot + rear gunner</small></h3>');
+    if (id === COOP_PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', '<h3 class="pick-head">Planes <small>pilot + rear gunner · one per side</small></h3>');
     const btn = document.createElement('button');
     btn.className = 'tank-card';
     btn.dataset.tank = id;
@@ -141,6 +141,9 @@ export function renderLobby() {
   const crew = lobby.myCrew;
   for (const card of $$('.tank-card')) {
     card.classList.toggle('sel', card.dataset.tank === crew?.tank);
+    // One plane per side: taken planes are greyed out for everyone else on that side.
+    const side = (c) => (fortress ? 'blue' : c.team);
+    card.classList.toggle('taken', !!PLANES[card.dataset.tank] && !!crew && s.crews.some((c) => c !== crew && (c.driver != null || c.gunner != null) && PLANES[c.tank] && side(c) === side(crew)));
     card.disabled = !crew;
   }
   $('#tank-host-note').textContent = crew ? `(Tank ${crew.id + 1})` : '(join a crew first)';
