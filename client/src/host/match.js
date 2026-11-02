@@ -452,6 +452,8 @@ export class Match {
         x += Math.cos(a * 0.785) * r;
         z += Math.sin(a * 0.785) * r;
       }
+      x = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, x));
+      z = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, z));
       const s = new CrewSoldier(role, x, z, t.h, c);
       s.drop = drop;
       s.jy = drop;
