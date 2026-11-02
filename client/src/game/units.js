@@ -108,7 +108,8 @@ export class UnitsView {
       // Past the end of the fog nothing is drawn at all; small things go earlier (LOD).
       const fogEnd = (this.scene.fog?.far ?? quality().drawDistance) * 1.15;
       const seeThroughFog = this.thermal ? 2 : 1;
-      m.root.visible = dist < Math.min(fogEnd * seeThroughFog, m.kind === 'tank' || m.kind === 'plane' ? Infinity : m.kind === 'inf' ? 650 : 900);
+      // A Leviathan is the exception: it looms over the battlefield from anywhere on the map.
+      m.root.visible = PLANES[u.type]?.seeFar || dist < Math.min(fogEnd * seeThroughFog, m.kind === 'tank' || m.kind === 'plane' ? Infinity : m.kind === 'inf' ? 650 : 900);
       if (u.dead) m.coolT += dt;
       else m.coolT = 0;
       m.barrelHeat *= Math.exp(-dt / 25); // barrels hold their heat for a long time

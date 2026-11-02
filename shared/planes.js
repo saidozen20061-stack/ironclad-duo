@@ -93,7 +93,7 @@ export const PLANES = {
     guns: gun('4× .50 cal MG', 15, 0.1, 0.024),
     rear: { damage: 46, interval: 0.16, spread: 0.007, speed: 420, ammo: 700, kind: 'ac', splash: 2, splashDamage: 16, up: 0.98, down: -0.3 },
     bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 3.4, sightY: 7.2 },
-    engineSound: 'drone', onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
+    engineSound: 'drone', seeFar: true, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
     hitBox: { hull: [8, 3.6], wing: [-20, 14, 2.6] },
     stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
   },

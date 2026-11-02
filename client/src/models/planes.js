@@ -602,7 +602,20 @@ export function buildPlane(type, team = 'blue', paint = type) {
   bar.scale.x = (sh.fuse[4][1] ?? 1) / 0.05 * 1.02;
   group.add(bar);
 
+  // Fog would fade it into the haze however large it is, so it stays out of the fog.
+  if (spec.seeFar) group.traverse((o) => o.isMesh && (o.material = clearOfFog(o.material)));
+
   return { group, props, rear, rearSpin, engineZ, engineX, cockpitY: sh.cockpitY, spec, type, turret: null, flame, shadowShape: type === 'leviathan' ? wingShadow(spec) : null };
+}
+
+const fogFree = new Map();
+function clearOfFog(material) {
+  if (!fogFree.has(material)) {
+    const m = material.clone();
+    m.fog = false;
+    fogFree.set(material, m);
+  }
+  return fogFree.get(material);
 }
 
 // The Leviathan's wing outline as a flat dark shape to lay on the ground under it.
