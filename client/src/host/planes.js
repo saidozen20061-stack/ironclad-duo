@@ -19,6 +19,10 @@ const PATROL = 620; // m from the middle of the map
 const TARGET_RANGE = 420; // m: only what's near their route
 const RUN_TIME = [14, 22]; // s of one attack run
 const REST_TIME = [20, 35]; // s before they look for the next target
+const HEAVY_RUN = 3; // × run time: a Leviathan takes that long to get anywhere
+const HEAVY_ALT = 190; // m above the ground it holds
+const ELITE_REARM = 40; // s per salvo: an AI bomber can't land to rearm
+const BOMB_REACH = 34; // m around the impact point that's worth a salvo
 // A proper take-off roll: tyres and a heavy plane hold it back until it's well up to speed.
 const GROUND_THRUST = 0.5; // of the thrust in the air
 const TAKEOFF_SPEED = 0.7; // × top speed
@@ -118,6 +122,7 @@ export class PlaneSystem {
     this.flakQueue = [];
     this.planes = [];
     this.nextRole = { blue: 'fighter', red: 'attack' };
+    this.nextElite = NPC_PLANES.eliteEvery;
     this.airStart = !!match.room.airStart;
     // Fortress Defence: bomber and fighter waves are added by modes.js through spawnNpc.
   }
@@ -640,6 +645,11 @@ export class PlaneSystem {
   // ---------- NPC air force ----------
   updateSpawns() {
     const m = this.m;
+    this.nextElite -= DT;
+    if (this.nextElite <= 0) {
+      this.nextElite = NPC_PLANES.eliteEvery;
+      this.spawnElites();
+    }
     for (const team of ['blue', 'red']) {
       if (m.mode === 'fortress') continue;
       this.nextNpc[team] -= DT;
@@ -652,14 +662,29 @@ export class PlaneSystem {
     }
   }
 
-  // A player crew's plane holds its slot even while it waits to respawn.
-  sideFull(team) {
-    return this.m.units.filter((u) => u.kind === 'plane' && u.team === team && (u.player || !u.dead)).length >= MAX_SIDE_PLANES;
+  // Every team facing players sends one, on top of its usual planes. One Leviathan per team at a time.
+  spawnElites() {
+    const m = this.m;
+    const humans = new Set([...m.crews.values()].map((c) => c.team));
+    for (const team of ['blue', 'red']) {
+      if (!humans.has(team === 'blue' ? 'red' : 'blue')) continue;
+      const hasLeviathan = m.units.some((u) => u.type === 'leviathan' && u.team === team && !u.dead);
+      const type = !hasLeviathan && Math.random() < 0.5 ? 'leviathan' : 'f16';
+      const p = this.spawnNpc(team, type === 'f16' ? 'fighter' : 'attack', type);
+      p.elite = true;
+      if (type === 'leviathan') p.y = rand(190, 230);
+      m.events.push({ k: 'elite', team, type });
+    }
   }
 
-  spawnNpc(team, role) {
+  // A player crew's plane holds its slot even while it waits to respawn.
+  sideFull(team) {
+    return this.m.units.filter((u) => u.kind === 'plane' && u.team === team && !u.elite && (u.player || !u.dead)).length >= MAX_SIDE_PLANES;
+  }
+
+  spawnNpc(team, role, forced = null) {
     const list = NPC_PLANES[team][role];
-    const type = list[Math.floor(Math.random() * list.length)];
+    const type = forced ?? list[Math.floor(Math.random() * list.length)];
     const b = BASES[team];
     const s = team === 'blue' ? -1 : 1;
     const p = new Plane(team, type, b.x + rand(-300, 300), rand(150, 230), b.z + s * 80, b.heading, PLANES[type].maxSpeed * 0.75);
@@ -673,6 +698,15 @@ export class PlaneSystem {
     const fortress = m.mode === 'fortress';
     ai.think -= DT;
     ai.restT = (ai.restT ?? 0) - DT;
+    // Too slow to dive: a Leviathan holds its height and rolls over whatever it's bombing.
+    const heavy = !!s.noPlaneRespawn;
+    if (p.elite) {
+      p.fuel = 1; // it's here until someone shoots it down
+      if (s.bombs && p.bombs < s.bombs.count && (ai.rearm = (ai.rearm ?? 0) - DT) <= 0) {
+        ai.rearm = ELITE_REARM;
+        p.bombs = Math.min(s.bombs.count, p.bombs + (s.bombs.salvo ?? 1));
+      }
+    }
     // One pass, then away across the map: a plane doesn't circle over the same target.
     if (ai.target) {
       ai.runT -= DT;
@@ -683,12 +717,15 @@ export class PlaneSystem {
       if (ai.target?.dead || (ai.target && !m.units.includes(ai.target))) ai.target = null;
       if (!ai.target && ai.restT <= 0) {
         ai.target = this.pickTarget(p);
-        ai.runT = rand(RUN_TIME[0], RUN_TIME[1]);
+        ai.runT = rand(RUN_TIME[0], RUN_TIME[1]) * (heavy ? HEAVY_RUN : 1);
       }
+      if (heavy) ai.bombNow = this.overEnemyArmour(p);
     }
     const k = p.ctl;
     k.gunDir = null;
     k.th = p.throttle < 0.95 ? 1 : 0;
+    // A jet burns across the map, and comes off the afterburner to fight.
+    if (p.elite && s.afterburner) k.th = !ai.target || Math.hypot(ai.target.x - p.x, ai.target.z - p.z) > 420 ? 1 : p.throttle > 0.55 ? -1 : 0;
     k.fire = false;
     k.bomb = false;
     k.rocket = false;
@@ -712,7 +749,9 @@ export class PlaneSystem {
       const align = (lx * f.x + ly * f.y + lz * f.z) / Math.max(1, Math.hypot(lx, ly, lz));
       if (t.kind !== 'plane') {
         // Ground attack: come in above the target, then push over into a shallow dive.
-        if (hd > 320) aimPitch = clamp((130 - alt) * 0.006, -0.3, 0.4);
+        if (heavy) {
+          aimPitch = clamp((HEAVY_ALT - alt) * 0.004, -0.12, 0.2);
+        } else if (hd > 320) aimPitch = clamp((130 - alt) * 0.006, -0.3, 0.4);
         else if (s.bombs && p.bombs > 0) {
           aimPitch = Math.max(aimPitch, -0.5);
           // Release where the bomb's fall carries it onto the target.
@@ -720,7 +759,7 @@ export class PlaneSystem {
           if (Math.abs(hd - p.v * Math.cos(p.gp) * fall) < 14 && align > 0.5 && !reacting) k.bomb = true;
         }
         if (hd < 90) {
-          ai.climbT = 3.5; // break off
+          if (!heavy) ai.climbT = 3.5; // break off
           if (!fortress) this.endRun(p);
         }
       }
@@ -728,20 +767,29 @@ export class PlaneSystem {
         k.fire = true;
         if (t.kind === 'tank' && p.rockets > 0 && d < 260) k.rocket = true;
       }
+      // A jet is past its target in seconds, so its cannon swings on as soon as it's roughly lined up.
+      if (p.elite && s.afterburner && !reacting && align > 0.9 && d < 420) {
+        k.fire = true;
+        k.gunDir = new Vector3(lx, ly, lz).normalize();
+      }
     } else {
       // Patrol towards the middle of the map.
       const g = this.patrolPoint(p);
       aimYaw = Math.atan2(g.x - p.x, g.z - p.z);
-      aimPitch = clamp((170 - alt) * 0.008, -0.2, 0.35);
+      aimPitch = heavy ? clamp((HEAVY_ALT - alt) * 0.004, -0.12, 0.2) : clamp((170 - alt) * 0.008, -0.2, 0.35);
     }
     if (ai.climbT > 0) {
       ai.climbT -= DT;
       aimPitch = 0.45;
     }
+    if (s.afterburner) aimPitch = Math.max(aimPitch, -0.4); // too fast to pull out of anything steeper
+    if (heavy && ai.bombNow) k.bomb = true;
     // Never mind the target when the ground is coming up.
     const f = fwd(p.h, p.gp, _f);
-    const ahead = Math.max(groundAt(p.x + f.x * 80, p.z + f.z * 80), WATER_LEVEL);
-    if (alt < 48 || p.y + f.y * 90 < ahead + 34) {
+    // How far ahead it has to look depends on how long it takes this plane to get out of the way.
+    const look = s.afterburner ? p.v * 2.4 : heavy ? 240 : 80;
+    const ahead = Math.max(groundAt(p.x + f.x * look, p.z + f.z * look), WATER_LEVEL);
+    if (alt < (s.afterburner ? p.v * 0.9 : heavy ? 90 : 48) || p.y + f.y * (look + 10) < ahead + (heavy ? 60 : 34)) {
       // Wings level and pull: a banked plane can't climb out.
       aimPitch = Math.max(aimPitch, 0.5);
       aimYaw = p.h;
@@ -750,7 +798,15 @@ export class PlaneSystem {
     const edge = Math.max(Math.abs(p.x), Math.abs(p.z));
     if (edge > 950) aimYaw = Math.atan2(-p.x, -p.z);
     k.aim = { yaw: aimYaw, pitch: aimPitch };
-    p.throttle = Math.max(p.throttle, 0.8);
+    p.throttle = Math.max(p.throttle, p.elite && s.afterburner ? 0.5 : 0.8);
+  }
+
+  // Would a salvo released now come down on enemy armour? A bomber carpets whatever it crosses.
+  overEnemyArmour(p) {
+    const alt = p.y - Math.max(groundAt(p.x, p.z), WATER_LEVEL);
+    const carry = p.v * Math.cos(p.gp) * Math.sqrt((2 * Math.max(5, alt)) / G);
+    const ix = p.x + Math.sin(p.h) * carry, iz = p.z + Math.cos(p.h) * carry;
+    return this.m.units.some((u) => !u.dead && u.team !== p.team && (u.kind === 'tank' || u.kind === 'atgun') && Math.hypot(u.x - ix, u.z - iz) < BOMB_REACH);
   }
 
   endRun(p) {

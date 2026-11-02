@@ -174,4 +174,5 @@ export const NPC_PLANES = {
   blue: { fighter: ['mustang', 'spitfire'], attack: ['dauntless', 'mitchell', 'mosquito'] },
   red: { fighter: ['messer', 'messer'], attack: ['stuka', 'sturmovik', 'heavyfighter'] },
   every: 40,
+  eliteEvery: 300, // s: the side against the players sends a Talon or a Leviathan
 };

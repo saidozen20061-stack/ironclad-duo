@@ -281,6 +281,8 @@ export class Match {
     }
     // Dev-only test hook: destroy our own tank.
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
+    // Dev-only: don't wait five minutes for the Talon or Leviathan.
+    if (import.meta.env?.DEV && msg.t === 'debugElite') return this.planes.spawnElites();
     // Dev-only: finish the current Fortress wave (or skip the break).
     if (import.meta.env?.DEV && msg.t === 'debugWave' && this.fort) {
       if (this.fort.phase === 'break') this.fort.until = this.time;

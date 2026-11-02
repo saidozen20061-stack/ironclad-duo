@@ -503,6 +503,18 @@ export class MatchClient {
         }
         this.sound.plane?.();
         break;
+      case 'elite': {
+        const name = PLANES[ev.type].name.toUpperCase();
+        const text = ev.team === this.team ? `FRIENDLY ${name} ARRIVING` : `ENEMY ${name} INBOUND`;
+        this.banner(text);
+        this.sound.tone({ freq: ev.team === this.team ? 520 : 330, dur: 0.5, gain: 0.1, type: 'square', bus: this.sound.out });
+        const row = document.createElement('div');
+        row.className = 'feed-row';
+        row.textContent = text;
+        this.feed.prepend(row);
+        setTimeout(() => row.remove(), 7000);
+        break;
+      }
       case 'six':
         if (ev.u === myId) {
           this.banner('ENEMY ON OUR SIX!');
