@@ -20,6 +20,7 @@ const TARGET_RANGE = 420; // m: only what's near their route
 const RUN_TIME = [14, 22]; // s of one attack run
 const REST_TIME = [20, 35]; // s before they look for the next target
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
+const ROCKET_BELOW = 0.85; // × gear height under the plane: clear of every wing and its underside
 const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
 
 const fwd = (h, p, out = new Vector3()) => out.set(Math.sin(h) * Math.cos(p), Math.sin(p), Math.cos(h) * Math.cos(p));
@@ -131,7 +132,7 @@ export class PlaneSystem {
       k.fire = !!msg.fire;
       k.bomb = !!msg.bomb;
       k.rocket = !!msg.rocket;
-      k.aim = Number.isFinite(msg.aimYaw) && Number.isFinite(msg.aimPitch) ? { yaw: wrapAngle(msg.aimYaw), pitch: clamp(msg.aimPitch, -1.4, 1.4) } : null;
+      k.gunDir = Array.isArray(msg.gun) && msg.gun.length === 3 && msg.gun.every((v) => Math.abs(v) <= 2) && Math.hypot(...msg.gun) > 0.01 ? new Vector3(msg.gun[0], msg.gun[1], msg.gun[2]).normalize() : null;
     } else if (role === 'gunner' && msg.t === 'rear') {
       if (Array.isArray(msg.dir) && msg.dir.length === 3 && msg.dir.every((v) => Math.abs(v) <= 2) && Math.hypot(...msg.dir) > 0.01) p.rear.dir = new Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
       p.rear.fire = !!msg.fire;
@@ -368,19 +369,25 @@ export class PlaneSystem {
       const side = Math.random() < 0.5 ? 1 : -1;
       const c = Math.cos(p.h), sn = Math.sin(p.h);
       const off = s.size.width * 0.12 * side;
-      const pos = new Vector3(p.x + c * off + f.x * 2, p.y + f.y * 2 - 0.2, p.z - sn * off + f.z * 2);
+      // A player's guns follow where they look; an NPC's are fixed to the nose.
+      const dir = k.gunDir ?? f;
+      const pos = new Vector3(p.x + c * off + dir.x * 2, p.y + dir.y * 2 - 0.2, p.z - sn * off + dir.z * 2);
       const spread = g.spread * (p.ai ? Math.sqrt(m.skill.aim) * 0.6 : 1) * (1 + (1 - p.mods.guns) * 2);
-      m.fire(p, { kind: g.kind, damage: g.damage, speed: g.speed + p.v, splash: g.kind === 'ac' ? 1 : 0, splashDamage: g.kind === 'ac' ? g.damage * 0.3 : 0, spread, life: 2.2, air: true }, pos, f.clone());
+      m.fire(p, { kind: g.kind, damage: g.damage, speed: g.speed + p.v, splash: g.kind === 'ac' ? 1 : 0, splashDamage: g.kind === 'ac' ? g.damage * 0.3 : 0, spread, life: 2.2, air: true }, pos, dir.clone());
     }
     if (k.bomb) this.dropBomb(p);
     if (k.rocket && p.rocketCd <= 0 && p.rockets > 0 && !p.grounded) {
       const r = s.rockets;
       p.rocketCd = 0.28;
       p.rockets--;
-      // Dropped close to the fuselage. Its line is set now, once: from where the motor will light
-      // to a point on the nose line ahead, so both sides' rockets still meet where the plane aimed.
+      // Dropped below the wings, close to the fuselage. Its line is set now, once: from where the motor
+      // will light to a point on the nose line ahead, so both sides' rockets meet where the plane aimed.
       const off = Math.min(ROCKET_OFFSET, s.size.width * 0.12) * (p.rockets % 2 ? 1 : -1);
-      const pos = new Vector3(p.x + Math.cos(p.h) * off, p.y - 0.5, p.z - Math.sin(p.h) * off);
+      _e.set(-p.gp, p.h, p.ty, 'YXZ');
+      const pos = new Vector3(off, -s.gearH * ROCKET_BELOW, 0).applyEuler(_e);
+      pos.x += p.x;
+      pos.y += p.y;
+      pos.z += p.z;
       const fallV = ROCKET.gravity * ROCKET.drop;
       const lit = pos.clone().addScaledVector(f, p.v * ROCKET.drop);
       lit.y -= (fallV * ROCKET.drop) / 2 + (fallV * ROCKET.ramp) / 2;
@@ -633,6 +640,7 @@ export class PlaneSystem {
       }
     }
     const k = p.ctl;
+    k.gunDir = null;
     k.th = p.throttle < 0.95 ? 1 : 0;
     k.fire = false;
     k.bomb = false;

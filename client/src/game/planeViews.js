@@ -17,6 +17,9 @@ const _q = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
+const BANK_LIMIT = 1.1; // rad: how far A and D lean the plane over
+const AIM_FAR = 900; // m: where the guns converge with nothing under the crosshair
 const FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
 const HUD = `
@@ -272,6 +275,63 @@ class PlaneBase extends GunnerView {
     }
   }
 
+  // Mouse: where you look, and where the guns point.
+  onLook(dx, dy) {
+    const k = 0.0022 * settings.sensitivity;
+    this.aim.yaw = wrapAngle(this.aim.yaw - dx * k);
+    this.aim.pitch = Math.max(-1.45, Math.min(1.45, this.aim.pitch - dy * k));
+  }
+
+  // The view turns along with the plane, and the mouse looks around from there. C looks ahead again.
+  followPlane(self) {
+    const a = this.aim;
+    if (!a.initialised || this.keys.took('KeyC')) {
+      a.yaw = self.h;
+      a.pitch = self.gp;
+      a.initialised = true;
+    } else {
+      a.yaw = wrapAngle(a.yaw + wrapAngle(self.h - this.lastH));
+      a.pitch = Math.max(-1.45, Math.min(1.45, a.pitch + self.gp - this.lastGp));
+    }
+    this.lastH = self.h;
+    this.lastGp = self.gp;
+  }
+
+  // The look direction as seen from the plane's own seat.
+  lookFromSeat(self) {
+    planeQuaternion(self, _q);
+    const l = _v.set(Math.sin(this.aim.yaw) * Math.cos(this.aim.pitch), Math.sin(this.aim.pitch), Math.cos(this.aim.yaw) * Math.cos(this.aim.pitch)).applyQuaternion(_q.invert());
+    this.look.yaw = Math.atan2(l.x, l.z);
+    this.look.pitch = Math.asin(Math.max(-1, Math.min(1, l.y)));
+    return this.look;
+  }
+
+  // WASD flies: W/S nose down/up, A/D bank and turn, E or Shift more throttle, Q less. On the
+  // runway W is the throttle and S lifts off. The guns go to whatever the crosshair is on.
+  sendControls(self, me) {
+    const k = this.keys;
+    if (k.took('KeyX')) net.send({ t: 'jump' });
+    const onGround = !!me.pl?.ground;
+    const turn = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+    // Banks to a limit and levels itself when A and D are let go.
+    const roll = turn ? (Math.abs(self.ty) < BANK_LIMIT || Math.sign(self.ty) !== turn ? turn : 0) : Math.max(-1, Math.min(1, -self.ty * 1.6));
+    const up = (k.has('KeyE') || k.has('ShiftLeft') || k.has('ShiftRight') || (onGround && k.has('KeyW')) ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
+    const look = this.camera.getWorldDirection(_v);
+    const reach = this.raycast(this.camera.position, look, this.states, me.id) ?? AIM_FAR;
+    const gun = _v2.copy(look).multiplyScalar(reach).add(this.camera.position).sub(_v3.set(self.x, self.y, self.z)).normalize();
+    this.sendFly({
+      t: 'fly',
+      th: up,
+      pitch: (k.has('KeyS') ? 1 : 0) - (k.has('KeyW') && !onGround ? 1 : 0),
+      roll: +roll.toFixed(2),
+      yaw: -turn * 0.5,
+      gun: [+gun.x.toFixed(3), +gun.y.toFixed(3), +gun.z.toFixed(3)],
+      fire: !!this.mouseBtn.left,
+      bomb: k.has('Space'),
+      rocket: k.has('KeyR'),
+    });
+  }
+
   // Send a control message at 20 Hz, or at once when it changes.
   sendFly(msg) {
     const key = JSON.stringify(msg);
@@ -281,6 +341,15 @@ class PlaneBase extends GunnerView {
       net.send(msg);
       this.flySend = { key, at: now };
     }
+  }
+
+  // A marker for where the nose really points; the crosshair stays in the middle, on the guns.
+  placeNose(self) {
+    const n = _v2.copy(fwdOf(self)).multiplyScalar(420).add(_v3.set(self.x, self.y, self.z)).project(this.camera);
+    const nose = this.$('.p-nose');
+    nose.style.display = n.z < 1 && Math.abs(n.x) < 1.1 && Math.abs(n.y) < 1.1 ? 'block' : 'none';
+    nose.style.left = `${((n.x + 1) / 2) * 100}%`;
+    nose.style.top = `${((1 - n.y) / 2) * 100}%`;
   }
 
   // Parts of the HUD every seat shares.
@@ -391,24 +460,11 @@ export class PilotView extends PlaneBase {
     super(opts);
     this.el.classList.add('pilot');
     this.$('.g-lock').textContent = 'Click to take control';
-    this.stick = { pitch: 0, roll: 0 };
     this.look = { yaw: 0, pitch: 0 };
-    this.freeLook = false;
-    this.$('.p-hint').textContent = 'W/S throttle · Mouse / A,D roll · Mouse pitch · Q,E rudder · LMB guns · Space bombs · R rockets · C look around · X bail out';
+    this.$('.p-hint').textContent = 'W/S nose down/up · A/D turn · E/Q throttle · Mouse aims guns · LMB guns · Space bombs · R rockets · C look ahead · X bail out';
     this.$('.g-pingcd').style.display = 'none';
     this.onPing = null;
     this.bindFlight();
-  }
-
-  onLook(dx, dy) {
-    const k = 0.0022 * settings.sensitivity;
-    if (this.keys.has('KeyC')) {
-      this.look.yaw = Math.max(-2.5, Math.min(2.5, this.look.yaw - dx * k * 1.3));
-      this.look.pitch = Math.max(-0.7, Math.min(0.85, this.look.pitch - dy * k * 1.3));
-    } else {
-      this.stick.roll = Math.max(-1, Math.min(1, this.stick.roll + dx * k * 2.2));
-      this.stick.pitch = Math.max(-1, Math.min(1, this.stick.pitch - dy * k * 2.2));
-    }
   }
 
   update(dt, states, me) {
@@ -417,49 +473,21 @@ export class PilotView extends PlaneBase {
     this.renderDt = dt;
     const self = states.get(me.id);
     if (!self) return;
-    const k = this.keys;
-    // The stick centres itself, so a mouse movement is a nudge rather than a held position.
-    this.stick.roll *= Math.exp(-dt * 3.5);
-    this.stick.pitch *= Math.exp(-dt * 1.8);
-    if (!k.has('KeyC')) {
-      this.look.yaw *= Math.exp(-dt * 6);
-      this.look.pitch *= Math.exp(-dt * 6);
-    }
-    if (!this.paused) {
-      if (k.took('KeyX')) net.send({ t: 'jump' });
-      const keyRoll = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
-      const roll = Math.max(-1, Math.min(1, this.stick.roll + keyRoll));
-      this.sendFly({
-        t: 'fly',
-        th: (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0),
-        pitch: +this.stick.pitch.toFixed(2),
-        roll: +roll.toFixed(2),
-        yaw: (k.has('KeyQ') ? 1 : 0) - (k.has('KeyE') ? 1 : 0),
-        fire: !!this.mouseBtn.left,
-        bomb: k.has('Space'),
-        rocket: k.has('KeyR'),
-      });
-    }
+    this.followPlane(self);
+    const look = this.lookFromSeat(self);
     const cam = this.camera;
     this.planePoint(self, 0, planeEye(this.tank) + 0.55, this.plane.size.length * 0.03, cam.position);
     planeQuaternion(self, _q);
     cam.quaternion.copy(_q).multiply(FLIP);
-    cam.rotateY(this.look.yaw);
-    cam.rotateX(this.look.pitch);
+    cam.rotateY(look.yaw);
+    cam.rotateX(look.pitch);
+    cam.updateMatrixWorld();
     this.showOwn(false);
     this.world.update(cam.position, cam);
-    this.updateCockpit(dt, self, me, this.look);
-    this.aim.yaw = self.h;
-    this.placePipper(self);
+    this.updateCockpit(dt, self, me, look);
+    if (!this.paused) this.sendControls(self, me);
+    this.placeNose(self);
     this.planeHud(self, me);
-  }
-
-  placePipper(self) {
-    const p = _v.copy(fwdOf(self)).multiplyScalar(320).add(this.camera.position).project(this.camera);
-    const el = this.$('.p-pipper');
-    el.style.left = `${((p.x + 1) / 2) * 100}%`;
-    el.style.top = `${((1 - p.y) / 2) * 100}%`;
-    el.style.display = p.z < 1 ? '' : 'none';
   }
 }
 
@@ -605,19 +633,13 @@ export class PlaneSoloView extends PlaneBase {
     this.onPing = null;
     this.camDist = null;
     this.$('.g-lock').textContent = 'Click to take control';
-    this.$('.p-hint').textContent = 'Mouse aims · W/S throttle · A,D roll · Q,E rudder · LMB guns · Space bombs · R rockets · RMB cockpit · X bail out';
+    this.$('.p-hint').textContent = 'W/S nose down/up · A/D turn · E/Q throttle · Mouse aims guns · LMB guns · Space bombs · R rockets · RMB cockpit · C look ahead · X bail out';
     this.bindFlight();
     this.look = { yaw: 0, pitch: 0 };
   }
 
   thermalActive() {
     return this.thermal && this.mouseBtn?.right;
-  }
-
-  onLook(dx, dy) {
-    const k = 0.0022 * settings.sensitivity;
-    this.aim.yaw = wrapAngle(this.aim.yaw - dx * k);
-    this.aim.pitch = Math.max(-1.3, Math.min(1.3, this.aim.pitch - dy * k));
   }
 
   update(dt, states, me) {
@@ -627,35 +649,19 @@ export class PlaneSoloView extends PlaneBase {
     this.thermalKey();
     const self = states.get(me.id);
     if (!self) return;
-    if (!this.aim.initialised) {
-      this.aim.yaw = self.h;
-      this.aim.pitch = 0;
-      this.aim.initialised = true;
-    }
-    const k = this.keys;
+    this.followPlane(self);
     const inCockpit = !!this.mouseBtn.right;
-    if (!this.paused) {
-      if (k.took('KeyX')) net.send({ t: 'jump' });
-      this.sendFly({
-        t: 'fly',
-        th: (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0),
-        roll: (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0),
-        yaw: (k.has('KeyQ') ? 1 : 0) - (k.has('KeyE') ? 1 : 0),
-        aimYaw: +this.aim.yaw.toFixed(3),
-        aimPitch: +this.aim.pitch.toFixed(3),
-        fire: !!this.mouseBtn.left,
-        bomb: k.has('Space'),
-        rocket: k.has('KeyR'),
-      });
-    }
     const cam = this.camera;
     const dir = _v.set(Math.sin(this.aim.yaw) * Math.cos(this.aim.pitch), Math.sin(this.aim.pitch), Math.cos(this.aim.yaw) * Math.cos(this.aim.pitch));
     if (inCockpit) {
       this.planePoint(self, 0, planeEye(this.tank) + 0.55, this.plane.size.length * 0.03, cam.position);
+      const look = this.lookFromSeat(self);
       planeQuaternion(self, _q);
       cam.quaternion.copy(_q).multiply(FLIP);
+      cam.rotateY(look.yaw);
+      cam.rotateX(look.pitch);
       this.showOwn(false);
-      this.updateCockpit(dt, self, me, this.look);
+      this.updateCockpit(dt, self, me, look);
     } else {
       this.cockpitOn = false;
       this.showOwn(true);
@@ -673,21 +679,8 @@ export class PlaneSoloView extends PlaneBase {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     this.world.update(cam.position, cam);
-
-    // The aim point in the middle, and where the nose really points.
-    const pip = this.$('.p-pipper');
-    if (inCockpit) {
-      pip.style.left = '50%';
-      pip.style.top = '45%';
-    } else {
-      pip.style.left = '50%';
-      pip.style.top = '50%';
-    }
-    const n = _v2.copy(fwdOf(self)).multiplyScalar(420).add(new THREE.Vector3(self.x, self.y, self.z)).project(cam);
-    const nose = this.$('.p-nose');
-    nose.style.display = n.z < 1 && Math.abs(n.x) < 1.1 && Math.abs(n.y) < 1.1 && !inCockpit ? '' : 'none';
-    nose.style.left = `${((n.x + 1) / 2) * 100}%`;
-    nose.style.top = `${((1 - n.y) / 2) * 100}%`;
+    if (!this.paused) this.sendControls(self, me);
+    this.placeNose(self);
     this.planeHud(self, me);
   }
 }

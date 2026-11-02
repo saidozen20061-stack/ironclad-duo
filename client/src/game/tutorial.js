@@ -11,9 +11,9 @@ const HINTS = {
     `Talk to your gunner: hold ${keyLabel(settings.pttKey)} (or use open mic in Settings).`,
   ],
   pilot: [
-    'You are the PILOT. W = more throttle. Roll down the runway, then pull the mouse back to lift off.',
-    'Mouse or A/D rolls, mouse pitches, Q/E rudder. Bank and pull to turn. Too slow and you stall!',
-    'Left click fires the forward guns, Space drops bombs, R fires rockets. Hold C to look around.',
+    'You are the PILOT. On the runway hold W for throttle, then S to lift off at speed.',
+    'In the air W/S push the nose down and up, A/D turn, E/Q change throttle. Too slow and you stall!',
+    'The mouse aims the guns wherever you look, left click fires. Space drops bombs, R fires rockets along the nose. C looks ahead again.',
     'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
     'About to go down? X bails both of you out with parachutes.',
   ],
@@ -23,8 +23,8 @@ const HINTS = {
     'T switches thermal. Q pings a spot on the pilot\'s compass. X bails out.',
   ],
   planeSolo: [
-    'SOLO PLANE: W throttle up, mouse aims the plane, it flies where you point. Pull up past take-off speed to lift off.',
-    'Left click guns, Space bombs, R rockets. Hold right click for the cockpit view. The side gun fires by itself.',
+    'SOLO PLANE: on the runway hold W for throttle, then S to lift off at speed. In the air W/S move the nose, A/D turn, E/Q change throttle.',
+    'The mouse aims the guns wherever you look, left click fires. Space bombs, R rockets along the nose. Right click for the cockpit, C looks ahead again. The side gun fires by itself.',
     'Land on your own runway and stop to repair, refuel and rearm. X bails out.',
   ],
   solo: [

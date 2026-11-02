@@ -160,7 +160,7 @@ input, select {
 .p-pipper { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 2px solid rgba(255, 220, 140, 0.85); border-radius: 50%; box-shadow: 0 0 3px #000; pointer-events: none; }
 .p-pipper i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: #ffdc8c; border-radius: 50%; }
 .p-nose { display: none; position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid #9df0a0; transform: rotate(45deg); pointer-events: none; }
-.hud.psolo .p-nose { display: block; }
+.hud.pilot .p-nose, .hud.psolo .p-nose { display: block; }
 .p-bombsight { display: none; position: absolute; left: 50%; top: 50%; width: min(70vh, 80vw); height: min(70vh, 80vw); transform: translate(-50%, -50%); pointer-events: none; }
 .p-bombsight.on { display: block; }
 .p-drift { position: absolute; left: 0; right: 0; bottom: -28px; text-align: center; font: 700 18px var(--ui); color: #ffdc8c; text-shadow: 0 1px 2px #000; }
