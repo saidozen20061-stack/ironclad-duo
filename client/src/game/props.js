@@ -454,6 +454,62 @@ const builders = {
   radardish(p) {
     return [box(C.concrete, 0, 0, 0, p.w, 0.6, p.d), part(CYL8, C.metal, { y: 3.1, sx: 0.5, sy: 5, sz: 0.5 }), box(C.olive, 0, 0.6, 0, 1.6, 1.5, 1.6)];
   },
+  // ---------- Airfields ----------
+  runway(p) {
+    const { w, d } = p;
+    const parts = [box(0x4b4a44, 0, -0.02, 0, w, 0.1, d), box(0x57564d, 0, -0.02, d / 2 + 4, w, 0.08, 8), box(0x57564d, 0, -0.02, -d / 2 - 4, w, 0.08, 8)];
+    // Centre line and threshold stripes.
+    for (let x = -w / 2 + 20; x < w / 2 - 12; x += 22) parts.push(box(C.white, x, 0.08, 0, 11, 0.02, 0.8));
+    for (const s of [-1, 1]) for (let i = -3; i <= 3; i++) if (i) parts.push(box(C.white, s * (w / 2 - 12), 0.08, i * 3.6, 16, 0.02, 1.6));
+    return parts;
+  },
+  hangar(p) {
+    const { w, d, h } = p;
+    const parts = [
+      // Corrugated arch on low walls, big open door facing the runway.
+      box(C.metal, 0, 0, -d / 2 + 0.3, w, h * 0.5, 0.6),
+      box(C.metal, -w / 2 + 0.3, 0, 0, 0.6, h * 0.5, d - 1.2),
+      box(C.metal, w / 2 - 0.3, 0, 0, 0.6, h * 0.5, d - 1.2),
+      vault(C.olive, 0, h * 0.5, 0, w + OVER, d + OVER, h * 0.5),
+      box(0x262720, 0, 0.02, d * 0.08, w * 0.92, 0.04, d * 0.8),
+      box(C.olive, -w * 0.36, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
+      box(C.olive, w * 0.36, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
+      box(p.team === 'red' ? C.redTeam : C.blueTeam, 0, h * 0.52, d / 2 + 0.05, w * 0.3, 1.2, 0.1),
+    ];
+    return parts;
+  },
+  ctower(p) {
+    const { w, h } = p;
+    const deck = h * 0.75;
+    const parts = [
+      box(C.plaster, 0, 0, 0, w, deck, w),
+      box(C.stoneDark, 0, deck, 0, w + 1.6, 0.25, w + 1.6),
+      box(C.glass, 0, deck + 0.25, 0, w * 0.82, h * 0.2, w * 0.82),
+      box(C.roofDark, 0, deck + 0.25 + h * 0.2, 0, w + 0.8, 0.3, w + 0.8),
+      box(C.metal, w * 0.3, deck + 0.25 + h * 0.2 + 0.3, 0, 0.12, 3.5, 0.12),
+    ];
+    for (let y = 2; y < deck - 1; y += 3) parts.push(box(0x2a2620, 0, y, w / 2 + 0.02, 1.4, 1.5, 0.08));
+    parts.push(box(C.woodDark, -w * 0.25, 0, w / 2 + 0.03, 1.2, 2.2, 0.1));
+    return parts;
+  },
+  windsock(p) {
+    return [
+      part(CYL6, C.white, { y: p.h / 2, sx: 0.12, sy: p.h, sz: 0.12 }),
+      part(TAPER, 0xd8622a, { y: p.h - 0.1, z: 1.05, rx: Math.PI / 2 - 0.1, sx: 0.65, sy: 2.1, sz: 0.65 }),
+    ];
+  },
+  aagun(p) {
+    // Sandbag ring with the AA gun pointing up, one barrel per side.
+    const parts = [];
+    const R = p.w / 2;
+    for (let row = 0; row < 2; row++) for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + row * 0.3;
+      parts.push(part(BOX, C.sand, { x: Math.cos(a) * R, y: 0.2 + row * 0.38, z: Math.sin(a) * R, sx: 1.05, sy: 0.38, sz: 0.55, ry: -a + Math.PI / 2 }));
+    }
+    parts.push(box(C.olive, 0, 0, 0, 1.2, 0.7, 1.2), box(C.olive, 0, 0.7, 0, 0.5, 0.9, 0.9));
+    for (const s of [-1, 1]) parts.push(part(CYL6, C.black, { x: s * 0.17, y: 2.1, z: 0.85, rx: 0.85, sx: 0.12, sy: 2.6, sz: 0.12 }));
+    return parts;
+  },
   // ---------- Fortress Defence ----------
   fwall(p) {
     const { w, d, h } = p;

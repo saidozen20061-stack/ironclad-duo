@@ -14,6 +14,17 @@ export const PAINT = {
   aa: { name: 'Winter wash', colors: [0xd6d8d2, 0x5d6a45, 0x8d8f86], draw: winter },
   assault: { name: 'Urban splinter', colors: [0x9a9d9a, 0x60706a, 0xc4c5be, 0x3e4242], draw: splinter },
   superheavy: { name: 'Two-tone bands', colors: [0x3f4d2e, 0x5f6c3f, 0x2d3822], draw: bands },
+  // Planes
+  stuka: { name: 'Splinter', colors: [0x4a5540, 0x2f3a2c, 0x62705a, 0x3d4737], draw: splinter, plane: true },
+  sturmovik: { name: 'Green and black', colors: [0x4c5d38, 0x1f2219, 0x3b4a2c], draw: blobs3, plane: true },
+  sturmovikWinter: { name: 'Winter white', colors: [0xd8dad2, 0x8a8d84, 0xbfc2b8], draw: winter, plane: true, for: 'sturmovik' },
+  dauntless: { name: 'Navy blue-grey', colors: [0x6a7f92, 0x8a9caa, 0x5a6e80], draw: plain, plane: true },
+  heavyfighter: { name: 'Grey mottle', colors: [0x8a8f8c, 0x5e6562, 0x6f7572, 0x9a9f9c], draw: spots, plane: true },
+  mosquito: { name: 'Green and grey', colors: [0x7c8580, 0x3f4f36, 0x55644a], draw: blobs3, plane: true },
+  mitchell: { name: 'Olive drab', colors: [0x56583a, 0x4c4e33, 0x62643f], draw: plain, plane: true },
+  mustang: { name: 'Polished silver', colors: [0xbcc0c2, 0xa8acae, 0xcdd0d0], draw: plain, plane: true },
+  spitfire: { name: 'Green and brown', colors: [0x56613e, 0x6e5a3a, 0x4c5636], draw: blobs3, plane: true },
+  messer: { name: 'Luftwaffe grey', colors: [0x7f8a8c, 0x5f6a6c, 0x8e9698, 0x6e787a], draw: spots, plane: true },
 };
 
 const S = 256; // texture size in px
@@ -109,6 +120,13 @@ function stripes(ctx, c, r) {
       right.unshift([x + off + w * (0.6 + 0.4 * Math.sin(y * 0.05 + ph)), y]);
     }
     poly(ctx, [...left, ...right]);
+  }
+}
+
+function blobs3(ctx, c, r) {
+  for (const [col, n, size] of [[c[1], 7, 42], [c[2], 5, 30]]) {
+    ctx.fillStyle = col;
+    for (let i = 0; i < n; i++) blob(ctx, r, size);
   }
 }
 

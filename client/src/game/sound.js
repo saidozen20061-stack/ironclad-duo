@@ -136,6 +136,74 @@ export class SoundScape {
     }
   }
 
+  // Plane engine: a saw and a square at firing frequency (lumpy radial, smoother inline),
+  // wind that grows with speed, plus the cockpit alarm and the dive siren.
+  buildPlane(spec) {
+    const ctx = this.ctx;
+    this.planeSpec = spec;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = spec.engineSound === 'radial' ? 520 : 800;
+    lp.connect(g).connect(this.out);
+    const o1 = ctx.createOscillator();
+    o1.type = 'sawtooth';
+    const o2 = ctx.createOscillator();
+    o2.type = spec.engineSound === 'radial' ? 'square' : 'sawtooth';
+    const g2 = ctx.createGain();
+    g2.gain.value = spec.engines === 2 ? 0.8 : 0.4;
+    o1.connect(lp);
+    o2.connect(g2).connect(lp);
+    o1.start();
+    o2.start();
+    const windSrc = noise(ctx);
+    const wf = ctx.createBiquadFilter();
+    wf.type = 'bandpass';
+    wf.frequency.value = 900;
+    wf.Q.value = 0.5;
+    const wg = ctx.createGain();
+    wg.gain.value = 0;
+    windSrc.connect(wf).connect(wg).connect(this.out);
+    windSrc.start();
+    const siren = ctx.createOscillator();
+    siren.type = 'sawtooth';
+    const sf = ctx.createBiquadFilter();
+    sf.type = 'bandpass';
+    sf.frequency.value = 1100;
+    sf.Q.value = 2;
+    const sg = ctx.createGain();
+    sg.gain.value = 0;
+    siren.connect(sf).connect(sg).connect(this.out);
+    siren.start();
+    this.planeAudio = { g, o1, o2, wg, wf, siren, sg };
+    this.ambientExtra = [...(this.ambientExtra ?? []), o1, o2, windSrc, siren];
+    this.engGain.gain.value = 0;
+  }
+
+  updatePlane(dt, { th, speedFrac, dive, alive, stall }) {
+    const a = this.planeAudio;
+    if (!a) return;
+    const t = this.ctx.currentTime;
+    const f = (this.planeSpec.engineSound === 'radial' ? 38 : 58) + th * 60 + speedFrac * 22;
+    a.o1.frequency.setTargetAtTime(f, t, 0.2);
+    a.o2.frequency.setTargetAtTime(f * (this.planeSpec.engines === 2 ? 1.012 : 0.5), t, 0.2);
+    a.g.gain.setTargetAtTime(alive ? 0.1 + th * 0.17 : 0, t, 0.25);
+    a.wg.gain.setTargetAtTime(alive ? speedFrac * speedFrac * 0.14 + dive * 0.13 : 0, t, 0.3);
+    a.wf.frequency.setTargetAtTime(600 + speedFrac * 800 + dive * 900, t, 0.3);
+    // The Stuka's siren climbs as it dives.
+    const howl = alive && this.planeSpec.siren && dive > 0.15;
+    a.siren.frequency.setTargetAtTime(360 + speedFrac * 900, t, 0.3);
+    a.sg.gain.setTargetAtTime(howl ? 0.09 * Math.min(1, dive * 1.6) : 0, t, 0.25);
+    if (alive && stall) {
+      this.alarmT = (this.alarmT ?? 0) - dt;
+      if (this.alarmT <= 0) {
+        this.alarmT = 0.42;
+        this.tone({ freq: 880, dur: 0.18, gain: 0.08, type: 'square', bus: this.out });
+      }
+    }
+  }
+
   // The war never stops: a low, slowly swelling rumble behind everything.
   buildRumble() {
     const ctx = this.ctx;
@@ -299,6 +367,9 @@ export class SoundScape {
         break;
       case 'rifle':
         this.burst({ freq: 2500 * a.bright, q: 0.7, dur: 0.09, gain: 0.22 * a.gain, delay });
+        break;
+      case 'bomb':
+        this.whistle(pos, 3, true);
         break;
       case 'rocket':
         this.burst({ freq: 600, type: 'lowpass', dur: 1.2, gain: 0.35 * a.gain, delay, sweepTo: 2000 });

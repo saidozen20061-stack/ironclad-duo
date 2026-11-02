@@ -32,9 +32,11 @@
     <section class="screen" id="screen-solo">
       <div class="menu-panel solo-panel">
         <h2>Solo</h2>
-        <p class="hint">One player, the whole tank: drive with WASD, aim with the mouse from a third-person camera.</p>
+        <p class="hint">One player, the whole vehicle, from a third-person camera with mouse aim.</p>
         <label class="field-label">Tank</label>
         <div class="solo-pick" id="solo-tanks"></div>
+        <label class="field-label">Plane</label>
+        <div class="solo-pick" id="solo-planes"></div>
         <label class="field-label">Camo</label>
         <div class="solo-pick" id="solo-camo"></div>
         <label class="field-label">Game mode</label>
@@ -108,7 +110,7 @@
         </header>
         <div class="lobby-body">
           <div class="lobby-col">
-            <h3>Tank crews <small>click a free seat to join a crew</small></h3>
+            <h3>Crews <small>click a free seat to join a crew</small></h3>
             <div id="lobby-crews" class="crew-list"></div>
             <p class="status" id="lobby-voice"></p>
           </div>
@@ -120,7 +122,7 @@
             <div class="host-tools" id="host-tools">
               <button class="btn small" id="btn-balance">Auto-balance teams</button>
             </div>
-            <h3>Your crew's tank <small id="tank-host-note"></small></h3>
+            <h3>Your crew's vehicle <small id="tank-host-note"></small></h3>
             <div class="tank-pick" id="tank-pick"></div>
           </div>
         </div>

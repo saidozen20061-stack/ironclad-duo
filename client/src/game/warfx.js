@@ -394,6 +394,13 @@ export class WarFX {
     this.rings.push({ m: ring, t: 0, life: 0.6, size: 34 * size });
   }
 
+  // Host flak shell: a black puff with a sharp flash at altitude.
+  flakAt(ev) {
+    this.flaks.push({ x: ev.x, y: ev.y, z: ev.z, t: 0, life: rand(5, 8), size: rand(16, 26) });
+    this.flashes.push({ x: ev.x, y: ev.y, z: ev.z, t: 0, life: 0.12, size: 24 });
+    this.sound.flakPop(ev);
+  }
+
   // Formation crossing the map; `started` keeps it in step with where the bombs fall.
   addBomber(ev) {
     this.bombers.push({ x: ev.x, z: ev.z, dx: ev.dx, dz: ev.dz, v: ev.v, y: ev.y, t: 0 });

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TANKS, UNITS } from '../../../shared/constants.js';
+import { PLANES } from '../../../shared/planes.js';
 import { tankPose, muzzlePose, sightPos, wrapAngle } from '../../../shared/tank.js';
 import { groundAt, WATER_LEVEL, POINTS, BASES, MAP_SIZE } from '../../../shared/map.js';
 import { net } from '../net.js';
@@ -59,7 +60,7 @@ export class GunnerView {
   constructor({ world, units, tank, hud, keys }) {
     this.world = world;
     this.units = units;
-    this.spec = TANKS[tank];
+    this.spec = TANKS[tank] ?? PLANES[tank];
     this.tank = tank;
     this.keys = keys;
     // Near plane well off the lens: depth precision is what keeps far walls and windows
@@ -341,12 +342,12 @@ export class GunnerView {
     for (const u of states.values()) {
       if (u.id === selfId || u.dead) continue;
       const m = this.units.get(u.id);
-      const cy = (m?.pose.y ?? 0) + 1.2;
+      const cy = PLANES[u.type] ? u.y : (m?.pose.y ?? 0) + 1.2;
       const ox = u.x - origin.x, oy = cy - origin.y, oz = u.z - origin.z;
       const t = ox * dir.x + oy * dir.y + oz * dir.z;
       if (t < 0 || t > 1500) continue;
       const d2 = ox * ox + oy * oy + oz * oz - t * t;
-      const r = (TANKS[u.type] ?? UNITS[u.type]).size.width * 0.6;
+      const r = (TANKS[u.type] ?? PLANES[u.type] ?? UNITS[u.type]).size.width * 0.6;
       if (d2 < r * r && (best === null || t < best)) best = t;
     }
     // Buildings and other solid props, checked in 60 m chunks along the ray.
@@ -431,7 +432,7 @@ export class GunnerView {
     const ctx = this.minimap;
     const S = 200;
     // Zoomed minimap: 600 m across, centred on the tank, north up.
-    const span = 600;
+    const span = this.minimapSpan ?? 600;
     const k = S / span; // px per metre
     const img = this.mapBase;
     const imgScale = img.width / MAP_SIZE;
@@ -471,7 +472,7 @@ export class GunnerView {
     for (const u of states.values()) {
       if (u.id === self.id || u.dead) continue;
       // Enemies only show once actually spotted: in range and in line of sight.
-      if (u.team !== (this.team ?? 'blue') && !(this.spotter ??= new Spotter()).sees(u, this.camera.position, 400, this.deadProps)) continue;
+      if (u.team !== (this.team ?? 'blue') && !(this.spotter ??= new Spotter()).sees(u, this.camera.position, this.spotRange ?? 400, this.deadProps)) continue;
       const [px, py] = toMap(u.x, u.z);
       if (px < 0 || px > S || py < 0 || py > S) continue;
       ctx.fillStyle = u.team === (this.team ?? 'blue') ? '#7fd36a' : '#ff5a4a';

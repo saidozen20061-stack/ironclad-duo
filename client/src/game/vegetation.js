@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Scatter, mergeParts, bakeOnGround } from './scatter.js';
 import { CRATERS, FIELDS, ROADS, roadSamples, treeAllowed, TREE_NOISE, distToRoad, distToRail, fieldAt, propsNear, PROPS } from '../../../shared/props.js';
-import { heightAt, waterDepthAt, riverZ, RIVER_HALF_WIDTH, WATER_LEVEL, POINTS, BASES, PLAY_LIMIT } from '../../../shared/map.js';
+import { inAirfield, heightAt, waterDepthAt, riverZ, RIVER_HALF_WIDTH, WATER_LEVEL, POINTS, BASES, PLAY_LIMIT } from '../../../shared/map.js';
 import { mulberry32, createNoise2D } from '../../../shared/noise.js';
 import { quality } from '../settings.js';
 
@@ -328,9 +328,9 @@ export class Vegetation {
       if (waterDepthAt(x, z) > 0 || slope(x, z) > 0.3) continue;
       scorch.push({ x, z, y: heightAt(x, z) + 0.05, rot: r3() * 6, s: 1.5 + r3() * 3, sz: 0.6 + r3() * 0.6 });
     }
-    bakeOnGround(this.scene, MODELS.rut(), DECAL, ruts, { lift: 0.05 });
-    bakeOnGround(this.scene, MODELS.mud(), DECAL, mud, { lift: 0.05 });
-    bakeOnGround(this.scene, MODELS.scorch(), DECAL, scorch, { lift: 0.05 });
+    bakeOnGround(this.scene, MODELS.rut(), DECAL, ruts.filter((it) => !inAirfield(it.x, it.z)), { lift: 0.05 });
+    bakeOnGround(this.scene, MODELS.mud(), DECAL, mud.filter((it) => !inAirfield(it.x, it.z)), { lift: 0.05 });
+    bakeOnGround(this.scene, MODELS.scorch(), DECAL, scorch.filter((it) => !inAirfield(it.x, it.z)), { lift: 0.05 });
     this.puddleMat = new THREE.MeshStandardMaterial({ color: 0x8a9aa0, metalness: 0.9, roughness: 0.08, flatShading: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, depthWrite: false });
     bakeOnGround(this.scene, disc(9), this.puddleMat, puddles, { lift: 0.07, order: 2 });
 
@@ -354,6 +354,7 @@ export class Vegetation {
   }
 
   addLayer(opts) {
+    opts.items = opts.items.filter((it) => !inAirfield(it.x, it.z));
     if (!opts.items.length) return null;
     const layer = new Scatter(this.scene, opts);
     this.layers.push(layer);

@@ -3,7 +3,7 @@
 // generated client-side from the same seed and never blocks movement.
 
 import { mulberry32, createNoise2D } from './noise.js';
-import { POINTS, BASES, BRIDGES, FORD, riverZ, heightAt, groundAt, waterDepthAt, HALF } from './map.js';
+import { POINTS, BASES, BRIDGES, FORD, AIRFIELDS, inAirfield, riverZ, heightAt, groundAt, waterDepthAt, HALF } from './map.js';
 
 // Rotation convention (matches Three.js rotation.y): local X = width, local Z = depth.
 // world = (lx*cos + lz*sin, -lx*sin + lz*cos)
@@ -52,6 +52,12 @@ export const PROP_TYPES = {
   truck: { solid: true, hp: 300, cover: true },
   radardish: { solid: true, hp: Infinity },
   artillery: { solid: true, hp: Infinity, cover: true },
+  // Airfields
+  runway: { solid: false, hp: Infinity },
+  hangar: { solid: true, hp: Infinity, cover: true },
+  ctower: { solid: true, hp: Infinity, cover: true },
+  windsock: { solid: false, hp: Infinity },
+  aagun: { solid: true, hp: Infinity, cover: true },
   // Fortress Defence (only placed in that mode, see setFortress)
   fwall: { solid: true, hp: 2200, cover: true },
   fgate: { solid: true, hp: 1400, cover: true, navOpen: true },
@@ -178,6 +184,35 @@ for (const [team, b] of Object.entries(BASES)) {
   for (let k = 0; k < 4; k++) add('crates', b.x + rr(-30, 30), b.z - s * rr(10, 30), rr(0, 3), 2.4, 2.4, 1.6);
 }
 
+// ---------- Airfields ----------
+for (const f of Object.values(AIRFIELDS)) {
+  const { team, x, z, len, width } = f;
+  // Buildings stand on the side away from the map edge.
+  const s = team === 'blue' ? 1 : -1;
+  add('runway', x, z, 0, len, width, 0.1, { team });
+  add('hangar', x - 110, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 34, 24, 11, { team });
+  add('hangar', x - 60, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 34, 24, 11, { team });
+  add('ctower', x + 10, z + s * (width / 2 + 20), s > 0 ? Math.PI : 0, 8, 8, 13, { team });
+  add('windsock', x + 40, z + s * (width / 2 + 12), 0, 1, 1, 6, { team });
+  add('truck', x + 62, z + s * (width / 2 + 18), 0.4, 2.4, 6.5, 2.6, { team });
+  add('truck', x + 80, z + s * (width / 2 + 16), -0.3, 2.4, 6.5, 2.6, { team });
+  add('fueltank', x + 104, z + s * (width / 2 + 24), Math.PI / 2, 4.6, 9, 4.6);
+  for (const [dx, dz] of [[-len / 2 - 8, width / 2 + 14], [len / 2 + 6, width / 2 + 14], [130, -width / 2 - 14]]) add('aagun', x + dx, z + s * dz, 0, 4, 4, 2.6, { team });
+}
+
+// Flak around the bases and capture points (point guns belong to whoever holds the point).
+for (const [team, b] of Object.entries(BASES)) {
+  const s = team === 'blue' ? 1 : -1;
+  for (const dx of [-85, 85]) add('aagun', b.x + dx, b.z + s * 22, 0, 4, 4, 2.6, { team });
+}
+for (const pt of POINTS) {
+  const a = (pt.x + pt.z) * 0.01;
+  for (const k of [0, 1]) {
+    const ang = a + k * 2.4;
+    add('aagun', pt.x + Math.cos(ang) * (pt.r + 16), pt.z + Math.sin(ang) * (pt.r + 16), 0, 4, 4, 2.6, { point: pt.id });
+  }
+}
+
 // ---------- Placement helpers ----------
 const slopeAt = (x, z) => {
   const h = heightAt(x, z);
@@ -202,6 +237,7 @@ export function distToRail(x, z) {
 
 function clearSpot(x, z, r, { road = r + 4, slope = 0.25, points = 0, bases = 0 } = {}) {
   if (Math.abs(x) > 655 || Math.abs(z) > 655) return false;
+  if (inAirfield(x, z, r)) return false;
   if (waterDepthAt(x, z) > 0 || Math.abs(z - riverZ(x)) < r + 16) return false;
   if (distToRoad(x, z) < road || distToRail(x, z) < r + 3) return false;
   if (slopeAt(x, z) > slope) return false;
@@ -467,6 +503,8 @@ function buildFortress() {
   for (let x = -95; x <= 95; x += 12) if (Math.abs(x) > 12) FORT.spots.push({ x, z: N - 5 });
   for (const sx of [-1, 1]) for (let z = -515; z >= -680; z -= 14) if (Math.abs(z + 600) > 10) FORT.spots.push({ x: sx * (H - 5), z });
   for (const x of [-60, 60]) FORT.spots.push({ x, z: N - 21 });
+  // The fortress has its own flak (no team set: fortress guns fire for Blue).
+  for (const [x, z] of [[-45, N - 26], [45, N - 26], [-85, -650], [85, -650]]) add('aagun', x, z, 0, 4, 4, 2.6, { fort: true });
   return PROPS.slice(start);
 }
 
@@ -552,6 +590,7 @@ export function roadSamples(step) {
 export const TREE_NOISE = createNoise2D(4242);
 export function treeAllowed(x, z) {
   if (Math.abs(x) > 700 || Math.abs(z) > 700) return false;
+  if (inAirfield(x, z)) return false;
   if (waterDepthAt(x, z) > 0 || Math.abs(z - riverZ(x)) < 24) return false;
   if (distToRoad(x, z) < 9 || distToRail(x, z) < 8) return false;
   if (POINTS.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + 25)) return false;

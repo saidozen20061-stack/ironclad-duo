@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { TANKS } from '../../../shared/constants.js';
 import { tankPose, wrapAngle } from '../../../shared/tank.js';
 import { groundAt } from '../../../shared/map.js';
+import { PLANES } from '../../../shared/planes.js';
+import { buildPlane } from '../models/planes.js';
 import { buildTank, trackMaterial } from '../models/tanks.js';
 import { buildATGun } from '../models/infantry.js';
 import { SoldierRig } from '../models/rig.js';
@@ -9,7 +11,7 @@ import { quality } from '../settings.js';
 import { markHeat } from './thermal.js';
 
 const burnt = new THREE.MeshStandardMaterial({ color: 0x1d1b19, flatShading: true, roughness: 1 });
-const kindOf = (type) => (TANKS[type] ? 'tank' : type === 'atgun' ? 'atgun' : 'inf');
+const kindOf = (type) => (TANKS[type] ? 'tank' : PLANES[type] ? 'plane' : type === 'atgun' ? 'atgun' : 'inf');
 
 // Track links: a stripe texture scrolled per tank as it drives.
 const trackTex = (() => {
@@ -65,6 +67,11 @@ export class UnitsView {
         m.root = m.handles.group;
         m.gunZ = m.handles.gun.position.z;
         Object.assign(m, { recoil: 0, v: 0, pitch: 0, pitchV: 0, roll: 0, terrainPitch: null });
+      } else if (kind === 'plane') {
+        m.handles = buildPlane(u.type, u.team, this.paintFor?.(u) ?? u.type);
+        m.root = m.handles.group;
+        m.originals = [];
+        m.handles.group.traverse((o) => o.isMesh && m.originals.push([o, o.material]));
       } else if (kind === 'atgun') {
         m.handles = buildATGun(u.team);
         m.root = m.handles.group;
@@ -76,7 +83,7 @@ export class UnitsView {
         if (u.dead) m.rig.die({ fromAngle: Math.PI });
       }
       // Heat for the thermal sight, kept up to date in updateHeat while it is in use.
-      m.heatSrc = kind === 'tank' ? { heat: 0.5, engine: new THREE.Vector4(), hotE: 1, barrel: new THREE.Vector4(), hotB: 0 } : { heat: kind === 'inf' ? 0.82 : 0.3 };
+      m.heatSrc = kind === 'tank' || kind === 'plane' ? { heat: 0.5, engine: new THREE.Vector4(), hotE: 1, barrel: new THREE.Vector4(), hotB: 0 } : { heat: kind === 'inf' ? 0.82 : 0.3 };
       m.barrelHeat = 0;
       m.coolT = 0;
       markHeat(m.root, m.heatSrc);
@@ -100,12 +107,13 @@ export class UnitsView {
       // Past the end of the fog nothing is drawn at all; small things go earlier (LOD).
       const fogEnd = (this.scene.fog?.far ?? quality().drawDistance) * 1.15;
       const seeThroughFog = this.thermal ? 2 : 1;
-      m.root.visible = dist < Math.min(fogEnd * seeThroughFog, m.kind === 'tank' ? Infinity : m.kind === 'inf' ? 650 : 900);
+      m.root.visible = dist < Math.min(fogEnd * seeThroughFog, m.kind === 'tank' || m.kind === 'plane' ? Infinity : m.kind === 'inf' ? 650 : 900);
       if (u.dead) m.coolT += dt;
       else m.coolT = 0;
       m.barrelHeat *= Math.exp(-dt / 25); // barrels hold their heat for a long time
       if (!m.root.visible) continue;
-      if (m.kind === 'tank') this.updateTank(m, u, dt);
+      if (m.kind === 'plane') this.updatePlane(m, u, dt);
+      else if (m.kind === 'tank') this.updateTank(m, u, dt);
       else if (m.kind === 'atgun') this.updateGun(m, u);
       else this.updateSoldier(m, u, dt, dist);
       m.last.x = u.x;
@@ -119,6 +127,19 @@ export class UnitsView {
     if (m.kind === 'inf') {
       // Body heat; a body cools down over a minute or so.
       src.heat = u.dead ? 0.12 + 0.7 * Math.exp(-m.coolT / 25) : 0.82;
+      return;
+    }
+    if (m.kind === 'plane') {
+      // Engines blaze, the skin stays cool in the slipstream; a wreck cools off.
+      const spec = PLANES[u.type];
+      src.heat = u.dead ? 0.14 + 0.6 * Math.exp(-m.coolT / 40) : 0.36;
+      src.barrel.w = 0;
+      if (u.dead) src.engine.w = 0;
+      else {
+        _v.set(m.handles.engineX, 0, m.handles.engineZ).applyMatrix4(m.root.matrixWorld);
+        src.engine.set(_v.x, _v.y, _v.z, spec.size.width * 0.2 + 1.6);
+        src.hotE = 1;
+      }
       return;
     }
     if (m.kind !== 'tank') {
@@ -225,6 +246,23 @@ export class UnitsView {
     }
   }
 
+  updatePlane(m, u, dt) {
+    const g = m.root;
+    m.pose.y = u.y;
+    g.position.set(u.x, u.y, u.z);
+    g.rotation.order = 'YXZ';
+    g.rotation.set(-u.gp, u.h, u.ty);
+    const spin = u.dead ? 0 : 45;
+    for (const p of m.handles.props) {
+      p.rotation.z += spin * dt * (p.userData.dir ?? 1);
+      if (p.userData.disc) p.userData.disc.visible = spin > 0;
+    }
+    if (u.dead !== m.dead) {
+      m.dead = u.dead;
+      for (const [o, mat] of m.originals) o.material = u.dead ? burnt : mat;
+    }
+  }
+
   updateGun(m, u) {
     m.pose.y = groundAt(u.x, u.z);
     m.root.position.set(u.x, m.pose.y, u.z);
@@ -240,7 +278,24 @@ export class UnitsView {
 
   updateSoldier(m, u, dt, dist) {
     const y = groundAt(u.x, u.z);
-    m.pose.y = y + u.y; // u.y: jump height (player crew)
+    m.pose.y = y + u.y; // u.y: jump height (player crew), or parachute height
+    if (u.y > 2.5 || m.chute) {
+      if (!m.chute) {
+        m.chute = new THREE.Group();
+        const canopy = new THREE.Mesh(new THREE.SphereGeometry(3.2, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd8d2bd, flatShading: true, side: THREE.DoubleSide }));
+        canopy.position.y = 6.2;
+        canopy.scale.y = 0.65;
+        m.chute.add(canopy);
+        for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const line = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 5.2, 3), new THREE.MeshBasicMaterial({ color: 0x3a3a34 }));
+          line.position.set(sx * 1.2, 4.0, sz * 1.2);
+          line.rotation.set(sz * 0.42, 0, -sx * 0.42);
+          m.chute.add(line);
+        }
+        m.root.add(m.chute);
+      }
+      m.chute.visible = u.y > 2.5;
+    }
     m.root.position.set(u.x, m.pose.y, u.z);
     m.root.rotation.y = u.h;
     if (u.dead && !m.rig.death) m.rig.die({ fromAngle: (Math.random() - 0.5) * 6 });

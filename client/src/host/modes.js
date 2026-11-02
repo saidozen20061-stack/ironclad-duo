@@ -23,7 +23,7 @@ export function installMode(m) {
 // the AI tank cap per team counts player crews, so a team with fewer crews gets more bots.
 function installTdm(m) {
   m.onKill = (u, shooter) => {
-    const pts = u.player ? 3 : u.kind === 'tank' ? 1 : 0;
+    const pts = u.player ? 3 : u.kind === 'tank' || u.kind === 'plane' ? 1 : 0;
     if (!pts) return;
     m.score[shooter.team] += pts;
     if (m.score[shooter.team] >= m.killLimit) m.endMatch(shooter.team, `${Team(shooter.team)} reached ${m.killLimit} points`);
@@ -93,6 +93,12 @@ function installFortress(m) {
       t.hp = t.spec.hp;
       t.boss = true;
       f.alive.push(t);
+    }
+    // From wave 3 on the enemy comes by air as well: bombers, then fighter cover.
+    if (f.wave >= 3) {
+      const bombers = Math.min(3, 1 + Math.floor((f.wave - 3) / 3));
+      for (let i = 0; i < bombers; i++) f.alive.push(m.planes.spawnNpc('red', 'attack'));
+      if (f.wave >= 5) for (let i = 0; i < Math.min(2, Math.floor((f.wave - 3) / 2)); i++) f.alive.push(m.planes.spawnNpc('red', 'fighter'));
     }
     f.arty = !!w.arty;
     f.artyT = 10;

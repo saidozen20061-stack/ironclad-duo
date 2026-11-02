@@ -114,8 +114,7 @@ export class VehiclePreview {
     const box = new THREE.Box3().setFromObject(obj);
     const size = box.getSize(new THREE.Vector3());
     const c = box.getCenter(new THREE.Vector3());
-    obj.position.x -= c.x;
-    obj.position.z -= c.z;
+    obj.position.set(-c.x, -box.min.y, -c.z);
     obj.traverse((o) => {
       if (o.isMesh) o.castShadow = o.receiveShadow = true;
     });

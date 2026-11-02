@@ -35,6 +35,7 @@ function ballisticPitch(d, dy, speed) {
 }
 
 export function unitHeight(u) {
+  if (u.kind === 'plane') return u.y;
   return u.kind === 'tank' ? u.pose.y + 1.4 : u.pose.y + (u.kind === 'inf' ? 1.3 : 1.0);
 }
 
@@ -297,6 +298,8 @@ export class ArmyAI {
     let bestScore = Infinity;
     for (const e of m.units) {
       if (e.dead || e.team === u.team) continue;
+      // Only flak tanks go after planes; everyone else leaves the sky alone.
+      if (e.kind === 'plane' && !(u.type === 'aa' && !e.grounded)) continue;
       const d = Math.hypot(e.x - ux, e.z - uz);
       if (d > range) continue;
       let score = d;

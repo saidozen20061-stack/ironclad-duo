@@ -1,4 +1,5 @@
 import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../../shared/constants.js';
+import { PLANES, COOP_PLANE_IDS } from '../../../shared/planes.js';
 import { net } from '../net.js';
 import { PAINT } from '../models/paint.js';
 import { $, $$, escapeHtml, toast, setStatus } from './screens.js';
@@ -20,20 +21,21 @@ export const lobby = {
   speaking: new Map(), // playerId -> bool, filled in by voice chat
 };
 
-const STAT_LABELS = { speed: 'Speed', armor: 'Armor', firepower: 'Firepower', reload: 'Reload' };
+const STAT_LABELS = { speed: 'Speed', armor: 'Armor', firepower: 'Firepower', reload: 'Reload', agility: 'Agility' };
 
 function buildTankCards() {
   const root = $('#tank-pick');
   root.innerHTML = '';
-  for (const id of TANK_IDS) {
-    const t = TANKS[id];
+  for (const id of [...TANK_IDS, ...COOP_PLANE_IDS]) {
+    const t = TANKS[id] ?? PLANES[id];
+    if (id === COOP_PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', '<h3 class="pick-head">Planes <small>pilot + rear gunner</small></h3>');
     const btn = document.createElement('button');
     btn.className = 'tank-card';
     btn.dataset.tank = id;
     const bars = Object.entries(t.stats)
       .map(([k, v]) => `<label>${STAT_LABELS[k]}</label><div class="bar"><i style="width:${v * 20}%"></i></div>`)
       .join('');
-    btn.innerHTML = `<div class="cls">${t.class}</div><b>${t.name}</b><span>${t.blurb}</span><div class="wpn">${t.weapon.label}</div><div class="paint">Paint: ${PAINT[id]?.name ?? 'Standard'}</div><div class="bars">${bars}</div>`;
+    btn.innerHTML = `<div class="cls">${t.class}</div><b>${t.name}</b><span>${t.blurb}</span><div class="wpn">${t.weapon.label}</div>${t.inspired ? `<div class="paint">Inspired by the ${t.inspired}</div>` : ''}<div class="paint">Paint: ${PAINT[id]?.name ?? 'Standard'}</div><div class="bars">${bars}</div>`;
     btn.addEventListener('click', () => {
       const crew = lobby.myCrew;
       if (crew) net.send({ t: 'crewTank', crew: crew.id, tank: id });
@@ -53,6 +55,8 @@ function buildModeCards() {
   for (const b of $$('[data-kills]')) b.addEventListener('click', () => net.send({ t: 'mode', killLimit: Number(b.dataset.kills) }));
   $('#diff-pick').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small" data-diff="${id}">${d.name}</button>`).join('')}`;
   for (const b of $$('[data-diff]')) b.addEventListener('click', () => net.send({ t: 'mode', difficulty: b.dataset.diff }));
+  $('#diff-pick').insertAdjacentHTML('beforeend', '<button class="btn small" id="air-start" title="Planes start in the air instead of on the runway">Air start</button>');
+  $('#air-start').addEventListener('click', () => net.send({ t: 'mode', airStart: !lobby.state?.airStart }));
 }
 
 export function initLobbyScreen({ onLeave }) {
@@ -102,7 +106,7 @@ export function renderLobby() {
   $('#lobby-crews').innerHTML = s.crews
     .map((c) => {
       const used = c.driver != null || c.gunner != null;
-      const t = TANKS[c.tank];
+      const t = TANKS[c.tank] ?? PLANES[c.tank];
       const team = fortress ? 'blue' : c.team;
       const mine = me?.crew === c.id ? ' mine' : '';
       return `<div class="crew-card ${team}${used ? '' : ' empty'}${mine}">
@@ -125,6 +129,8 @@ export function renderLobby() {
     b.classList.toggle('on', b.dataset.diff === s.difficulty);
     b.disabled = !lobby.isHost;
   }
+  $('#air-start').classList.toggle('on', !!s.airStart);
+  $('#air-start').disabled = !lobby.isHost;
   for (const b of $$('[data-kills]')) {
     b.classList.toggle('on', Number(b.dataset.kills) === s.killLimit);
     b.disabled = !lobby.isHost;

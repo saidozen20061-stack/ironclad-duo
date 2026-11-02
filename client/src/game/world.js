@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { GRID, CELL, HALF, MAP_SIZE, WATER_LEVEL, BRIDGES, BRIDGE_DECK, POINTS, BASES, gridHeight, riverZ, RIVER_HALF_WIDTH, smoothstep } from '../../../shared/map.js';
+import { GRID, CELL, HALF, MAP_SIZE, WATER_LEVEL, BRIDGES, BRIDGE_DECK, POINTS, BASES, inAirfield, gridHeight, riverZ, RIVER_HALF_WIDTH, smoothstep } from '../../../shared/map.js';
 import { createNoise2D } from '../../../shared/noise.js';
 import { distToRoad, fieldAt } from '../../../shared/props.js';
 import { quality } from '../settings.js';
@@ -83,10 +83,12 @@ export function buildTerrainGeometry() {
     const n2 = colorNoise(cx / 9 + 50, cz / 9);
     const riverD = Math.abs(cz - riverZ(cx));
     const inMap = Math.abs(cx) < 720 && Math.abs(cz) < 720;
+    const airfield = inAirfield(cx, cz);
     const road = riverD > RIVER_HALF_WIDTH + 2 && inMap ? distToRoad(cx, cz) : 99;
     const field = inMap ? fieldAt(cx, cz) : null;
     const baseD = Math.min(...Object.values(BASES).map((b) => Math.hypot(b.x - cx, b.z - cz)));
     if (y < WATER_LEVEL + 0.4) c.setHSL(0.09, 0.25, 0.22 + n2 * 0.02); // riverbed mud
+    else if (airfield) c.setHSL(0.14, 0.2, 0.33 + n2 * 0.03); // mown airfield grass
     else if (road < 3.6) c.setHSL(0.085, 0.24, 0.4 + n2 * 0.03); // dirt road
     else if (field) {
       // Crop rows: alternating stripes across the field.

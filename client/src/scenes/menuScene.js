@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { createNoise2D, fbm, mulberry32 } from '../../../shared/noise.js';
 import { buildTank } from '../models/tanks.js';
+import { buildPlane } from '../models/planes.js';
+import { PLANES } from '../../../shared/planes.js';
 import { SoldierRig, idleUpdate } from '../models/rig.js';
 import { quality } from '../settings.js';
 import { VehiclePreview } from './preview.js';
+
+const buildVehicle = (type, team, paint) => (PLANES[type] ? buildPlane(type, team, paint ?? type) : buildTank(type, team, paint));
 
 // Slowly rotating low-poly battlefield behind the menus. In lobby mode the camera
 // moves in on a showcase tank that reflects the host's current tank choice.
@@ -266,10 +270,12 @@ export class MenuScene {
   setShowcase(type, paint = type) {
     if (this.showcase?.type === type && this.showcase.paint === paint) return;
     if (this.showcase) this.scene.remove(this.showcase.group);
-    this.showcase = buildTank(type, 'blue', paint);
+    this.showcase = buildVehicle(type, 'blue', paint);
     this.showcase.paint = paint;
+    this.showcase.type = type;
+    this.showcase.baseY = PLANES[type] ? PLANES[type].gearH : 0;
     this.scene.add(this.showcase.group);
-    this.preview.set(`${type}|${paint}`, () => buildTank(type, 'blue', paint).group);
+    this.preview.set(`${type}|${paint}`, () => buildVehicle(type, 'blue', paint).group);
   }
 
   // Lobby: every crew's tank in its garage bay, crew standing in front with names above.
@@ -281,13 +287,25 @@ export class MenuScene {
     if (key === this.lineupKey) return;
     this.lineupKey = key;
     this.lineup.clear();
+    this.taxiing = [];
     this.rigs = [];
     this.crewCount = Math.max(1, used.length);
     used.forEach((c, i) => {
       const x = (i - (used.length - 1) / 2) * 11;
-      const tank = buildTank(c.tank, team(c));
-      tank.group.position.set(x, 0.2, -2);
-      tank.turret.rotation.y = (i % 2 ? 1 : -1) * 0.25;
+      const tank = buildVehicle(c.tank, team(c));
+      if (PLANES[c.tank]) {
+        // Planes taxi out of the hangar door at the back of their bay, wings folded to fit.
+        const k = 0.5;
+        tank.group.scale.setScalar(k);
+        tank.group.position.set(x, 0.2 + PLANES[c.tank].gearH * k, -9);
+        const door = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 0.2), new THREE.MeshStandardMaterial({ color: 0x4a4e44, flatShading: true }));
+        door.position.set(x, 4, -12.5);
+        this.lineup.add(door);
+        (this.taxiing ??= []).push({ t: 0, plane: tank, door });
+      } else {
+        tank.group.position.set(x, 0.2, -2);
+        tank.turret.rotation.y = (i % 2 ? 1 : -1) * 0.25;
+      }
       this.lineup.add(tank.group);
       const tag = labelSprite(`TANK ${c.id + 1}`, team(c) === 'blue' ? '#8fc4f5' : '#f39a90');
       tag.position.set(x, 5.2, -2);
@@ -348,14 +366,24 @@ export class MenuScene {
     // Showcase turret sweeps lazily.
     if (this.showcase) {
       this.showcase.group.position.z = inLobby ? -2 : 0;
+      this.showcase.group.position.y = this.showcase.baseY ?? 0;
       // Before anyone is seated, the lobby keeps the single showcase tank.
       this.showcase.group.visible = !this.preview.el && (!inLobby || !this.lineup.children.length);
-      this.showcase.turret.rotation.y = Math.sin(this.t * 0.4) * 0.6;
-      this.showcase.gun.rotation.x = -0.05 - Math.sin(this.t * 0.3) * 0.05;
+      if (this.showcase.turret) {
+        this.showcase.turret.rotation.y = Math.sin(this.t * 0.4) * 0.6;
+        this.showcase.gun.rotation.x = -0.05 - Math.sin(this.t * 0.3) * 0.05;
+      }
     }
     for (const [i, e] of this.extras.entries()) e.turret.rotation.y = Math.sin(this.t * 0.3 + i) * 0.8;
     // Crews in the garage breathe and look around.
     if (inLobby) for (const r of this.rigs ?? []) idleUpdate(r, dt);
+    for (const a of this.taxiing ?? []) {
+      a.t = Math.min(1, a.t + dt / 3.5);
+      const k = a.t * a.t * (3 - 2 * a.t);
+      a.door.position.y = 4 + 7.5 * Math.min(1, a.t * 2.5);
+      a.plane.group.position.z = -9 + 7 * Math.max(0, (k - 0.3) / 0.7);
+      for (const p of a.plane.props) p.rotation.z += dt * 25;
+    }
     for (const m of this.smoke) {
       const u = (m.userData.phase + this.t * 0.04) % 1;
       m.position.set(m.userData.x + u * 18, m.userData.base + 2 + u * 45, m.userData.z + u * 6);

@@ -15,6 +15,7 @@ const TRACER = {
   rifle: { color: 0xffe070, len: 2.2, width: 0.04 },
   rocket: { color: 0xffc060, len: 1.4, width: 0.22 },
   grenade: { color: 0x2f3a26, len: 0.14, width: 0.1 },
+  bomb: { color: 0x25261f, len: 1.5, width: 0.32 },
 };
 
 // In the thermal sight, smoke and dust are mostly see-through, but a thick cloud still hides a bit.
@@ -25,7 +26,7 @@ const HEAT_DUST = { heat: 0.2, alpha: 0.1 };
 const HEAT_WATER = { heat: 0.08, alpha: 0.2 };
 const HEAT_DIRT = { heat: 0.3 };
 
-const IMPACT_SIZE = { ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
+const IMPACT_SIZE = { bomb: 7, ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
 export class FX {
   constructor(scene) {
@@ -57,10 +58,10 @@ export class FX {
   spawnProjectile(ev) {
     const style = TRACER[ev.kind] ?? TRACER.ap;
     const mesh = new THREE.Mesh(this.tracerGeo, this.tracerMats[ev.kind] ?? this.tracerMats.ap);
-    markHeat(mesh, HEAT_TRACER);
+    markHeat(mesh, ev.kind === 'bomb' ? HEAT_DIRT : HEAT_TRACER);
     mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
-    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: 4 });
+    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : 4 });
   }
 
   removeProjectile(id) {
@@ -71,7 +72,7 @@ export class FX {
   }
 
   muzzleFlash(pos, dir, kind) {
-    if (kind === 'rifle') return; // too small to matter; saves particles with 40 riflemen
+    if (kind === 'rifle' || kind === 'bomb') return; // too small to matter; saves particles with 40 riflemen
     const big = kind === 'heavy' ? 2.2 : kind === 'ap' || kind === 'he' ? 1.5 : kind === 'ac' || kind === 'rocket' ? 0.7 : 0.3;
     for (let i = 0; i < 3; i++) {
       this.particle({

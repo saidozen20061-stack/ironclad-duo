@@ -249,7 +249,12 @@ export class SoldierView {
       this.pos.z = nz;
       this.bob += dt * speed * 2.2;
     }
-    if (this.jy > 0 || this.vy > 0) {
+    // Coming down under a parachute: the host decides the height.
+    const drop = me.crew?.foot?.[this.role]?.drop ?? 0;
+    if (drop > 0) {
+      this.jy = drop;
+      this.vy = 0;
+    } else if (this.jy > 0 || this.vy > 0) {
       this.vy -= 9.81 * 1.4 * dt;
       this.jy = Math.max(0, this.jy + this.vy * dt);
       if (this.jy === 0) this.vy = 0;

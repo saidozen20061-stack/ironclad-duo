@@ -10,6 +10,23 @@ const HINTS = {
     'Took damage? Stop and hold R to repair the worst module. Tracks out = you can\'t move.',
     `Talk to your gunner: hold ${keyLabel(settings.pttKey)} (or use open mic in Settings).`,
   ],
+  pilot: [
+    'You are the PILOT. W = more throttle. Roll down the runway, then pull the mouse back to lift off.',
+    'Mouse or A/D rolls, mouse pitches, Q/E rudder. Bank and pull to turn. Too slow and you stall!',
+    'Left click fires the forward guns, Space drops bombs, R fires rockets. Hold C to look around.',
+    'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
+    'About to go down? X bails both of you out with parachutes.',
+  ],
+  planeGunner: [
+    'You are the REAR GUNNER. Mouse aims, left click fires. Call out enemies on your six!',
+    'On bombers, F switches to the bomb sight looking straight down: left click drops, and tell the pilot to steer.',
+    'T switches thermal. Q pings a spot on the pilot\'s compass. X bails out.',
+  ],
+  planeSolo: [
+    'SOLO PLANE: W throttle up, mouse aims the plane, it flies where you point. Pull up past take-off speed to lift off.',
+    'Left click guns, Space bombs, R rockets. Hold right click for the cockpit view. The rear gun fires by itself.',
+    'Land on your own runway and stop to repair, refuel and rearm. X bails out.',
+  ],
   solo: [
     'SOLO: you drive and shoot. W/S throttle · A/D steer · Shift boost · Space brake.',
     'Mouse aims the turret where the camera looks. Left click fires. Hold right click for the gun sight.',

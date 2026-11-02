@@ -9,6 +9,7 @@ const DEFAULTS = {
   voiceMode: 'ptt',
   pttKey: 'KeyV',
   quality: 'medium',
+  autoQuality: true,
   // Optional TURN relay for players behind strict networks (see README).
   turnUrl: '',
   turnUser: '',

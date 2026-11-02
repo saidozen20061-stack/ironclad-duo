@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { TANKS, UNITS, FOOT } from '../../../shared/constants.js';
-import { POINTS, groundAt, riverZ, RIVER_HALF_WIDTH, PLAY_LIMIT } from '../../../shared/map.js';
+import { PLANES } from '../../../shared/planes.js';
+import { planeViewFor } from './planeViews.js';
+import { POINTS, groundAt, riverZ, RIVER_HALF_WIDTH, PLAY_LIMIT, inAirfield } from '../../../shared/map.js';
 import { PROPS, TREE_NOISE, setFortress } from '../../../shared/props.js';
 import { net } from '../net.js';
 import { voice } from '../voice.js';
@@ -30,6 +32,7 @@ const isWorldView = (v) => v instanceof GunnerView || !!v.isFoot;
 // and drives the role-specific view (driver cockpit or gunner sight).
 export class MatchClient {
   constructor({ role, tank, crew, info, onPause }) {
+    this.isMatch = true;
     this.role = role;
     this.tank = tank;
     this.crew = crew ?? { id: 0, team: 'blue', tank };
@@ -117,20 +120,22 @@ export class MatchClient {
     // Fixed fire sources (burning wrecks) for crackle audio — the driver has no props view.
     this.fires = PROPS.filter((p) => p.type === 'wreck' && p.burning);
 
-    this.sound = new SoundScape(role);
+    const planeSpec = PLANES[tank];
+    this.sound = new SoundScape(planeSpec ? 'gunner' : role); // no steel hull around a pilot
+    if (planeSpec) this.sound.buildPlane(planeSpec);
     if (this.war) this.war.sound = this.sound;
     this.distantT = 3;
     this.lastReload = 0;
-    showTutorial(role, this.hud);
+    showTutorial(planeSpec ? (role === 'solo' ? 'planeSolo' : role === 'gunner' ? 'planeGunner' : 'pilot') : role, this.hud);
 
     // Tank destroyed: both crew members choose between waiting for a tank and bailing out.
     this.choiceEl = document.createElement('div');
     this.choiceEl.className = 'bail-choice';
     this.choiceEl.innerHTML = `
-      <h2>TANK DESTROYED</h2>
-      <p>${role === 'solo' ? 'Wait for a new tank, or bail out and fight on.' : "Pick together. If you disagree, the driver's choice wins."}</p>
+      <h2>${planeSpec ? 'PLANE' : 'TANK'} DESTROYED</h2>
+      <p>${role === 'solo' ? `Wait for a new ${planeSpec ? 'plane' : 'tank'}, or bail out and fight on.` : "Pick together. If you disagree, the driver's choice wins."}</p>
       <div class="bail-opts">
-        <button data-pick="tank"><b>1</b>RESPAWN WITH TANK<small>New tank at Blue base after 15 s</small></button>
+        <button data-pick="tank"><b>1</b>RESPAWN WITH ${planeSpec ? 'PLANE' : 'TANK'}<small>New ${planeSpec ? 'plane at the airfield' : 'tank at base'} after 15 s</small></button>
         <button data-pick="foot"><b>2</b>GO ON FOOT<small>Bail out next to the wreck and keep fighting</small></button>
       </div>
       <div class="bail-timer"><i></i></div>
@@ -181,7 +186,11 @@ export class MatchClient {
   makeTankView() {
     const tank = this.tank;
     let v;
-    if (this.solo) {
+    if (PLANES[tank]) {
+      this.ensureWorld();
+      v = planeViewFor(this.role, { world: this.world, units: this.units, tank, hud: this.hud, keys: this.keys });
+      v.deadProps = this.props.dead;
+    } else if (this.solo) {
       v = new SoloView({ world: this.world, units: this.units, tank, hud: this.hud, keys: this.keys });
       v.deadProps = this.props.dead;
     } else if (this.role === 'gunner') {
@@ -246,7 +255,7 @@ export class MatchClient {
       // Enemy names only when spotted, never through a hill.
       if (u.team !== this.team && !(this.spotter ??= new Spotter()).sees(u, cam.position, 450, this.props?.dead)) continue;
       const m = this.units.get(u.id);
-      v.set(u.x, (m?.pose.y ?? 0) + (TANKS[u.type] ? TANKS[u.type].size.height + 1.6 : 2.3), u.z).project(cam);
+      v.set(u.x, (m?.pose.y ?? 0) + (TANKS[u.type] ?? PLANES[u.type] ? (TANKS[u.type] ?? PLANES[u.type]).size.height + 1.6 : 2.3), u.z).project(cam);
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;
       seen.add(u.id);
       let el = this.tagEls.get(u.id);
@@ -296,7 +305,7 @@ export class MatchClient {
     const mine = crew.picks?.[this.solo ? 'driver' : this.role];
     const other = crew.picks?.[this.role === 'driver' ? 'gunner' : 'driver'];
     for (const b of this.choiceEl.querySelectorAll('button')) b.classList.toggle('sel', b.dataset.pick === mine);
-    const name = (p) => (p === 'foot' ? 'GO ON FOOT' : p === 'tank' ? 'RESPAWN WITH TANK' : '…');
+    const name = (p) => (p === 'foot' ? 'GO ON FOOT' : p === 'tank' ? `RESPAWN WITH ${PLANES[this.tank] ? 'PLANE' : 'TANK'}` : '…');
     this.choiceEl.querySelector('.bail-picks').innerHTML = this.solo
       ? `You: <b>${name(mine)}</b> · ${Math.ceil(crew.left)}s`
       : `You: <b>${name(mine)}</b> · ${this.role === 'driver' ? 'Gunner' : 'Driver'}: <b>${name(other)}</b> · ${Math.ceil(crew.left)}s`;
@@ -352,7 +361,9 @@ export class MatchClient {
         if (['he', 'heavy', 'rocket', 'grenade'].includes(ev.kind)) this.view.thermalFlash?.(ev.x, ev.y, ev.z, ev.kind === 'heavy' ? 1 : 0.5);
         if (this.fx) {
           this.fx.removeProjectile(ev.id);
-          this.fx.impact(ev);
+          // A bomb hitting the ground is the same thing as a heavy shell landing.
+          if (ev.kind === 'bomb' && ev.r !== 'armor' && this.war && isWorldView(this.view)) this.war.impact({ x: ev.x, y: ev.y, z: ev.z, size: 1.1 }, this.view.camera.position);
+          else this.fx.impact(ev);
         }
         if (ev.u === myId && driver) {
           const small = ev.kind === 'mg' || ev.kind === 'rifle';
@@ -370,7 +381,7 @@ export class MatchClient {
       case 'mod':
       case 'fixed': {
         if (ev.u !== myId || this.view.isFoot) break;
-        const name = { tracks: 'TRACKS', engine: 'ENGINE', turret: 'TURRET RING', gun: 'GUN', radar: 'RADAR', fire: 'ENGINE' }[ev.m] ?? ev.m;
+        const name = { tracks: 'TRACKS', engine: 'ENGINE', turret: 'TURRET RING', gun: 'GUN', radar: 'RADAR', fire: 'ENGINE', engine2: 'ENGINE 2', wingL: 'LEFT WING', wingR: 'RIGHT WING', tail: 'TAIL', fuel: 'FUEL TANK', gear: 'LANDING GEAR', guns: 'GUNS', crew: 'REAR GUNNER' }[ev.m] ?? ev.m;
         const text = ev.k === 'fixed' ? `${name} REPAIRED` : ev.m === 'fire' ? 'ENGINE FIRE!' : `${name} ${ev.state === 'destroyed' ? 'DESTROYED' : 'DAMAGED'}`;
         if (gunner) this.view.showBanner(text);
         else {
@@ -398,6 +409,18 @@ export class MatchClient {
           this.banner('ARTILLERY INCOMING!');
         }
         this.sound.plane?.();
+        break;
+      case 'six':
+        if (ev.u === myId) {
+          this.banner('ENEMY ON OUR SIX!');
+          this.sound.tone({ freq: 660, dur: 0.14, gain: 0.08, type: 'square', bus: this.sound.out });
+        }
+        break;
+      case 'wing':
+        if (ev.u === myId) this.banner('WING GONE! BAIL OUT! (X)');
+        break;
+      case 'flak':
+        this.war?.flakAt(ev);
         break;
       case 'inc':
         if (this.war && this.view.camera) this.war.incoming(ev, this.view.camera.position);
@@ -435,13 +458,13 @@ export class MatchClient {
       }
       case 'k': {
         const latest = this.buffer.latest?.units.get(ev.u);
-        if (latest && TANKS[ev.type]) {
+        if (latest && (TANKS[ev.type] || PLANES[ev.type])) {
           this.sound.explosion(latest, 1);
           this.view.thermalFlash?.(latest.x, groundAt(latest.x, latest.z) + 1.5, latest.z, 1.2);
         }
         if (latest && this.fx) {
           const m = this.units.get(ev.u);
-          this.fx.explosion(new THREE.Vector3(latest.x, (m?.pose.y ?? 0) + 1.5, latest.z), 6);
+          this.fx.explosion(new THREE.Vector3(latest.x, PLANES[ev.type] ? latest.y : (m?.pose.y ?? 0) + 1.5, latest.z), 6);
         }
         if (ev.by === myId && gunner && ev.u !== myId) {
           this.view.showHit(true);
@@ -513,7 +536,7 @@ export class MatchClient {
   }
 
   unitName(team, type) {
-    return `${team === 'blue' ? 'Blue' : 'Red'} ${TANKS[type]?.class ?? UNITS[type]?.class ?? type}`;
+    return `${team === 'blue' ? 'Blue' : 'Red'} ${TANKS[type]?.class ?? PLANES[type]?.class ?? UNITS[type]?.class ?? type}`;
   }
 
   addFeed(ev) {
@@ -535,9 +558,10 @@ export class MatchClient {
       const victimUnit = units?.get(ev.u);
       const killerUnit = units?.get(ev.by);
       const crewLabel = (u) => (u?.crew != null ? this.crewName(u.crew) : null);
-      const victim = ev.u === myId ? 'Our tank' : ours(ev.u) ? 'Our crewman' : crewLabel(victimUnit) ?? this.unitName(ev.team, ev.type);
+      const vehicle = PLANES[this.tank] ? 'Our plane' : 'Our tank';
+      const victim = ev.u === myId ? vehicle : ours(ev.u) ? 'Our crewman' : crewLabel(victimUnit) ?? this.unitName(ev.team, ev.type);
       const side = killerUnit?.team === ev.team ? 'Friendly fire' : killerUnit?.team === this.team ? 'Our side' : 'Enemy fire';
-      const killer = ev.by === myId ? 'Our tank' : ours(ev.by) ? 'Our crew' : crewLabel(killerUnit) ?? side;
+      const killer = ev.by === myId ? vehicle : ours(ev.by) ? 'Our crew' : crewLabel(killerUnit) ?? side;
       html = `<span>${escapeHtml(killer)}</span> ▸ <b>${escapeHtml(victim)}</b>`;
     }
     const row = document.createElement('div');
@@ -612,9 +636,14 @@ export class MatchClient {
       const l = this.sound.listener;
       if (worldView) Object.assign(l, { x: this.view.camera.position.x, y: this.view.camera.position.y, z: this.view.camera.position.z });
       else Object.assign(l, { x: self.x, y: groundAt(self.x, self.z) + 2, z: self.z });
-      const spec = TANKS[this.tank];
+      const spec = TANKS[this.tank] ?? PLANES[this.tank];
       const th = this.me.drive?.th ?? 0;
-      this.sound.updateEngine(dt, Math.min(1, Math.abs(this.me.v) / spec.maxSpeed), this.paused ? 0 : th, !this.me.dead && (this.me.mods?.engine ?? 1) > 0, spec.maxSpeed);
+      if (TANKS[this.tank]) this.sound.updateEngine(dt, Math.min(1, Math.abs(this.me.v) / spec.maxSpeed), this.paused ? 0 : th, !this.me.dead && (this.me.mods?.engine ?? 1) > 0, spec.maxSpeed);
+      else if (this.view.isFoot) this.sound.updatePlane(dt, { th: 0, speedFrac: 0, dive: 0, alive: false, stall: false });
+      else {
+        const pl = this.me.pl ?? {};
+        this.sound.updatePlane(dt, { th: pl.th ?? 0, speedFrac: Math.min(1.4, Math.abs(this.me.v) / spec.maxSpeed), dive: Math.max(0, -(pl.vy ?? 0) / Math.max(10, Math.abs(this.me.v))), alive: !this.me.dead && (this.me.mods?.engine ?? 1) > 0, stall: !!pl.stall });
+      }
       // World ambience around the tank.
       let fire = Infinity;
       for (const f of this.fires) fire = Math.min(fire, Math.hypot(f.x - self.x, f.z - self.z));
@@ -622,7 +651,7 @@ export class MatchClient {
       this.sound.updateAmbient(dt, { river: Math.max(0, Math.abs(self.z - riverZ(self.x)) - RIVER_HALF_WIDTH), fire, trees });
       // Edge of the battlefield warning.
       const edge = Math.max(Math.abs(self.x), Math.abs(self.z));
-      this.edgeEl.classList.toggle('show', !self.dead && edge > PLAY_LIMIT - 45 && !nearGarage(self.x, self.z, this.team));
+      this.edgeEl.classList.toggle('show', !self.dead && !this.view.isPlane && edge > PLAY_LIMIT - 45 && !nearGarage(self.x, self.z, this.team) && !inAirfield(self.x, self.z, 30));
     }
     this.sound.updateRadio(dt);
     // The driver has no view of the sky but still hears the distant war.
@@ -643,9 +672,10 @@ export class MatchClient {
       if (this.smokeT <= 0) {
         this.smokeT = 0.25;
         for (const u of states.values()) {
-          if (!TANKS[u.type] || (u.hp > 0.5 && !u.dead)) continue;
+          const flying = PLANES[u.type];
+          if ((!TANKS[u.type] && !flying) || (u.hp > 0.6 && !u.dead)) continue;
           if (Math.hypot(u.x - cam.x, u.z - cam.z) > 500) continue;
-          if (Math.random() < (u.dead ? 0.9 : 1 - u.hp)) this.fx.smokePuff(u.x, (this.units.get(u.id)?.pose.y ?? 0) + 2, u.z, u.dead);
+          if (Math.random() < (u.dead ? 0.9 : 1 - u.hp)) this.fx.smokePuff(u.x, flying ? u.y : (this.units.get(u.id)?.pose.y ?? 0) + 2, u.z, u.dead);
         }
       }
       this.tracks.update(dt, states, cam);

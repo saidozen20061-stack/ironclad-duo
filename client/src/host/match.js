@@ -2,6 +2,8 @@ import { Vector3 } from 'three';
 import { DIFFICULTY, TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from '../../../shared/constants.js';
 import { footBlocked, nearGarage } from '../../../shared/foot.js';
 import { WarDirector } from './war.js';
+import { PlaneSystem } from './planes.js';
+import { PLANES } from '../../../shared/planes.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
 import { tankPose, muzzlePose, planePitchAlong, wrapAngle } from '../../../shared/tank.js';
@@ -150,6 +152,7 @@ export class Match {
     setFortress(this.mode === 'fortress');
     if (this.mode === 'fortress') buildNav();
 
+    this.planes = new PlaneSystem(this);
     // Player crews, spread out side by side at their team's base.
     this.crews = new Map();
     const infos = room.crews ?? [{ id: 0, team: 'blue', tank: room.tank ?? 'medium' }];
@@ -159,7 +162,8 @@ export class Match {
       const fwd = team === 'blue' ? 1 : -1;
       mine.forEach((info, k) => {
         const x = b.x + (k - (mine.length - 1) / 2) * 16;
-        const t = this.addTank(new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
+        // Plane crews start on their airfield's runway instead.
+        const t = this.addTank(PLANES[info.tank] ? this.planes.createPlayerPlane(team, info.tank, k) : new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
         t.crewId = info.id;
         this.crews.set(info.id, new Crew(info, t));
       });
@@ -229,6 +233,7 @@ export class Match {
       return;
     }
     if (c.bail.mode === 'foot') return this.onFootMessage(c, player.role, msg);
+    if (t.kind === 'plane') return this.planes.onMessage(c, player.role, msg, t);
     if (player.role === 'driver' && msg.t === 'drive') {
       t.drive.th = Math.max(-1, Math.min(1, Number(msg.th) || 0));
       t.drive.st = Math.max(-1, Math.min(1, Number(msg.st) || 0));
@@ -262,6 +267,8 @@ export class Match {
     this.tickNo++;
     for (const c of this.crews.values()) this.tickCrew(c);
     this.army.update(DT);
+    this.planes.updateSpawns();
+    this.planes.tick();
     this.modeTick?.();
     this.war.tick();
     // Remove NPC corpses / wrecks after a while.
@@ -283,7 +290,7 @@ export class Match {
         t.respawn();
         this.events.push({ k: 'spawn', u: t.id });
       }
-    } else {
+    } else if (t.kind !== 'plane') {
       this.driveTank(t);
       this.aimTurret(t);
       this.updateWeapons(t);
@@ -329,6 +336,33 @@ export class Match {
     b.picks = {};
   }
 
+  // Key X in a plane: both jump, the plane goes on without them.
+  bailFromPlane(c) {
+    const t = c.tank;
+    if (t.dead || t.grounded || t.kind !== 'plane') return;
+    this.damage(t, t.hp + 1, { owner: t.lastHitBy ?? -1 });
+    const b = c.bail;
+    b.foot = {};
+    const drop = Math.max(0, t.y - Math.max(groundAt(t.x, t.z), WATER_LEVEL));
+    for (const [role, side] of [['driver', 1], ['gunner', -1]]) {
+      if (!c.seats[role]) continue;
+      let x = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, t.x + side * 3)), z = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, t.z));
+      for (let k = 0; k < 8 && footBlocked(x, z, this.propDead); k++) {
+        x += Math.cos(k) * 10;
+        z += Math.sin(k) * 10;
+      }
+      const s = new CrewSoldier(role, x, z, t.h, c);
+      s.drop = drop;
+      s.jy = drop;
+      s.pose.y = groundAt(x, z) + drop;
+      b.foot[role] = s;
+      this.units.push(s);
+    }
+    t.respawnAt = Infinity;
+    b.mode = 'foot';
+    b.picks = {};
+  }
+
   onFootMessage(c, role, msg) {
     const s = c.bail.foot[role];
     if (msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) return this.setPing(c, msg.x, msg.z);
@@ -344,7 +378,8 @@ export class Match {
       }
       if (Number.isFinite(msg.h)) s.h = msg.h;
       if (Number.isFinite(msg.p)) s.gp = Math.max(-1.5, Math.min(1.5, msg.p));
-      s.jy = Math.max(0, Math.min(2, Number(msg.jy) || 0));
+      // Coming down under a parachute the host decides the height.
+      s.jy = s.drop > 0 ? s.drop : Math.max(0, Math.min(2, Number(msg.jy) || 0));
       s.ty = msg.crouch ? 1 : 0;
       s.spec.size.height = msg.crouch ? 1.2 : 1.8;
       s.pose.y = groundAt(s.x, s.z) + s.jy;
@@ -369,6 +404,12 @@ export class Match {
   }
 
   updateFoot(c) {
+    for (const s of Object.values(c.bail.foot)) {
+      if (!(s.drop > 0)) continue;
+      s.drop = Math.max(0, s.drop - 6.5 * DT);
+      s.jy = s.drop;
+      s.pose.y = groundAt(s.x, s.z) + s.drop;
+    }
     const r = FOOT.rifle;
     const crew = Object.values(c.bail.foot);
     for (const s of crew) {
@@ -653,7 +694,7 @@ export class Match {
       vx: dir.x * p.speed,
       vy: dir.y * p.speed,
       vz: dir.z * p.speed,
-      life: p.kind === 'rocket' ? 2 : 4,
+      life: p.life ?? (p.kind === 'rocket' ? 2 : 4),
     };
     this.projectiles.push(proj);
     this.events.push({ k: 'f', id: proj.id, o: t.id, kind: p.kind, x: r2(pos.x), y: r2(pos.y), z: r2(pos.z), vx: r2(proj.vx), vy: r2(proj.vy), vz: r2(proj.vz) });
@@ -674,7 +715,7 @@ export class Match {
       p.x = x1;
       p.y = y1;
       p.z = z1;
-      if (p.life > 0 && Math.abs(p.x) < 800 && Math.abs(p.z) < 800) keep.push(p);
+      if (p.life > 0 && Math.abs(p.x) < 1500 && Math.abs(p.z) < 1500) keep.push(p);
     }
     this.projectiles = keep;
   }
@@ -687,6 +728,16 @@ export class Match {
 
     for (const u of this.units) {
       if (u.dead || u.id === p.owner) continue;
+      if (u.kind === 'plane' && p.kind !== 'bomb') {
+        const ax = u.x - x0, ay = u.y - y0, az = u.z - z0;
+        const ta = Math.max(0, Math.min(1, (ax * dx + ay * dy + az * dz) / (len * len)));
+        const bx = ax - dx * ta, by = ay - dy * ta, bz = az - dz * ta;
+        if (bx * bx + by * by + bz * bz > (u.radius + 1) ** 2) continue;
+        const h = this.planes.hitTest(u, x0, y0, z0, dx, dy, dz);
+        if (h && (!best || h.t < best.t)) best = h;
+        continue;
+      }
+      if (u.kind === 'plane') continue;
       // Broad phase: distance from unit centre to segment.
       const cx = u.x - x0, cy = u.pose.y + 1 - y0, cz = u.z - z0;
       const t = Math.max(0, Math.min(1, (cx * dx + cy * dy + cz * dz) / (len * len)));
@@ -776,6 +827,15 @@ export class Match {
     if (hit.unit) {
       const u = hit.unit;
       ev.u = u.id;
+      if (u.kind === 'plane') {
+        const dmg = p.damage * u.spec.armor.side;
+        ev.dmg = Math.round(dmg);
+        u.lastHitBy = p.owner;
+        this.planes.damageZone(u, hit.zone, dmg);
+        this.damage(u, dmg, p);
+        this.events.push(ev);
+        return;
+      }
       const kinetic = p.kind !== 'he' && p.kind !== 'rocket';
       // Glancing hits on angled armor can ricochet (infantry have no armor to bounce off).
       if (u.kind !== 'inf' && kinetic && p.kind !== 'mg' && p.kind !== 'rifle' && hit.face !== 'top' && hit.cosInc < 0.3 && Math.random() < 0.75) {
@@ -848,7 +908,7 @@ export class Match {
     if (u.hp <= 0) {
       u.hp = 0;
       u.dead = true;
-      u.v = 0;
+      if (u.kind !== 'plane') u.v = 0; // a dead plane still falls out of the sky
       u.diedAt = this.time;
       const victimCrew = this.crewOf(u);
       if (victimCrew) victimCrew.stats.deaths++;
@@ -879,7 +939,7 @@ export class Match {
       const weight = { blue: 0, red: 0 };
       const crewsInside = new Set();
       for (const u of this.units) {
-        if (u.dead || u.kind === 'atgun') continue;
+        if (u.dead || u.kind === 'atgun' || u.kind === 'plane') continue;
         if (Math.abs(u.x - def.x) > def.r || Math.abs(u.z - def.z) > def.r) continue;
         if (Math.hypot(u.x - def.x, u.z - def.z) > def.r) continue;
         weight[u.team] += u.player ? MATCH.capWeight.player : MATCH.capWeight[u.kind] ?? 1;
@@ -945,7 +1005,7 @@ export class Match {
     if (b.mode === 'foot') {
       out.foot = {};
       for (const [role, s] of Object.entries(b.foot)) {
-        out.foot[role] = { id: s.id, hp: Math.round(s.hp), dead: s.dead, x: r2(s.x), z: r2(s.z), mag: s.mag, res: s.reserve, gren: s.grenades, rl: r2(s.reloading) };
+        out.foot[role] = { drop: s.drop > 0 ? r2(s.drop) : 0, id: s.id, hp: Math.round(s.hp), dead: s.dead, x: r2(s.x), z: r2(s.z), mag: s.mag, res: s.reserve, gren: s.grenades, rl: r2(s.reloading) };
       }
     }
     return out;
@@ -975,6 +1035,7 @@ export class Match {
       ping: c.ping && { id: c.ping.id, x: r2(c.ping.x), z: r2(c.ping.z), age: r2(this.time - c.ping.t0) },
       pingCd: r2(Math.max(0, c.pingReadyAt - this.time)),
       crew: this.crewSnapshot(c),
+      ...(t.kind === 'plane' ? { pl: { y: r2(t.y), th: r2(t.throttle), fuel: r2(t.fuel), bombs: t.bombs, rockets: t.rockets, ammo: Math.round(t.ammo), rear: Math.round(t.rearAmmo), stall: t.stall, ground: t.grounded, edge: t.warnEdge, low: t.warnLow, six: t.six, vy: r2(t.vy) } } : {}),
     };
   }
 
@@ -991,6 +1052,7 @@ export class Match {
     const u = this.units.map((u) => {
       const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], Math.round(u.x * 10), Math.round(u.z * 10), Math.round(u.h * 1000), Math.round(u.ty * 1000), Math.round(u.gp * 1000), Math.round((u.hp / u.spec.hp) * 100), u.dead ? 1 : 0, u.crewId != null ? u.crewId + 1 : 0];
       if (u.crew) a.push(Math.round(u.jy * 100));
+      else if (u.kind === 'plane') a.push(Math.round(u.y * 100));
       return a;
     });
     const crews = {};

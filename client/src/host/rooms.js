@@ -1,3 +1,4 @@
+import { COOP_PLANE_IDS } from '../../../shared/planes.js';
 import { ROOM_CODE_LETTERS, ROOM_CODE_LENGTH, MAX_NAME_LENGTH, ROLES, TANK_IDS, MAX_CREWS, MAX_PLAYERS, MODES, KILL_LIMITS, DIFFICULTY } from '../../../shared/constants.js';
 
 // Lobby logic, run inside the HOST player's browser. A Player's transport is just a
@@ -39,6 +40,7 @@ export class Room {
     this.mode = 'flags';
     this.killLimit = 20;
     this.difficulty = 'easy';
+    this.airStart = false;
     this.phase = 'lobby'; // 'lobby' | 'match'
     this.match = null;
   }
@@ -118,6 +120,7 @@ export class Room {
       mode: this.mode,
       killLimit: this.killLimit,
       difficulty: this.difficulty,
+      airStart: this.airStart,
       crews: this.crews,
       players: this.players.map((p) => ({ id: p.id, name: p.name, crew: p.crew, role: p.role, ready: p.ready })),
     };
@@ -153,7 +156,7 @@ export class Room {
 
   setCrewTank(player, crewId, tank) {
     const crew = this.crews[crewId];
-    if (this.phase !== 'lobby' || !crew || !TANK_IDS.includes(tank)) return;
+    if (this.phase !== 'lobby' || !crew || !(TANK_IDS.includes(tank) || COOP_PLANE_IDS.includes(tank))) return;
     if (player.crew !== crewId && !this.isHost(player)) return;
     crew.tank = tank;
     this.unready(crew);
@@ -174,11 +177,12 @@ export class Room {
     this.sync();
   }
 
-  setMode(player, mode, killLimit, difficulty) {
+  setMode(player, mode, killLimit, difficulty, airStart) {
     if (this.phase !== 'lobby' || !this.isHost(player)) return;
     if (mode in MODES) this.mode = mode;
     if (KILL_LIMITS.includes(killLimit)) this.killLimit = killLimit;
     if (difficulty in DIFFICULTY) this.difficulty = difficulty;
+    if (typeof airStart === 'boolean') this.airStart = airStart;
     this.sync();
   }
 
@@ -207,7 +211,7 @@ export class Room {
     if (problem) return player.send({ t: 'error', msg: problem });
     const crews = this.occupied().map((c) => ({ ...c, team: this.mode === 'fortress' ? 'blue' : c.team }));
     this.phase = 'match';
-    this.matchInfo = { mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, crews };
+    this.matchInfo = { mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, airStart: this.airStart, crews };
     this.manager.onMatchStart?.(this);
     this.broadcast({
       t: 'matchStart',
@@ -304,7 +308,7 @@ export class RoomManager {
         room?.autoBalance(player);
         return true;
       case 'mode':
-        room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty);
+        room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty, msg.airStart);
         return true;
       case 'ready':
         room?.setReady(player, msg.ready);

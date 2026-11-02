@@ -9,6 +9,7 @@ import { voice } from './voice.js';
 import { MatchClient } from './game/matchClient.js';
 import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../shared/constants.js';
 import { PAINT } from './models/paint.js';
+import { PLANES, PLANE_IDS } from '../../shared/planes.js';
 
 const menuScene = new MenuScene();
 setActiveView(menuScene);
@@ -60,18 +61,21 @@ $('#btn-join-back').addEventListener('click', () => backScreen());
 $('#btn-settings').addEventListener('click', () => showScreen('settings'));
 
 // ---------- Solo setup: tank, camo, mode; the match runs locally ----------
-const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy' };
+const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy', airStart: false };
 const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
 function renderSolo() {
   const pick = (root, items, cur, key) => {
     $(root).innerHTML = items.map(([id, html]) => `<button data-${key}="${id}" class="${id === cur ? 'sel' : ''}">${html}</button>`).join('');
   };
   pick('#solo-tanks', TANK_IDS.map((id) => [id, `${TANKS[id].name} <small>${TANKS[id].class}</small>`]), solo.tank, 'tank');
-  pick('#solo-camo', Object.entries(PAINT).map(([id, p]) => [id, `<i class="swatch" style="background:linear-gradient(135deg, ${hex(p.colors[0])} 50%, ${hex(p.colors[1])} 50%)"></i>${p.name}`]), solo.paint, 'paint');
+  pick('#solo-planes', PLANE_IDS.map((id) => [id, `${PLANES[id].name} <small>${PLANES[id].class}</small>`]), solo.tank, 'tank');
+  // Tanks wear tank paints, planes their own schemes.
+  const flying = !!PLANES[solo.tank];
+  pick('#solo-camo', Object.entries(PAINT).filter(([id, p]) => (flying ? p.plane && (!p.for || p.for === solo.tank) : !p.plane)).map(([id, p]) => [id, `<i class="swatch" style="background:linear-gradient(135deg, ${hex(p.colors[0])} 50%, ${hex(p.colors[1])} 50%)"></i>${p.name}`]), solo.paint, 'paint');
   pick('#solo-modes', Object.entries(MODES).map(([id, m]) => [id, m.name]), solo.mode, 'mode');
   $('#solo-kills').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small${k === solo.killLimit ? ' on' : ''}" data-kills="${k}">${k}</button>`).join('')}`;
   $('#solo-kills').style.display = solo.mode === 'tdm' ? '' : 'none';
-  $('#solo-diff').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small${id === solo.difficulty ? ' on' : ''}" data-diff="${id}">${d.name}</button>`).join('')}`;
+  $('#solo-diff').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small${id === solo.difficulty ? ' on' : ''}" data-diff="${id}">${d.name}</button>`).join('')}${flying ? `<button class="btn small${solo.airStart ? ' on' : ''}" data-air="1">Air start</button>` : ''}`;
   menuScene.setShowcase(solo.tank, solo.paint);
   previewCaption('#preview-solo', solo.tank, solo.paint);
 }
@@ -83,6 +87,7 @@ $('#screen-solo').addEventListener('click', (e) => {
   else if (b.dataset.mode) solo.mode = b.dataset.mode;
   else if (b.dataset.kills) solo.killLimit = Number(b.dataset.kills);
   else if (b.dataset.diff) solo.difficulty = b.dataset.diff;
+  else if (b.dataset.air) solo.airStart = !solo.airStart;
   else return;
   renderSolo();
 });
@@ -103,10 +108,10 @@ $('#btn-quit-back').addEventListener('click', () => goMenu());
 
 // Name and stats over the big vehicle preview.
 function previewCaption(root, id, paint) {
-  const t = TANKS[id];
+  const t = TANKS[id] ?? PLANES[id];
   if (!t) return;
   const bars = Object.entries(t.stats ?? {}).map(([k, v]) => `<label>${k}</label><div class="bar"><i style="width:${v * 20}%"></i></div>`).join('');
-  $(`${root} .preview-cap`).innerHTML = `<b>${t.name}</b><small>${t.class}${paint ? ` · ${PAINT[paint]?.name ?? ''}` : ''}</small><div class="bars">${bars}</div>`;
+  $(`${root} .preview-cap`).innerHTML = `<b>${t.name}</b><small>${t.class}${paint ? ` · ${PAINT[paint]?.name ?? ''}` : ''}${t.inspired ? `<br>Inspired by the ${t.inspired}` : ''}</small><div class="bars">${bars}</div>`;
 }
 
 onScreenChange((name) => {

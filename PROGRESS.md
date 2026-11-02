@@ -8,5 +8,5 @@ Each finished phase is committed, pushed and live.
 - [x] Phase 3: thermal view (T)
 - [x] Phase 3.5: turntable tank preview
 - [x] Phase 4: war atmosphere
-- [ ] Phase 5: planes
+- [x] Phase 5: planes (host/planes.js, models/planes.js, game/planeViews.js)
 - [ ] Final: performance check, auto quality, summary

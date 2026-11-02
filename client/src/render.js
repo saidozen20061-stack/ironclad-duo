@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { quality, onSettingsChange } from './settings.js';
+import { quality, onSettingsChange, settings, saveSettings } from './settings.js';
 
 // One renderer for the whole app; scenes/cameras swap in and out.
 export const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('scene'), antialias: true, powerPreference: 'high-performance' });
@@ -15,9 +15,40 @@ export function onResize(fn) {
   return () => resizeHandlers.delete(fn);
 }
 
+// Automatic detail: during a match, a low frame rate first lowers the render resolution
+// and, if that isn't enough, drops the graphics preset one step (kept for the next match).
+let autoScale = 1;
+let autoFrames = 0;
+let autoTime = 0;
+let autoGood = 0;
+function autoQuality(dt) {
+  if (!active?.isMatch || settings.autoQuality === false || document.hidden || dt >= 0.1) return;
+  autoFrames++;
+  autoTime += dt;
+  if (autoTime < 3) return;
+  const fps = autoFrames / autoTime;
+  autoFrames = 0;
+  autoTime = 0;
+  if (fps < 32) {
+    autoGood = 0;
+    if (autoScale > 0.56) {
+      autoScale -= 0.15;
+      applyQuality();
+    } else if (fps < 26 && settings.quality !== 'low') {
+      settings.quality = settings.quality === 'high' ? 'medium' : 'low';
+      autoScale = 0.85;
+      saveSettings();
+    }
+  } else if (fps > 57 && autoScale < 1 && ++autoGood >= 3) {
+    autoGood = 0;
+    autoScale = Math.min(1, autoScale + 0.15);
+    applyQuality();
+  }
+}
+
 function applyQuality() {
   const q = quality();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * q.pixelRatio);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * q.pixelRatio * autoScale);
   renderer.shadowMap.enabled = q.shadows;
   resize();
 }
@@ -82,7 +113,7 @@ function updateStats(dt) {
     `draw calls ${info.render.calls} · triangles ${(info.render.triangles / 1000).toFixed(0)}k`,
     `scene objects ${objects} · instances ${instanced}`,
     `geometries ${info.memory.geometries} · textures ${info.memory.textures} · programs ${info.programs?.length ?? 0}`,
-    `pixel ratio ${renderer.getPixelRatio().toFixed(2)} · ${renderer.domElement.width}×${renderer.domElement.height}`,
+    `pixel ratio ${renderer.getPixelRatio().toFixed(2)} (auto ×${autoScale.toFixed(2)}, ${settings.quality}) · ${renderer.domElement.width}×${renderer.domElement.height}`,
     ...(active?.debugStats?.() ?? []),
   ];
   stats.textContent = lines.join('\n');
@@ -98,6 +129,7 @@ renderer.setAnimationLoop(() => {
   if (active) {
     active.update(dt);
     active.render(renderer);
+    autoQuality(dt);
   }
   if (statsOn) updateStats(dt);
 });

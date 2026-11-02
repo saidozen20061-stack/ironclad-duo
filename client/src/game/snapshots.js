@@ -1,5 +1,6 @@
 import { wrapAngle } from '../../../shared/tank.js';
 import { TYPE_IDS, TANKS } from '../../../shared/constants.js';
+import { PLANES } from '../../../shared/planes.js';
 
 // Rebuilds the world from the host's delta snapshots and returns smoothly interpolated
 // unit states slightly in the past. Each unit keeps its own short history, so units that
@@ -98,7 +99,7 @@ export class SnapshotBuffer {
       const [ta, ua] = s[i - 1];
       const [tb, ub] = s[i];
       // Snap instead of sliding across the map on respawn.
-      if (ua.dead !== ub.dead || Math.hypot(ub.x - ua.x, ub.z - ua.z) > 30) {
+      if ((ua.dead !== ub.dead && !PLANES[ub.type]) || Math.hypot(ub.x - ua.x, ub.z - ua.z) > (PLANES[ub.type] ? 90 : 30)) {
         out.set(id, ub);
         continue;
       }
@@ -110,7 +111,7 @@ export class SnapshotBuffer {
         y: ua.y + (ub.y - ua.y) * f,
         h: ua.h + wrapAngle(ub.h - ua.h) * f,
         // Infantry `ty` is a pose code, not an angle: never blend it.
-        ty: TANKS[ub.type] ? ua.ty + wrapAngle(ub.ty - ua.ty) * f : ub.ty,
+        ty: TANKS[ub.type] || PLANES[ub.type] ? ua.ty + wrapAngle(ub.ty - ua.ty) * f : ub.ty,
         gp: ua.gp + (ub.gp - ua.gp) * f,
       });
     }

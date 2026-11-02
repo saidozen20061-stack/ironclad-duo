@@ -19,6 +19,15 @@ export const BASES = {
   red: { x: 0, z: 640, heading: Math.PI },
 };
 
+// One airfield per team, beside its base. Runway along X, planes start at startX.
+export const AIRFIELDS = {
+  blue: { team: 'blue', x: -345, z: -660, len: 400, width: 34, startX: -525, dir: 1, heading: Math.PI / 2 },
+  red: { team: 'red', x: 345, z: 660, len: 400, width: 34, startX: 525, dir: -1, heading: -Math.PI / 2 },
+};
+export const onRunway = (x, z) => Object.values(AIRFIELDS).some((f) => Math.abs(x - f.x) < f.len / 2 + 4 && Math.abs(z - f.z) < f.width / 2 + 4);
+// The whole field, with room for the apron and buildings beside the runway.
+export const inAirfield = (x, z, pad = 0) => Object.values(AIRFIELDS).some((f) => Math.abs(x - f.x) < f.len / 2 + 25 + pad && Math.abs(z - f.z) < f.width / 2 + 55 + pad);
+
 export const POINTS = [
   { id: 'A', name: 'Ruined Village', x: -400, z: -175, r: 42 },
   { id: 'B', name: 'Hill 112', x: 20, z: 165, r: 38 },
@@ -92,6 +101,14 @@ function computeHeight(x, z) {
   h += e * e * 0.006 + e * 0.2;
   h = Math.max(h, WATER_LEVEL + 1.6);
 
+  // Airfields are levelled, including where the edge mountains would start to rise.
+  for (const f of Object.values(AIRFIELDS)) {
+    const dx = Math.max(0, Math.abs(x - f.x) - (f.len / 2 + 30));
+    const dz = Math.max(0, Math.abs(z - f.z) - (f.width / 2 + 60));
+    const d = Math.hypot(dx, dz);
+    if (d < 45) h = lerp(f.h, h, smoothstep(0, 45, d));
+  }
+
   // Bridge approaches: ramp the banks to deck height so the road meets the bridge.
   for (const b of BRIDGES) {
     const dx = Math.abs(x - b.x);
@@ -113,6 +130,7 @@ function computeHeight(x, z) {
 }
 
 for (const f of FLATS) f.h = baseHeight(f.x, f.z);
+for (const f of Object.values(AIRFIELDS)) f.h = Math.max(baseHeight(f.x, f.z), WATER_LEVEL + 4);
 
 // ---- Height grid ----
 export const heights = new Float32Array((GRID + 1) * (GRID + 1));
