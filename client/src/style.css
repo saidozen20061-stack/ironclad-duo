@@ -116,6 +116,11 @@ input, select {
 .toggle { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .toggle input { accent-color: var(--accent); }
 .keybind { min-width: 120px; }
+.controls-list { max-height: 62vh; overflow-y: auto; padding-right: 8px; margin-bottom: 14px; }
+.controls-list h3 { margin: 14px 0 6px; }
+.controls-grid { grid-template-columns: 1fr 210px; gap: 6px 16px; margin: 0; }
+.controls-grid .keybind { width: 100%; }
+.controls-actions { gap: 10px; }
 .row.turn input { flex: 1 1 120px; min-width: 0; font-size: 14px; }
 .row.turn input:first-child { flex-basis: 100%; }
 .hint.small { font-size: 13px; margin: -8px 0 12px; }

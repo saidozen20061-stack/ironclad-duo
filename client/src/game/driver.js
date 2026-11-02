@@ -1,3 +1,4 @@
+import { keyName } from '../keybinds.js';
 import * as THREE from 'three';
 import { TANKS } from '../../../shared/constants.js';
 import { net } from '../net.js';
@@ -54,43 +55,31 @@ export class DriverView {
     keys.onChange = () => !this.paused && this.sendInput();
 
     // Looking around inside the hull: hold right mouse, or toggle free look with L.
-    this.look = { yaw: 0, pitch: 0, holding: false, free: false };
-    this.onMouseDown = (e) => {
-      if (this.paused || e.target !== document.getElementById('scene')) return;
-      if (e.button === 2) this.look.holding = true;
-    };
-    this.onMouseUp = (e) => {
-      if (e.button === 2) this.look.holding = false;
-    };
+    this.look = { yaw: 0, pitch: 0, free: false };
     this.onMouseMove = (e) => {
-      if (this.paused || !(this.look.holding || this.look.free)) return;
+      if (this.paused || !(this.keys.on('driver.look') || this.look.free)) return;
       const k = 0.0035 * settings.sensitivity;
       this.look.yaw = Math.max(-LOOK_YAW, Math.min(LOOK_YAW, this.look.yaw - e.movementX * k));
       this.look.pitch = Math.max(-LOOK_PITCH_DOWN, Math.min(LOOK_PITCH_UP, this.look.pitch - e.movementY * k));
     };
     this.onContext = (e) => e.preventDefault();
-    this.onKey = (e) => {
-      if (e.code !== 'KeyL' || this.paused || e.repeat) return;
-      this.look.free = !this.look.free;
-      const canvas = document.getElementById('scene');
-      if (this.look.free) canvas.requestPointerLock?.()?.catch?.(() => {});
-      else if (document.pointerLockElement) document.exitPointerLock();
-    };
-    window.addEventListener('mousedown', this.onMouseDown);
-    window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('contextmenu', this.onContext);
-    window.addEventListener('keydown', this.onKey);
 
     this.el = document.createElement('div');
     this.el.className = 'hud driver';
     this.el.innerHTML = `
-      <div class="d-hints panel"><b>W/S</b> throttle · <b>A/D</b> steer · <b>Shift</b> boost · <b>Space</b> brake · <b>R</b> repair (stopped) · <b>Hold RMB</b> look around · <b>L</b> free look</div>
+      <div class="d-hints panel"></div>
       <div class="d-repair panel" style="display:none"><span></span><i><u></u></i></div>
       <div class="d-ping panel" style="display:none"></div>
       <div class="d-flash"></div>
       <div class="d-dead"></div>`;
     hud.appendChild(this.el);
+    this.refreshHints();
+  }
+
+  refreshHints() {
+    this.el.querySelector('.d-hints').innerHTML = `<b>${keyName('drive.forward')}/${keyName('drive.back')}</b> throttle · <b>${keyName('drive.left')}/${keyName('drive.right')}</b> steer · <b>${keyName('drive.boost')}</b> boost · <b>${keyName('drive.brake')}</b> brake · <b>${keyName('drive.repair')}</b> repair (stopped) · <b>Hold ${keyName('driver.look')}</b> look around · <b>${keyName('driver.free')}</b> free look`;
   }
 
   buildCockpit() {
@@ -180,9 +169,9 @@ export class DriverView {
 
   sendInput() {
     const k = this.keys;
-    const th = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-    const st = (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) - (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0);
-    const msg = { t: 'drive', th, st, boost: k.has('ShiftLeft') || k.has('ShiftRight'), brake: k.has('Space'), repair: k.has('KeyR') };
+    const th = (k.on('drive.forward') ? 1 : 0) - (k.on('drive.back') ? 1 : 0);
+    const st = (k.on('drive.left') ? 1 : 0) - (k.on('drive.right') ? 1 : 0);
+    const msg = { t: 'drive', th, st, boost: k.on('drive.boost'), brake: k.on('drive.brake'), repair: k.on('drive.repair') };
     const key = JSON.stringify(msg);
     const now = performance.now();
     if (key !== this.lastSent.key || now - this.lastSent.at > 250) {
@@ -196,13 +185,17 @@ export class DriverView {
     this.paused = p;
     if (p) {
       net.send({ t: 'drive', th: 0, st: 0, boost: false, brake: false });
-      this.look.holding = false;
       this.look.free = false;
     }
   }
 
   update(dt, states, me) {
     this.t += dt;
+    if (!this.paused && this.keys.hit('driver.free')) {
+      this.look.free = !this.look.free;
+      if (this.look.free) document.getElementById('scene').requestPointerLock?.()?.catch?.(() => {});
+      else if (document.pointerLockElement) document.exitPointerLock();
+    }
     const self = me && states.get(me.id);
     const input = this.paused ? { th: 0, st: 0 } : this.sendInput();
     if (!self) return;
@@ -275,7 +268,7 @@ export class DriverView {
       rep.querySelector('span').textContent = `REPAIRING ${me.repair.mod.toUpperCase()}`;
       rep.querySelector('u').style.width = `${me.repair.p * 100}%`;
     } else if (needsRepair) {
-      rep.querySelector('span').textContent = Math.abs(me.v) < 0.5 ? 'Hold R to repair' : 'Stop the tank, then hold R to repair';
+      rep.querySelector('span').textContent = Math.abs(me.v) < 0.5 ? `Hold ${keyName('drive.repair')} to repair` : `Stop the tank, then hold ${keyName('drive.repair')} to repair`;
       rep.querySelector('u').style.width = '0%';
     }
 
@@ -498,11 +491,8 @@ export class DriverView {
   }
 
   dispose() {
-    window.removeEventListener('mousedown', this.onMouseDown);
-    window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('contextmenu', this.onContext);
-    window.removeEventListener('keydown', this.onKey);
     this.el.remove();
     for (const t of this.textures) t.dispose();
   }

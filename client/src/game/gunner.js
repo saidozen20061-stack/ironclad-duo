@@ -1,3 +1,4 @@
+import { keyName } from '../keybinds.js';
 import * as THREE from 'three';
 import { TANKS, UNITS, GUN_MAX_ELEVATION } from '../../../shared/constants.js';
 import { PLANES } from '../../../shared/planes.js';
@@ -88,9 +89,14 @@ export class GunnerView {
     this.mapBase = terrainImage(360);
 
     this.$('.w-name').textContent = this.spec.weapon.label;
+    GunnerView.prototype.refreshHints.call(this); // not a subclass's: its own HUD isn't built yet
     this.onPing = () => this.placePing();
     this.buildPingMarker();
     this.bind();
+  }
+
+  refreshHints() {
+    this.$('.g-pingcd b').textContent = keyName('gunner.ping');
   }
 
   buildPingMarker() {
@@ -163,23 +169,9 @@ export class GunnerView {
       this.aim.pitch = Math.max(-0.45, Math.min(GUN_MAX_ELEVATION, this.aim.pitch - e.movementY * k));
     };
     this.onMouseDown = (e) => {
-      if (!this.aiming()) {
-        if (e.target === canvas && !this.paused) this.requestLock();
-        return;
-      }
-      if (e.button === 0) this.setTrigger('main', true);
-      if (e.button === 2) {
-        if (this.spec.weapon.coax) this.setTrigger('coax', true);
-        else this.cycleZoom(1, true);
-      }
-      if (e.button === 1) {
-        e.preventDefault();
-        this.onPing?.();
-      }
-    };
-    this.onMouseUp = (e) => {
-      if (e.button === 0) this.setTrigger('main', false);
-      if (e.button === 2) this.setTrigger('coax', false);
+      if (this.aiming()) return;
+      this.keys.swallow(`Mouse${e.button}`);
+      if (e.target === canvas && !this.paused) this.requestLock();
     };
     this.onWheel = (e) => {
       if (!this.aiming()) return;
@@ -188,7 +180,6 @@ export class GunnerView {
     this.onContext = (e) => e.preventDefault();
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mousedown', this.onMouseDown);
-    window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('wheel', this.onWheel, { passive: true });
     window.addEventListener('contextmenu', this.onContext);
   }
@@ -205,9 +196,17 @@ export class GunnerView {
     net.send({ t: 'trigger', ...this.trigger });
   }
 
-  // T switches the thermal sight; no time limit.
+  // The gun's buttons, read every frame.
+  pollGun() {
+    const on = this.aiming(), k = this.keys;
+    this.setTrigger('main', on && k.on('gun.fire'));
+    if (this.spec.weapon.coax) this.setTrigger('coax', on && k.on('gunner.mg'));
+    else if (on && k.hit('gunner.mg')) this.cycleZoom(1, true);
+  }
+
+  // Switches the thermal sight; no time limit.
   thermalKey() {
-    if (!this.keys.took('KeyT') || this.paused) return;
+    if (!this.keys.hit(this.thermalAction ?? 'gun.thermal') || this.paused) return;
     this.thermal = !this.thermal;
     this.showBanner(this.thermal ? 'THERMAL ON' : 'THERMAL OFF');
   }
@@ -278,12 +277,13 @@ export class GunnerView {
       this.aim.initialised = true;
     }
 
+    this.pollGun();
     // Shell switching (medium tank).
     if (this.spec.weapon.shells) {
-      if (this.keys.took('Digit1')) net.send({ t: 'shell', shell: 'AP' });
-      if (this.keys.took('Digit2')) net.send({ t: 'shell', shell: 'HE' });
+      if (this.keys.hit('gun.ap')) net.send({ t: 'shell', shell: 'AP' });
+      if (this.keys.hit('gun.he')) net.send({ t: 'shell', shell: 'HE' });
     }
-    if (this.keys.took('KeyQ')) this.onPing?.();
+    if (this.keys.hit('gunner.ping')) this.onPing?.();
 
     // Send aim at ~20 Hz when it changes.
     const now = performance.now();
@@ -387,7 +387,7 @@ export class GunnerView {
     else ammo = ready ? 'LOADED' : 'LOADING';
     $('.w-ammo').textContent = ammo;
     if (w.shells) {
-      $('.w-shells').innerHTML = ['AP', 'HE'].map((s, i) => `<span class="${me.shell === s ? 'sel' : ''}">${i + 1} ${s}</span>`).join('');
+      $('.w-shells').innerHTML = [['AP', 'gun.ap'], ['HE', 'gun.he']].map(([s, key]) => `<span class="${me.shell === s ? 'sel' : ''}">${keyName(key)} ${s}</span>`).join('');
     }
     const frac = me.reload > 0 ? 1 - me.reload / me.reloadTotal : 1;
     const bar = $('.w-reload i');
@@ -405,7 +405,7 @@ export class GunnerView {
         el.className = v <= 0 ? 'dead' : v < 0.5 ? 'dmg' : '';
       }
     }
-    if (w.coax) $('.w-coax').textContent = me.coaxReload > 0 ? `MG reloading ${me.coaxReload.toFixed(1)}s` : `MG ${me.coax} (RMB)`;
+    if (w.coax) $('.w-coax').textContent = me.coaxReload > 0 ? `MG reloading ${me.coaxReload.toFixed(1)}s` : `MG ${me.coax} (${keyName(this.solo ? 'solo.mg' : 'gunner.mg')})`;
 
     // Ping cooldown
     const cd = me.pingCd ?? 0;
@@ -525,7 +525,6 @@ export class GunnerView {
     document.getElementById('scene').style.cursor = '';
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('mousedown', this.onMouseDown);
-    window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('contextmenu', this.onContext);
     this.world.scene.remove(this.pingMarker);

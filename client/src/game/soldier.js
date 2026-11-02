@@ -1,3 +1,4 @@
+import { keyName } from '../keybinds.js';
 import * as THREE from 'three';
 import { FOOT } from '../../../shared/constants.js';
 import { groundAt, heightAt, WATER_LEVEL } from '../../../shared/map.js';
@@ -33,7 +34,7 @@ const HUD_HTML = `
   <div class="f-prompt"></div>
   <div class="g-lock">Click to fight on foot</div>
   <div class="g-dead"></div>
-  <div class="f-hint">WASD move · Shift sprint · Space jump · C crouch · RMB aim · R reload · G grenade · Q ping · V talk</div>
+  <div class="f-hint"></div>
 `;
 
 export class SoldierView {
@@ -80,11 +81,17 @@ export class SoldierView {
     this.el.innerHTML = HUD_HTML;
     hud.appendChild(this.el);
     this.$ = (s) => this.el.querySelector(s);
+    this.refreshHints();
     this.minimap = this.$('.g-minimap').getContext('2d');
     this.mapBase = terrainImage(360);
     GunnerView.prototype.buildPingMarker.call(this);
     this.drawExtraMinimap = (ctx, toMap) => this.drawMate(ctx, toMap);
     this.bind();
+  }
+
+  refreshHints() {
+    this.$('.g-pingcd b').textContent = keyName('foot.ping');
+    this.$('.f-hint').textContent = `${keyName('foot.forward')}${keyName('foot.left')}${keyName('foot.back')}${keyName('foot.right')} move · ${keyName('foot.sprint')} sprint · ${keyName('foot.jump')} jump · ${keyName('foot.crouch')} crouch · ${keyName('foot.aim')} aim · ${keyName('foot.reload')} reload · ${keyName('foot.grenade')} grenade · ${keyName('foot.ping')} ping · ${keyName('all.talk')} talk`;
   }
 
   aiming() {
@@ -110,25 +117,13 @@ export class SoldierView {
       this.aim.pitch = Math.max(-1.45, Math.min(1.45, this.aim.pitch - e.movementY * k));
     };
     this.onMouseDown = (e) => {
-      if (!this.aiming()) {
-        if (e.target === canvas && !this.paused) this.requestLock();
-        return;
-      }
-      if (e.button === 0) this.fire = true;
-      if (e.button === 2) this.ads = true;
-      if (e.button === 1) {
-        e.preventDefault();
-        this.placePing();
-      }
-    };
-    this.onMouseUp = (e) => {
-      if (e.button === 0) this.fire = false;
-      if (e.button === 2) this.ads = false;
+      if (this.aiming()) return;
+      this.keys.swallow(`Mouse${e.button}`);
+      if (e.target === canvas && !this.paused) this.requestLock();
     };
     this.onContext = (e) => e.preventDefault();
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mousedown', this.onMouseDown);
-    window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('contextmenu', this.onContext);
   }
 
@@ -213,20 +208,22 @@ export class SoldierView {
     const control = alive && this.aiming();
     const k = this.keys;
     let fwd = 0, side = 0;
+    this.fire = control && k.on('foot.fire');
+    this.ads = control && k.on('foot.aim');
     if (control) {
-      fwd = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
-      side = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
-      if (k.took('KeyC')) this.crouch = !this.crouch;
-      if (k.took('Space') && this.jy === 0) {
+      fwd = (k.on('foot.forward') ? 1 : 0) - (k.on('foot.back') ? 1 : 0);
+      side = (k.on('foot.right') ? 1 : 0) - (k.on('foot.left') ? 1 : 0);
+      if (k.hit('foot.crouch')) this.crouch = !this.crouch;
+      if (k.hit('foot.jump') && this.jy === 0) {
         this.vy = FOOT.jump;
         this.crouch = false;
       }
-      if (k.took('KeyR')) net.send({ t: 'reload' });
-      if (k.took('KeyG')) net.send({ t: 'grenade' });
-      if (k.took('KeyQ')) this.placePing();
-      if (k.took('KeyE') && nearGarage(this.pos.x, this.pos.z, this.team)) net.send({ t: 'garage' });
+      if (k.hit('foot.reload')) net.send({ t: 'reload' });
+      if (k.hit('foot.grenade')) net.send({ t: 'grenade' });
+      if (k.hit('foot.ping')) this.placePing();
+      if (k.hit('foot.garage') && nearGarage(this.pos.x, this.pos.z, this.team)) net.send({ t: 'garage' });
     }
-    const sprint = control && k.has('ShiftLeft') && fwd > 0 && !this.crouch && !this.ads;
+    const sprint = control && k.on('foot.sprint') && fwd > 0 && !this.crouch && !this.ads;
     if (sprint) this.fire = false;
 
     // Movement with wall sliding, like the NPC infantry.
@@ -353,7 +350,7 @@ export class SoldierView {
     $('.f-mag').textContent = mine.mag;
     $('.f-res').textContent = `/ ${mine.res}`;
     $('.f-gren').textContent = `G  ${'●'.repeat(mine.gren)}${'○'.repeat(Math.max(0, FOOT.grenades - mine.gren))}`;
-    $('.f-state').textContent = mine.rl > 0 ? 'RELOADING…' : mine.mag === 0 && mine.res === 0 ? 'NO AMMO — resupply at the base garage' : mine.mag === 0 ? 'Press R to reload' : '';
+    $('.f-state').textContent = mine.rl > 0 ? 'RELOADING…' : mine.mag === 0 && mine.res === 0 ? 'NO AMMO — resupply at the base garage' : mine.mag === 0 ? `Press ${keyName('foot.reload')} to reload` : '';
 
     const cd = this.me.pingCd ?? 0;
     $('.g-pingcd u').style.width = `${(1 - cd / 5) * 100}%`;
@@ -364,7 +361,7 @@ export class SoldierView {
     let prompt = '';
     if (!mine.dead && gd < FOOT.garageRadius) {
       const mateThere = !mate || mate.dead || nearGarage(mate.x, mate.z, this.team);
-      prompt = mateThere ? '<b>E</b> Get a new tank' : `Wait for the ${mateName.toLowerCase()} at the garage`;
+      prompt = mateThere ? `<b>${keyName('foot.garage')}</b> Get a new tank` : `Wait for the ${mateName.toLowerCase()} at the garage`;
     }
     $('.f-prompt').innerHTML = prompt;
     $('.f-prompt').style.display = prompt ? '' : 'none';
@@ -402,7 +399,6 @@ export class SoldierView {
     document.getElementById('scene').style.cursor = '';
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('mousedown', this.onMouseDown);
-    window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('contextmenu', this.onContext);
     this.world.scene.remove(this.pingMarker);
     this.el.remove();

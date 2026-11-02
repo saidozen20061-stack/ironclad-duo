@@ -107,4 +107,5 @@ export function initSettingsScreen() {
 
 export function onSettingsOpen() {
   refreshMics();
+  $('#set-ptt').textContent = keyLabel(settings.pttKey); // may have changed on the Controls screen
 }

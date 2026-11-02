@@ -22,6 +22,7 @@
         <button class="btn primary" id="btn-host">Host Game</button>
         <button class="btn" id="btn-join">Join Game</button>
         <button class="btn" id="btn-solo">Solo</button>
+        <button class="btn" id="btn-controls">Controls</button>
         <button class="btn" id="btn-settings">Settings</button>
         <button class="btn ghost" id="btn-quit">Quit</button>
         <p class="status" id="menu-status"></p>
@@ -96,6 +97,19 @@
       </div>
     </section>
 
+    <!-- CONTROLS -->
+    <section class="screen" id="screen-controls">
+      <div class="menu-panel wide">
+        <h2>Controls</h2>
+        <p class="hint">Click a control, then press the new key or mouse button. Esc cancels. Keys used on the same screen swap places.</p>
+        <div id="controls-list" class="controls-list"></div>
+        <div class="row controls-actions">
+          <button class="btn primary" id="btn-controls-back">Back</button>
+          <button class="btn ghost" id="btn-controls-reset">Reset to defaults</button>
+        </div>
+      </div>
+    </section>
+
     <!-- LOBBY -->
     <section class="screen" id="screen-lobby">
       <div class="lobby">
@@ -142,6 +156,7 @@
         <p class="hint">The battle keeps going. Your crew is still out there!</p>
         <button class="btn primary" id="btn-resume">Resume</button>
         <button class="btn" id="btn-pause-swap" style="display: none">Switch Seat</button>
+        <button class="btn" id="btn-pause-controls">Controls</button>
         <button class="btn" id="btn-pause-settings">Settings</button>
         <button class="btn ghost" id="btn-pause-leave">Leave Match</button>
       </div>

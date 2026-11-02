@@ -8,6 +8,7 @@ const DEFAULTS = {
   micId: '',
   voiceMode: 'ptt',
   pttKey: 'KeyV',
+  keybinds: {}, // action id -> key or mouse code, where it differs from the default
   quality: 'medium',
   autoQuality: true,
   // Optional TURN relay for players behind strict networks (see README).
@@ -43,7 +44,13 @@ export function onSettingsChange(fn) {
   return () => listeners.delete(fn);
 }
 
+const MOUSE_NAMES = ['Left Mouse', 'Middle Mouse', 'Right Mouse'];
+
 export function keyLabel(code) {
+  if (code.startsWith('Mouse')) return MOUSE_NAMES[Number(code.slice(5))] ?? `Mouse ${Number(code.slice(5)) + 1}`;
+  if (code.startsWith('Arrow')) return `${code.slice(5)} Arrow`;
+  if (code.startsWith('Numpad')) return `Num ${code.slice(6)}`;
+  if (code === 'ShiftLeft') return 'Shift';
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
   if (code === 'Space') return 'Space';

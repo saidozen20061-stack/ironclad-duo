@@ -4,6 +4,7 @@ import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
 import { settings } from '../settings.js';
+import { keyName } from '../keybinds.js';
 import { GunnerView } from './gunner.js';
 import { planeEye, sideGunPos } from '../models/planes.js';
 import { buildMinigunViewmodel } from '../models/guns.js';
@@ -135,6 +136,10 @@ function heightAboveGround(self, pl, spec) {
   return Math.max(0, (pl.y ?? 0) - Math.max(groundAt(self.x, self.z), WATER_LEVEL) - spec.gearH);
 }
 
+function flightHint() {
+  return `${keyName('plane.up')} up · ${keyName('plane.down')} down · ${keyName('plane.left')}/${keyName('plane.right')} turn · ${keyName('plane.more')}/${keyName('plane.less')} throttle · Mouse aims guns · ${keyName('plane.fire')} guns · ${keyName('plane.bomb')} bombs · ${keyName('plane.rocket')} rockets`;
+}
+
 function drawInstruments(cp, self, me, spec, pingBearing) {
   const ctx = cp.ctx;
   const pl = me.pl ?? {};
@@ -248,22 +253,14 @@ class PlaneBase extends GunnerView {
     window.removeEventListener('mousemove', this.onMouseMove);
     this.mouseBtn = { left: false, right: false };
     this.onMouseDown = (e) => {
-      if (!this.aiming()) {
-        if (e.target === canvas && !this.paused) this.requestLock();
-        return;
-      }
-      if (e.button === 0) this.mouseBtn.left = true;
-      if (e.button === 2) this.mouseBtn.right = true;
-    };
-    this.onMouseUp = (e) => {
-      if (e.button === 0) this.mouseBtn.left = false;
-      if (e.button === 2) this.mouseBtn.right = false;
+      if (this.aiming()) return;
+      this.keys.swallow(`Mouse${e.button}`);
+      if (e.target === canvas && !this.paused) this.requestLock();
     };
     this.onMouseMove = (e) => {
       if (this.aiming()) this.onLook(e.movementX, e.movementY);
     };
     window.addEventListener('mousedown', this.onMouseDown);
-    window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
   }
 
@@ -285,7 +282,7 @@ class PlaneBase extends GunnerView {
   // The view turns along with the plane, and the mouse looks around from there. C looks ahead again.
   followPlane(self) {
     const a = this.aim;
-    if (!a.initialised || this.keys.took('KeyC')) {
+    if (!a.initialised || this.keys.hit('plane.ahead')) {
       a.yaw = self.h;
       a.pitch = self.gp;
       a.initialised = true;
@@ -306,29 +303,36 @@ class PlaneBase extends GunnerView {
     return this.look;
   }
 
-  // WASD flies: W/S nose down/up, A/D bank and turn, E or Shift more throttle, Q less. On the
-  // runway W is the throttle and S lifts off. The guns go to whatever the crosshair is on.
+  // Fire and the other held button, read every frame.
+  readButtons(fire, other) {
+    const on = this.aiming();
+    this.mouseBtn.left = on && this.keys.on(fire);
+    this.mouseBtn.right = !!other && on && this.keys.on(other);
+  }
+
+  // By default W climbs, S descends, A/D bank and turn, E or Shift more throttle, Q less. On the
+  // runway W is also the throttle, so holding it takes off. The guns go to what the crosshair is on.
   sendControls(self, me) {
     const k = this.keys;
-    if (k.took('KeyX')) net.send({ t: 'jump' });
+    if (k.hit('plane.bail')) net.send({ t: 'jump' });
     const onGround = !!me.pl?.ground;
-    const turn = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+    const turn = (k.on('plane.right') ? 1 : 0) - (k.on('plane.left') ? 1 : 0);
     // Banks to a limit and levels itself when A and D are let go.
     const roll = turn ? (Math.abs(self.ty) < BANK_LIMIT || Math.sign(self.ty) !== turn ? turn : 0) : Math.max(-1, Math.min(1, -self.ty * 1.6));
-    const up = (k.has('KeyE') || k.has('ShiftLeft') || k.has('ShiftRight') || (onGround && k.has('KeyW')) ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
+    const up = (k.on('plane.more') || (onGround && k.on('plane.up')) ? 1 : 0) - (k.on('plane.less') || (onGround && k.on('plane.down')) ? 1 : 0);
     const look = this.camera.getWorldDirection(_v);
     const reach = this.raycast(this.camera.position, look, this.states, me.id) ?? AIM_FAR;
     const gun = _v2.copy(look).multiplyScalar(reach).add(this.camera.position).sub(_v3.set(self.x, self.y, self.z)).normalize();
     this.sendFly({
       t: 'fly',
       th: up,
-      pitch: (k.has('KeyS') ? 1 : 0) - (k.has('KeyW') && !onGround ? 1 : 0),
+      pitch: (k.on('plane.up') ? 1 : 0) - (k.on('plane.down') && !onGround ? 1 : 0),
       roll: +roll.toFixed(2),
       yaw: -turn * 0.5,
       gun: [+gun.x.toFixed(3), +gun.y.toFixed(3), +gun.z.toFixed(3)],
       fire: !!this.mouseBtn.left,
-      bomb: k.has('Space'),
-      rocket: k.has('KeyR'),
+      bomb: k.on('plane.bomb'),
+      rocket: k.on('plane.rocket'),
     });
   }
 
@@ -461,10 +465,14 @@ export class PilotView extends PlaneBase {
     this.el.classList.add('pilot');
     this.$('.g-lock').textContent = 'Click to take control';
     this.look = { yaw: 0, pitch: 0 };
-    this.$('.p-hint').textContent = 'W/S nose down/up · A/D turn · E/Q throttle · Mouse aims guns · LMB guns · Space bombs · R rockets · C look ahead · X bail out';
+    this.refreshHints();
     this.$('.g-pingcd').style.display = 'none';
     this.onPing = null;
     this.bindFlight();
+  }
+
+  refreshHints() {
+    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
   }
 
   update(dt, states, me) {
@@ -473,6 +481,7 @@ export class PilotView extends PlaneBase {
     this.renderDt = dt;
     const self = states.get(me.id);
     if (!self) return;
+    this.readButtons('plane.fire');
     this.followPlane(self);
     const look = this.lookFromSeat(self);
     const cam = this.camera;
@@ -510,7 +519,8 @@ export class PlaneGunnerView extends PlaneBase {
     this.drift = 0;
     this.spin = 0;
     this.lastSend = { key: '', at: 0 };
-    this.$('.p-hint').textContent = `Mouse turns the gun · LMB fires${this.plane.bombs ? ' · F bomb sight (LMB drops)' : ''} · T thermal · Q ping · X bail out`;
+    this.thermalAction = 'door.thermal';
+    this.refreshHints();
     this.bindFlight();
     // The minigun, drawn over the world so it never clips into the plane.
     this.gunScene = new THREE.Scene();
@@ -533,6 +543,11 @@ export class PlaneGunnerView extends PlaneBase {
     return this.thermal;
   }
 
+  refreshHints() {
+    this.$('.g-pingcd b').textContent = keyName('door.ping');
+    this.$('.p-hint').textContent = `Mouse turns the gun · ${keyName('door.fire')} fires${this.plane.bombs ? ` · ${keyName('door.sight')} bomb sight (${keyName('door.fire')} drops)` : ''} · ${keyName('door.thermal')} thermal · ${keyName('door.ping')} ping · ${keyName('door.bail')} bail out`;
+  }
+
   onLook(dx, dy) {
     if (this.bombSight) return;
     const k = 0.0022 * settings.sensitivity;
@@ -553,10 +568,11 @@ export class PlaneGunnerView extends PlaneBase {
       this.aim.initialised = true;
     }
     const k = this.keys;
+    this.readButtons('door.fire');
     if (!this.paused) {
-      if (k.took('KeyQ')) this.onPing?.();
-      if (k.took('KeyX')) net.send({ t: 'jump' });
-      if (this.plane.bombs && k.took('KeyF')) this.bombSight = !this.bombSight;
+      if (k.hit('door.ping')) this.onPing?.();
+      if (k.hit('door.bail')) net.send({ t: 'jump' });
+      if (this.plane.bombs && k.hit('door.sight')) this.bombSight = !this.bombSight;
     }
     const cam = this.camera;
     const [dx, dy, dz] = sideGunPos(this.tank);
@@ -633,13 +649,18 @@ export class PlaneSoloView extends PlaneBase {
     this.onPing = null;
     this.camDist = null;
     this.$('.g-lock').textContent = 'Click to take control';
-    this.$('.p-hint').textContent = 'W/S nose down/up · A/D turn · E/Q throttle · Mouse aims guns · LMB guns · Space bombs · R rockets · RMB cockpit · C look ahead · X bail out';
+    this.thermalAction = 'planeSolo.thermal';
+    this.refreshHints();
     this.bindFlight();
     this.look = { yaw: 0, pitch: 0 };
   }
 
   thermalActive() {
     return this.thermal && this.mouseBtn?.right;
+  }
+
+  refreshHints() {
+    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('planeSolo.cockpit')} cockpit · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
   }
 
   update(dt, states, me) {
@@ -649,6 +670,7 @@ export class PlaneSoloView extends PlaneBase {
     this.thermalKey();
     const self = states.get(me.id);
     if (!self) return;
+    this.readButtons('plane.fire', 'planeSolo.cockpit');
     this.followPlane(self);
     const inCockpit = !!this.mouseBtn.right;
     const cam = this.camera;

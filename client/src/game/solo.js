@@ -5,6 +5,7 @@ import { GUN_MAX_ELEVATION } from '../../../shared/constants.js';
 import { propsNear, segmentHitsProp } from '../../../shared/props.js';
 import { net } from '../net.js';
 import { GunnerView } from './gunner.js';
+import { keyName } from '../keybinds.js';
 
 // Solo: one player drives AND shoots. A third-person camera orbits behind and above the
 // tank and the turret follows where the camera looks; holding right click drops into the
@@ -28,30 +29,14 @@ export class SoloView extends GunnerView {
     this.el.classList.add('solo', 'third');
     this.$('.g-pingcd').style.display = 'none';
     this.onPing = null; // no pings in solo
+  }
 
-    // Mouse: left = fire, right (hold) = gun sight, middle = machine gun.
-    const canvas = document.getElementById('scene');
-    window.removeEventListener('mousedown', this.onMouseDown);
-    window.removeEventListener('mouseup', this.onMouseUp);
-    this.onMouseDown = (e) => {
-      if (!this.aiming()) {
-        if (e.target === canvas && !this.paused) this.requestLock();
-        return;
-      }
-      if (e.button === 0) this.setTrigger('main', true);
-      if (e.button === 2) this.sight = true;
-      if (e.button === 1) {
-        e.preventDefault();
-        if (this.spec.weapon.coax) this.setTrigger('coax', true);
-      }
-    };
-    this.onMouseUp = (e) => {
-      if (e.button === 0) this.setTrigger('main', false);
-      if (e.button === 2) this.sight = false;
-      if (e.button === 1) this.setTrigger('coax', false);
-    };
-    window.addEventListener('mousedown', this.onMouseDown);
-    window.addEventListener('mouseup', this.onMouseUp);
+  // Fire, gun sight (hold) and machine gun.
+  pollGun() {
+    const on = this.aiming(), k = this.keys;
+    this.setTrigger('main', on && k.on('gun.fire'));
+    this.sight = on && k.on('solo.sight');
+    if (this.spec.weapon.coax) this.setTrigger('coax', on && k.on('solo.mg'));
   }
 
   // Scroll picks the sight magnification (2× / 6×).
@@ -69,9 +54,9 @@ export class SoloView extends GunnerView {
 
   sendDrive() {
     const k = this.keys;
-    const th = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-    const st = (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) - (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0);
-    const msg = { t: 'drive', th, st, boost: k.has('ShiftLeft') || k.has('ShiftRight'), brake: k.has('Space'), repair: k.has('KeyR') };
+    const th = (k.on('drive.forward') ? 1 : 0) - (k.on('drive.back') ? 1 : 0);
+    const st = (k.on('drive.left') ? 1 : 0) - (k.on('drive.right') ? 1 : 0);
+    const msg = { t: 'drive', th, st, boost: k.on('drive.boost'), brake: k.on('drive.brake'), repair: k.on('drive.repair') };
     const key = JSON.stringify(msg);
     const now = performance.now();
     if (key !== this.lastDrive.key || now - this.lastDrive.at > 250) {
@@ -117,9 +102,10 @@ export class SoloView extends GunnerView {
       this.aim.yaw = self.h;
       this.aim.initialised = true;
     }
+    this.pollGun();
     if (this.spec.weapon.shells) {
-      if (this.keys.took('Digit1')) net.send({ t: 'shell', shell: 'AP' });
-      if (this.keys.took('Digit2')) net.send({ t: 'shell', shell: 'HE' });
+      if (this.keys.hit('gun.ap')) net.send({ t: 'shell', shell: 'AP' });
+      if (this.keys.hit('gun.he')) net.send({ t: 'shell', shell: 'HE' });
     }
     if (!this.paused) this.sendDrive();
     this.zoomIdx = this.sight ? this.sightZoom : 0;

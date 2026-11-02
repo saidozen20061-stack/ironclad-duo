@@ -1,3 +1,4 @@
+import { initControlsScreen, onControlsOpen } from './ui/controlsScreen.js';
 import { net } from './net.js';
 import { settings, saveSettings } from './settings.js';
 import { setActiveView } from './render.js';
@@ -59,6 +60,7 @@ codeInput.addEventListener('keydown', (e) => e.key === 'Enter' && doJoin());
 $('#btn-join-back').addEventListener('click', () => backScreen());
 
 $('#btn-settings').addEventListener('click', () => showScreen('settings'));
+$('#btn-controls').addEventListener('click', () => showScreen('controls'));
 
 // ---------- Solo setup: tank, camo, mode; the match runs locally ----------
 const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy', airStart: false };
@@ -117,11 +119,13 @@ function previewCaption(root, id, paint) {
 onScreenChange((name) => {
   menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : null);
   if (name === 'settings') onSettingsOpen();
+  if (name === 'controls') onControlsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
   if (name === 'lobby' || name === 'solo') menuScene.setMode('lobby');
 });
 
 initSettingsScreen();
+initControlsScreen();
 
 // ---------- Lobby ----------
 function leaveRoom() {
@@ -285,6 +289,7 @@ function resume() {
 }
 $('#btn-resume').addEventListener('click', resume);
 $('#btn-pause-settings').addEventListener('click', () => showScreen('settings'));
+$('#btn-pause-controls').addEventListener('click', () => showScreen('controls'));
 $('#btn-pause-swap').addEventListener('click', () => net.send({ t: 'swapSeat' }));
 $('#btn-pause-leave').addEventListener('click', () => {
   leaveRoom();
@@ -298,7 +303,7 @@ window.addEventListener('keydown', (e) => {
   const s = currentScreen();
   if (s === null) match.pause();
   else if (s === 'pause') resume();
-  else if (s === 'settings') backScreen('pause');
+  else if (s === 'settings' || s === 'controls') backScreen('pause');
 });
 
 // Keep the server warm-ish and the name in sync once connected.

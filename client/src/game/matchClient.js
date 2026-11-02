@@ -4,6 +4,7 @@ import { PLANES } from '../../../shared/planes.js';
 import { planeViewFor } from './planeViews.js';
 import { POINTS, groundAt, riverZ, RIVER_HALF_WIDTH, PLAY_LIMIT, inAirfield } from '../../../shared/map.js';
 import { PROPS, TREE_NOISE, setFortress } from '../../../shared/props.js';
+import { keyName } from '../keybinds.js';
 import { net } from '../net.js';
 import { renderer } from '../render.js';
 import { voice } from '../voice.js';
@@ -136,10 +137,10 @@ export class MatchClient {
       <h2>${planeSpec ? 'PLANE' : 'TANK'} DESTROYED</h2>
       <p>${role === 'solo' ? `Wait for a new ${planeSpec ? 'plane' : 'tank'}, or bail out and fight on.` : "Pick together. If you disagree, the driver's choice wins."}</p>
       <div class="bail-opts">
-        <button data-pick="tank"><b>1</b>RESPAWN WITH ${planeSpec ? 'PLANE' : 'TANK'}<small>New ${planeSpec ? 'plane at the airfield' : 'tank at base'} after 15 s</small></button>
-        <button data-pick="foot"><b>2</b>GO ON FOOT<small>Bail out next to the wreck and keep fighting</small></button>
+        <button data-pick="tank"><b>${keyName('death.respawn')}</b>RESPAWN WITH ${planeSpec ? 'PLANE' : 'TANK'}<small>New ${planeSpec ? 'plane at the airfield' : 'tank at base'} after 15 s</small></button>
+        <button data-pick="foot"><b>${keyName('death.foot')}</b>GO ON FOOT<small>Bail out next to the wreck and keep fighting</small></button>
       </div>
-      <button class="bail-skip" data-skip="1"><b>3</b>SKIP TIMER</button>
+      <button class="bail-skip" data-skip="1"><b>${keyName('death.skip')}</b>SKIP TIMER</button>
       <div class="bail-timer"><i></i></div>
       <div class="bail-picks"></div>`;
     this.choiceEl.addEventListener('click', (e) => {
@@ -159,7 +160,7 @@ export class MatchClient {
     this.respawnSkipEl = document.createElement('button');
     this.respawnSkipEl.className = 'bail-skip respawn-skip';
     this.respawnSkipEl.tabIndex = -1;
-    this.respawnSkipEl.innerHTML = '<b>3</b>SKIP WAIT';
+    this.respawnSkipEl.innerHTML = `<b>${keyName('death.skip')}</b>SKIP WAIT`;
     this.respawnSkipEl.addEventListener('mousedown', (e) => e.preventDefault());
     this.respawnSkipEl.addEventListener('click', (e) => {
       if (e.detail !== 0) this.skipRespawn();
@@ -665,6 +666,7 @@ export class MatchClient {
     this.paused = false;
     this.keys.setEnabled(true);
     this.view.setPaused?.(false);
+    this.view.refreshHints?.(); // the keys may have been rebound while paused
     if (this.view instanceof GunnerView || this.view.isFoot) this.view.requestLock();
   }
 
@@ -682,18 +684,18 @@ export class MatchClient {
       this.units.update(states, dt);
     }
     this.fx?.update(dt, isWorldView(this.view) ? this.view.camera.position : null);
-    const board = this.keys.has('Tab') && !this.paused;
+    const board = this.keys.on('all.board') && !this.paused;
     if (board !== this.boardEl.classList.contains('show')) {
       this.boardEl.classList.toggle('show', board);
       if (board) this.boardEl.innerHTML = this.scoreboardHtml();
     }
     const waiting = this.solo && this.me?.dead && this.me.crew?.mode === 'tank' && this.me.respawnIn < 1e6 && !this.ended;
     this.respawnSkipEl.classList.toggle('show', !!waiting);
-    if (waiting && !this.paused && this.keys.took('Digit3')) this.skipRespawn();
+    if (waiting && !this.paused && this.keys.hit('death.skip')) this.skipRespawn();
     if (this.choiceEl.classList.contains('show')) {
-      if (this.keys.took('Digit1')) net.send({ t: 'bail', pick: 'tank' });
-      if (this.keys.took('Digit2')) net.send({ t: 'bail', pick: 'foot' });
-      if (this.keys.took('Digit3')) this.skipChoice();
+      if (this.keys.hit('death.respawn')) net.send({ t: 'bail', pick: 'tank' });
+      if (this.keys.hit('death.foot')) net.send({ t: 'bail', pick: 'foot' });
+      if (this.keys.hit('death.skip')) this.skipChoice();
     }
     if (this.me) this.view.update(dt, states, this.me);
     // Blast shake on top of whatever the view did with its camera.

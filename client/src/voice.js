@@ -1,5 +1,6 @@
 import { net } from './net.js';
 import { settings, onSettingsChange, keyLabel } from './settings.js';
+import { binding } from './keybinds.js';
 import { audio } from './audio.js';
 import { iceServers } from './iceConfig.js';
 
@@ -11,7 +12,6 @@ import { iceServers } from './iceConfig.js';
 // host. Each link uses "perfect negotiation" so either side can (re)start without glare.
 
 const SPEAK_THRESHOLD = 0.035;
-export const TEAM_KEY = 'KeyB';
 
 class Link {
   constructor(voice, peerId) {
@@ -148,13 +148,13 @@ class Voice {
     window.addEventListener('keydown', (e) => {
       if (e.repeat || isTyping(e)) return;
       if (e.code === settings.pttKey) this.crewKey = true;
-      else if (e.code === TEAM_KEY) this.teamKey = true;
+      else if (e.code === binding('all.team')) this.teamKey = true;
       else return;
       this.applyTransmit();
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === settings.pttKey) this.crewKey = false;
-      else if (e.code === TEAM_KEY) this.teamKey = false;
+      else if (e.code === binding('all.team')) this.teamKey = false;
       else return;
       this.applyTransmit();
     });
@@ -194,7 +194,7 @@ class Voice {
   hint() {
     if (this.micError) return 'Mic unavailable — you can still hear your team';
     const crew = settings.voiceMode === 'open' ? 'Crew: open mic' : `Crew: hold ${keyLabel(settings.pttKey)}`;
-    return `${crew} · Team: hold ${keyLabel(TEAM_KEY)}`;
+    return `${crew} · Team: hold ${keyLabel(binding('all.team'))}`;
   }
 
   applyTransmit() {

@@ -1,56 +1,58 @@
-import { settings, saveSettings, keyLabel } from '../settings.js';
+import { settings, saveSettings } from '../settings.js';
+import { keyName } from '../keybinds.js';
 
 // Short hint popups shown during a player's first match in each role.
-const HINTS = {
+const K = keyName;
+const hints = () => ({
   driver: [
     'You are the DRIVER. You can\'t see outside — trust your gunner and your radar.',
-    'W/S throttle · A/D steer (you can spin in place) · Shift boost · Space brake.',
+    `${K('drive.forward')}/${K('drive.back')} throttle · ${K('drive.left')}/${K('drive.right')} steer (you can spin in place) · ${K('drive.boost')} boost · ${K('drive.brake')} brake.`,
     'The radar sweep shows contacts for a moment: green = friendly, grey = unknown.',
     'A yellow pulse on the radar is your gunner\'s PING — drive there. It shows distance and direction.',
-    'Took damage? Stop and hold R to repair the worst module. Tracks out = you can\'t move.',
-    `Talk to your gunner: hold ${keyLabel(settings.pttKey)} (or use open mic in Settings).`,
+    `Took damage? Stop and hold ${K('drive.repair')} to repair the worst module. Tracks out = you can't move.`,
+    `Talk to your gunner: hold ${K('all.talk')} (or use open mic in Settings).`,
   ],
   pilot: [
-    'You are the PILOT. On the runway hold W for throttle, then S to lift off at speed.',
-    'In the air W/S push the nose down and up, A/D turn, E/Q change throttle. Too slow and you stall!',
-    'The mouse aims the guns wherever you look, left click fires. Space drops bombs, R fires rockets along the nose. C looks ahead again.',
+    `You are the PILOT. On the runway hold ${K('plane.up')}: it throttles up and lifts off at speed.`,
+    `In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle. Too slow and you stall!`,
+    `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} drops bombs, ${K('plane.rocket')} fires rockets along the nose. ${K('plane.ahead')} looks ahead again.`,
     'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
-    'About to go down? X bails both of you out with parachutes.',
+    `About to go down? ${K('plane.bail')} bails both of you out with parachutes.`,
   ],
   planeGunner: [
-    'You are the SIDE GUNNER on the door minigun. Mouse turns the gun anywhere except straight up, left click fires. Call out enemies on your six!',
-    'On bombers, F switches to the bomb sight looking straight down: left click drops, and tell the pilot to steer.',
-    'T switches thermal. Q pings a spot on the pilot\'s compass. X bails out.',
+    `You are the SIDE GUNNER on the door minigun. Mouse turns the gun anywhere except straight up, ${K('door.fire')} fires. Call out enemies on your six!`,
+    `On bombers, ${K('door.sight')} switches to the bomb sight looking straight down: ${K('door.fire')} drops, and tell the pilot to steer.`,
+    `${K('door.thermal')} switches thermal. ${K('door.ping')} pings a spot on the pilot's compass. ${K('door.bail')} bails out.`,
   ],
   planeSolo: [
-    'SOLO PLANE: on the runway hold W for throttle, then S to lift off at speed. In the air W/S move the nose, A/D turn, E/Q change throttle.',
-    'The mouse aims the guns wherever you look, left click fires. Space bombs, R rockets along the nose. Right click for the cockpit, C looks ahead again. The side gun fires by itself.',
-    'Land on your own runway and stop to repair, refuel and rearm. X bails out.',
+    `SOLO PLANE: on the runway hold ${K('plane.up')}: it throttles up and lifts off at speed. In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle.`,
+    `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} bombs, ${K('plane.rocket')} rockets along the nose. ${K('planeSolo.cockpit')} for the cockpit, ${K('plane.ahead')} looks ahead again. The side gun fires by itself.`,
+    `Land on your own runway and stop to repair, refuel and rearm. ${K('plane.bail')} bails out.`,
   ],
   solo: [
-    'SOLO: you drive and shoot. W/S throttle · A/D steer · Shift boost · Space brake.',
-    'Mouse aims the turret where the camera looks. Left click fires. Hold right click for the gun sight.',
+    `SOLO: you drive and shoot. ${K('drive.forward')}/${K('drive.back')} throttle · ${K('drive.left')}/${K('drive.right')} steer · ${K('drive.boost')} boost · ${K('drive.brake')} brake.`,
+    `Mouse aims the turret where the camera looks. ${K('gun.fire')} fires. Hold ${K('solo.sight')} for the gun sight.`,
     'The orange circle is where the gun really points — wait for it to turn green before firing.',
-    'Took damage? Stop and hold R to repair the worst module. 1 / 2 switch AP / HE, middle mouse = machine gun.',
-    'Press T for the thermal sight: in the gun sight, warm targets glow through fog and smoke.',
+    `Took damage? Stop and hold ${K('drive.repair')} to repair the worst module. ${K('gun.ap')} / ${K('gun.he')} switch AP / HE, ${K('solo.mg')} = machine gun.`,
+    `Press ${K('gun.thermal')} for the thermal sight: in the gun sight, warm targets glow through fog and smoke.`,
   ],
   gunner: [
     'You are the GUNNER. You see everything — the driver sees almost nothing. Guide them!',
-    'Click to take the gun. Mouse aims, left click fires, scroll zooms (2×/6×).',
+    `Click to take the gun. Mouse aims, ${K('gun.fire')} fires, scroll zooms (2×/6×).`,
     'The orange circle is where the gun actually points. Wait for it to turn green.',
-    'Press Q (or middle mouse) to PING a spot on the driver\'s radar. 5 s cooldown.',
-    'Press T for the thermal sight: warm targets glow through fog and smoke.',
+    `Press ${K('gunner.ping')} to PING a spot on the driver's radar. 5 s cooldown.`,
+    `Press ${K('gun.thermal')} for the thermal sight: warm targets glow through fog and smoke.`,
     'The hull indicator (bottom centre) shows which way the driver is facing.',
-    `In Flag Capture, stand in the A/B/C zones to capture them. Hold ${keyLabel(settings.pttKey)} to talk.`,
+    `In Flag Capture, stand in the A/B/C zones to capture them. Hold ${K('all.talk')} to talk.`,
   ],
-};
+});
 
 export function showTutorial(role, hud) {
   if (settings.seenTutorial?.[role]) return;
   const el = document.createElement('div');
   el.className = 'tutorial panel';
   hud.appendChild(el);
-  const list = HINTS[role];
+  const list = hints()[role];
   let i = 0;
   const next = () => {
     if (!el.isConnected) return;
