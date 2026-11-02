@@ -21,8 +21,9 @@ let autoScale = 1;
 let autoFrames = 0;
 let autoTime = 0;
 let autoGood = 0;
-function autoQuality(dt) {
-  if (!active?.isMatch || settings.autoQuality === false || document.hidden || dt >= 0.1) return;
+export function autoQuality(dt) {
+  // dt is the real frame time; a very long one is a stalled or hidden tab, not a slow PC.
+  if (!active?.isMatch || settings.autoQuality === false || document.hidden || dt > 0.5) return;
   autoFrames++;
   autoTime += dt;
   if (autoTime < 3) return;
@@ -125,11 +126,12 @@ function updateStats(dt) {
 
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1);
+  const frameTime = clock.getDelta();
+  const dt = Math.min(frameTime, 0.1);
   if (active) {
     active.update(dt);
     active.render(renderer);
-    autoQuality(dt);
+    autoQuality(frameTime);
   }
   if (statsOn) updateStats(dt);
 });

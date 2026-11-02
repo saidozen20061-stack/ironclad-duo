@@ -9,4 +9,6 @@ Each finished phase is committed, pushed and live.
 - [x] Phase 3.5: turntable tank preview
 - [x] Phase 4: war atmosphere
 - [x] Phase 5: planes (host/planes.js, models/planes.js, game/planeViews.js)
-- [ ] Final: performance check, auto quality, summary
+- [x] Final: performance check, auto quality, summary
+
+Not testable here (needs real PCs): real FPS with 10 players, real audio, players on different networks.
