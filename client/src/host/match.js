@@ -225,6 +225,11 @@ export class Match {
     const t = c.tank;
     if (msg.t === 'bail') return this.onBailPick(c, player.role, msg.pick);
     if (msg.t === 'bailSkip') return this.onBailSkip(c, player.role);
+    // Solo only: don't wait for the new vehicle. Nobody else's time is being skipped.
+    if (msg.t === 'respawnSkip') {
+      if (this.crews.size === 1 && !c.seats.gunner && t.dead && c.bail.mode === 'tank') t.respawnAt = this.time;
+      return;
+    }
     // Dev-only test hook: destroy our own tank.
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
     // Dev-only: finish the current Fortress wave (or skip the break).

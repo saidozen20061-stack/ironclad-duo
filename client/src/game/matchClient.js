@@ -155,6 +155,17 @@ export class MatchClient {
     document.activeElement?.blur?.();
     this.hud.appendChild(this.choiceEl);
 
+    // Solo: skip the wait for a new vehicle.
+    this.respawnSkipEl = document.createElement('button');
+    this.respawnSkipEl.className = 'bail-skip respawn-skip';
+    this.respawnSkipEl.tabIndex = -1;
+    this.respawnSkipEl.innerHTML = '<b>3</b>SKIP WAIT';
+    this.respawnSkipEl.addEventListener('mousedown', (e) => e.preventDefault());
+    this.respawnSkipEl.addEventListener('click', (e) => {
+      if (e.detail !== 0) this.skipRespawn();
+    });
+    this.hud.appendChild(this.respawnSkipEl);
+
     this.onLockChange = () => {
       const locked = document.pointerLockElement === document.getElementById('scene');
       if (!locked) {
@@ -325,6 +336,10 @@ export class MatchClient {
     this.choiceEl.querySelector('.bail-picks').innerHTML = this.solo
       ? `You: <b>${name(mine)}</b> · ${Math.ceil(crew.left)}s`
       : `You: <b>${name(mine)}</b> · ${this.role === 'driver' ? 'Gunner' : 'Driver'}: <b>${name(other)}</b> · ${Math.ceil(crew.left)}s`;
+  }
+
+  skipRespawn() {
+    net.send({ t: 'respawnSkip' });
   }
 
   onSnapshot(msg) {
@@ -633,6 +648,9 @@ export class MatchClient {
       this.boardEl.classList.toggle('show', board);
       if (board) this.boardEl.innerHTML = this.scoreboardHtml();
     }
+    const waiting = this.solo && this.me?.dead && this.me.crew?.mode === 'tank' && this.me.respawnIn < 1e6 && !this.ended;
+    this.respawnSkipEl.classList.toggle('show', !!waiting);
+    if (waiting && !this.paused && this.keys.took('Digit3')) this.skipRespawn();
     if (this.choiceEl.classList.contains('show')) {
       if (this.keys.took('Digit1')) net.send({ t: 'bail', pick: 'tank' });
       if (this.keys.took('Digit2')) net.send({ t: 'bail', pick: 'foot' });
@@ -734,6 +752,7 @@ export class MatchClient {
     this.voiceEl.remove();
     this.capEl.remove();
     this.choiceEl.remove();
+    this.respawnSkipEl.remove();
     this.boardEl.remove();
     this.tagsEl.remove();
   }
