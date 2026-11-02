@@ -73,6 +73,7 @@ function renderSolo() {
   $('#solo-kills').style.display = solo.mode === 'tdm' ? '' : 'none';
   $('#solo-diff').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small${id === solo.difficulty ? ' on' : ''}" data-diff="${id}">${d.name}</button>`).join('')}`;
   menuScene.setShowcase(solo.tank, solo.paint);
+  previewCaption('#preview-solo', solo.tank, solo.paint);
 }
 $('#screen-solo').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -100,7 +101,16 @@ $('#btn-quit').addEventListener('click', () => {
 });
 $('#btn-quit-back').addEventListener('click', () => goMenu());
 
+// Name and stats over the big vehicle preview.
+function previewCaption(root, id, paint) {
+  const t = TANKS[id];
+  if (!t) return;
+  const bars = Object.entries(t.stats ?? {}).map(([k, v]) => `<label>${k}</label><div class="bar"><i style="width:${v * 20}%"></i></div>`).join('');
+  $(`${root} .preview-cap`).innerHTML = `<b>${t.name}</b><small>${t.class}${paint ? ` · ${PAINT[paint]?.name ?? ''}` : ''}</small><div class="bars">${bars}</div>`;
+}
+
 onScreenChange((name) => {
+  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : null);
   if (name === 'settings') onSettingsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
   if (name === 'lobby' || name === 'solo') menuScene.setMode('lobby');
@@ -148,6 +158,12 @@ function rosterFrom(crews, mode, myId) {
 net.on('lobby', (msg) => {
   lobby.state = msg;
   menuScene.setCrews(msg);
+  // The preview follows our own crew's tank (the first crew's until we take a seat).
+  const previewTank = (lobby.myCrew ?? msg.crews[0])?.tank;
+  if (previewTank) {
+    menuScene.setShowcase(previewTank);
+    previewCaption('#preview-lobby', previewTank, previewTank);
+  }
   renderLobby();
   if (msg.phase === 'lobby') voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
 });

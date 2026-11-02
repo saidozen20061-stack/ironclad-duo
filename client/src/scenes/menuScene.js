@@ -3,6 +3,7 @@ import { createNoise2D, fbm, mulberry32 } from '../../../shared/noise.js';
 import { buildTank } from '../models/tanks.js';
 import { SoldierRig, idleUpdate } from '../models/rig.js';
 import { quality } from '../settings.js';
+import { VehiclePreview } from './preview.js';
 
 // Slowly rotating low-poly battlefield behind the menus. In lobby mode the camera
 // moves in on a showcase tank that reflects the host's current tank choice.
@@ -257,6 +258,7 @@ export class MenuScene {
       }
     }
 
+    this.preview = new VehiclePreview();
     this.showcase = null;
     this.setShowcase('medium');
   }
@@ -267,6 +269,7 @@ export class MenuScene {
     this.showcase = buildTank(type, 'blue', paint);
     this.showcase.paint = paint;
     this.scene.add(this.showcase.group);
+    this.preview.set(`${type}|${paint}`, () => buildTank(type, 'blue', paint).group);
   }
 
   // Lobby: every crew's tank in its garage bay, crew standing in front with names above.
@@ -316,6 +319,7 @@ export class MenuScene {
 
   update(dt) {
     this.t += dt;
+    this.preview.update(dt);
     const target = this.mode === 'lobby' ? 1 : 0;
     this.blend += (target - this.blend) * Math.min(1, dt * 2);
     const b = this.blend * this.blend * (3 - 2 * this.blend);
@@ -345,7 +349,7 @@ export class MenuScene {
     if (this.showcase) {
       this.showcase.group.position.z = inLobby ? -2 : 0;
       // Before anyone is seated, the lobby keeps the single showcase tank.
-      this.showcase.group.visible = !inLobby || !this.lineup.children.length;
+      this.showcase.group.visible = !this.preview.el && (!inLobby || !this.lineup.children.length);
       this.showcase.turret.rotation.y = Math.sin(this.t * 0.4) * 0.6;
       this.showcase.gun.rotation.x = -0.05 - Math.sin(this.t * 0.3) * 0.05;
     }
@@ -362,5 +366,6 @@ export class MenuScene {
 
   render(renderer) {
     renderer.render(this.scene, this.camera);
+    this.preview.render(renderer);
   }
 }
