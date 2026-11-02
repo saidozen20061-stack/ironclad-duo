@@ -683,7 +683,7 @@ export class PlaneSystem {
       if (e.dead || e.team === p.team) continue;
       const d = Math.hypot(e.x - p.x, e.z - p.z);
       if (d > 950) continue;
-      if (!m.army.inView(p, e, d, 1.75)) continue; // a pilot sees a lot, but not behind the tail
+      if (!m.army.inView(p, e, d)) continue;
       let score = d;
       if (e.kind === 'plane') {
         if (e.grounded) score += 900;

@@ -12,8 +12,8 @@ import { nextWaypoint, passable, distanceTo } from './nav.js';
 const GRAVITY = 9.81;
 const rand = (a, b) => a + Math.random() * (b - a);
 const ENEMY = { blue: 'red', red: 'blue' };
-const FIELD_OF_VIEW = 1.13; // half angle, about what a player sees on screen
-const TRACKING_VIEW = 2;
+const FIELD_OF_VIEW = (65 * Math.PI) / 180; // to each side of where it's facing
+const TRACK_MEMORY = 2; // s: a target that just left the view isn't forgotten instantly
 const NOTICE_CLOSE = 10; // m: you can hear someone this close
 
 // ---------- Helpers ----------
@@ -304,15 +304,17 @@ export class ArmyAI {
       // Only flak tanks go after planes; everyone else leaves the sky alone.
       if (e.kind === 'plane' && !(u.type === 'aa' && !e.grounded)) continue;
       const d = Math.hypot(e.x - ux, e.z - uz);
-      if (d > range) continue;
+      const shotAtUs = this.alerted(u, e);
+      if (d > range && !shotAtUs) continue;
       if (!this.inView(u, e, d)) continue;
       let score = d;
       if (prefer === 'armor' && e.kind === 'inf') score += 400;
       if (prefer === 'soft' && e.kind !== 'inf') score += d < 60 ? 80 : 1000;
       if (e.player) score *= 0.85; // the human crew draws fire
+      if (shotAtUs) score *= 0.4; // whoever is shooting at us comes first
       if (score >= bestScore) continue;
       if (!lineOfSight(ux, uy, uz, e.x, unitHeight(e), e.z)) continue;
-      if (this.concealed(u, e, d)) continue;
+      if (!shotAtUs && this.concealed(u, e, d)) continue;
       best = e;
       bestScore = score;
     }
@@ -322,13 +324,16 @@ export class ArmyAI {
   // NPCs see like players do: only what's in front of them. A tank looks where its turret
   // points, a soldier where he faces. Something behind is noticed only rarely, unless it's
   // right next to them or has just shot them.
-  inView(u, e, d, halfAngle = FIELD_OF_VIEW) {
+  inView(u, e, d) {
     const ai = u.ai;
-    if (ai?.alertBy === e.id && this.match.time < ai.alertUntil) return true;
-    if (ai?.target === e) halfAngle = Math.max(halfAngle, TRACKING_VIEW); // keeps an eye on what it's fighting
+    if (this.alerted(u, e)) return true;
     const facing = u.kind === 'tank' || u.kind === 'atgun' ? u.h + u.ty : u.h;
     const off = Math.abs(wrapAngle(Math.atan2(e.x - u.x, e.z - u.z) - facing));
-    if (off <= halfAngle) return true;
+    if (off <= FIELD_OF_VIEW) {
+      if (ai?.target === e) ai.trackUntil = this.match.time + TRACK_MEMORY;
+      return true;
+    }
+    if (ai?.target === e && this.match.time < (ai.trackUntil ?? 0)) return true;
     if (Math.random() >= (d < NOTICE_CLOSE ? 0.12 : this.match.skill.behind)) return false;
     // Noticed: it stays aware long enough to turn round and look.
     if (ai) {
@@ -336,6 +341,11 @@ export class ArmyAI {
       ai.alertUntil = this.match.time + 5;
     }
     return true;
+  }
+
+  // Whoever just shot at this NPC is known to it for a few seconds.
+  alerted(u, e) {
+    return u.ai?.alertBy === e.id && this.match.time < u.ai.alertUntil;
   }
 
   // Fog, dust, smoke and cover: a target in plain sight can still slip out of view for a
