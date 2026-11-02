@@ -101,6 +101,72 @@ const clean = (g) => {
 };
 const merged = (list) => mergeGeometries(list.map(clean));
 
+// Width, height and centre of a fuselage at a point along it.
+function fuseAt(stations, z) {
+  for (let i = 0; i < stations.length - 1; i++) {
+    const [z0, w0, h0, y0 = 0] = stations[i];
+    const [z1, w1, h1, y1 = 0] = stations[i + 1];
+    if (z > z0 || z < z1) continue;
+    const t = (z0 - z) / (z0 - z1);
+    return [w0 + (w1 - w0) * t, h0 + (h1 - h0) * t, y0 + (y1 - y0) * t];
+  }
+  return [0, 0, 0];
+}
+
+const TALON_FUSE = [[7.4, 0.12, 0.12, -0.05], [5.5, 0.82, 0.8, 0], [2.5, 1.3, 1.15, 0.1], [-2, 1.65, 1.25, 0], [-6, 1.3, 1, 0], [-7.2, 0.85, 0.8, 0]];
+
+// The Talon's wing and everything else that makes it read as a modern jet.
+function talonDetails(add) {
+  for (const g of both(panel(0.5, 6, -0.05, -0.05, 1.6, -2.7, -2.4, -3.05, 0.2, 0.06))) add.body.push(g);
+  // Strakes blending the wing into the nose, flaps along the trailing edge, slats along the front.
+  for (const g of both(panel(0.3, 1.55, 0, -0.04, 4.8, 0.2, 1.1, 0.2, 0.12, 0.05))) add.body.push(g);
+  for (const g of both(panel(0.95, 4.6, -0.05, -0.05, -2.45, -3.3, -2.65, -3.4, 0.11, 0.07))) add.door.push(g);
+  for (const g of both(panel(1.5, 5.8, -0.04, -0.04, 1.02, 0.72, -2.1, -2.3, 0.1, 0.05))) add.plate.push(g);
+  // The chin intake with its lip and dark mouth.
+  add.body.push(box(1.35, 0.6, 2.6, 0, -0.72, 0.9));
+  add.dark.push(box(1.15, 0.45, 0.06, 0, -0.72, 2.22));
+  add.rivet.push(box(1.42, 0.05, 0.1, 0, -0.42, 2.2), box(1.42, 0.05, 0.1, 0, -1.02, 2.2));
+  for (const s of [-1, 1]) add.rivet.push(box(0.05, 0.62, 0.1, s * 0.69, -0.72, 2.2));
+  // Dorsal spine behind the canopy, with vents and a blade aerial.
+  add.body.push(loft([[1.8, 0.2, 0.12, 0.74], [0.3, 0.6, 0.36, 0.72], [-3.2, 0.55, 0.3, 0.62], [-4.5, 0.1, 0.1, 0.56]], 6));
+  for (const z of [-0.6, -1.2, -1.8]) add.dark.push(box(0.32, 0.03, 0.2, 0, 0.91, z));
+  add.dark.push(box(0.04, 0.42, 0.34, 0, 1.1, -2.6));
+  // Panel lines around the fuselage.
+  for (const z of [4.7, 1.5, -0.6, -3, -5.2]) {
+    const [w, h, y] = fuseAt(TALON_FUSE, z);
+    add.door.push(box(w * 0.42, 0.02, 0.04, 0, y + h * 0.5, z));
+    for (const s of [-1, 1]) add.door.push(box(0.02, h * 0.42, 0.04, s * w * 0.5, y, z));
+  }
+  // A rudder, and an antenna fairing on top of the fin.
+  add.door.push(box(0.16, 1.9, 0.5, 0, 2.15, -6.05));
+  add.plate.push(box(0.2, 0.2, 0.9, 0, 3.2, -5.6));
+  for (const s of [-1, 1]) {
+    // Speed brakes either side of the nozzle, and two small fins underneath.
+    add.door.push(box(0.5, 0.05, 1.5, s * 0.95, 0.12, -6.3), box(0.5, 0.05, 1.5, s * 0.95, -0.12, -6.3));
+    add.shade.push(box(0.06, 0.65, 1.3).rotateZ(s * 0.4).translate(s * 0.62, -0.75, -5.2));
+    // Wingtip rails with a missile on each.
+    add.metal.push(box(0.1, 0.1, 1.6, s * 6.05, -0.05, -2.75));
+    add.dark.push(cyl(0.07, 0.07, 1.5, 6, s * 6.05, -0.17, -2.7), new THREE.ConeGeometry(0.07, 0.3, 6).rotateX(Math.PI / 2).toNonIndexed().translate(s * 6.05, -0.17, -1.8));
+    add.metal.push(box(0.3, 0.02, 0.2, s * 6.05, -0.17, -3.35), box(0.02, 0.3, 0.2, s * 6.05, -0.17, -3.35));
+    // An underwing fuel tank on its pylon.
+    add.body.push(loft([[0, 0.05, 0.05, -0.66], [-0.6, 0.42, 0.42, -0.66], [-2.6, 0.42, 0.42, -0.66], [-3.3, 0.05, 0.05, -0.66]], 8).translate(s * 4.6, 0, 0));
+    add.plate.push(box(0.07, 0.42, 1.1, s * 4.6, -0.28, -1.8));
+    add.door.push(box(0.46, 0.02, 0.05, s * 4.6, -0.66 + 0.22, -1.8));
+    // Doors beside the main wheels.
+    add.door.push(box(0.04, 0.9, 1, s * 1.05, -1.05, -1.2));
+    add.door.push(box(0.04, 0.5, 0.7, s * 0.14, -1.2, 4.4));
+  }
+  // The petals around the nozzle.
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    add.metal.push(box(0.2, 0.04, 1.1).translate(0, 0.63, -7.6).rotateZ(a));
+  }
+  // A long probe on the nose, and the second seat's canopy hoops.
+  add.metal.push(cyl(0.02, 0.02, 0.9, 4, 0, -0.05, 7.85));
+  add.dark.push(box(0.05, 0.6, 0.06, 0, 0.98, 2.5), box(0.05, 0.55, 0.06, 0, 0.98, 4.05));
+  for (const s of [-1, 1]) add.dark.push(box(0.03, 0.03, 2.5, s * 0.41, 0.67, 3.3));
+}
+
 // Per-type shapes. All measures in metres.
 const SHAPES = {
   stuka: {
@@ -215,15 +281,12 @@ const SHAPES = {
     engineX: 21, engineZ: 1,
   },
   f16: {
-    mark: [3.1, -0.05], markR: 0.5, markZ: -1.5, markT: 0.24, railY: -0.3, railZ: -1.25, skin: 0x8b9198, skinShade: 0x757b83, jet: true,
-    fuse: [[7.4, 0.12, 0.12, -0.05], [5.5, 0.7, 0.75, 0], [2.5, 1, 1.1, 0.1], [-2, 1.25, 1.2, 0], [-6, 1, 1, 0], [-7.2, 0.8, 0.8, 0]],
-    wing: (add) => {
-      for (const g of both(panel(0.5, 4.9, -0.05, -0.05, 1.6, -2.7, -1.9, -3, 0.2, 0.06))) add.body.push(g);
-      add.body.push(box(1.05, 0.55, 2.4, 0, -0.72, 0.9)); // the chin intake
-      add.dark.push(box(0.95, 0.45, 0.06, 0, -0.72, 2.11));
-    },
-    tail: { z: -5.8, span: 3.1, chord: 1.8, y: -0.05 }, fin: { z: -4.6, h: 2.7, chord: 2.8, y: 0.45 },
-    canopy: [3.3, 2.7, 0.78, 0.92], gear: 'tricycle', cockpitY: 0.95, engineX: 0, engineZ: -6.4,
+    mark: [3.1, -0.05], discX: 4.3, markR: 0.46, markZ: -2.05, markT: 0.24, railY: -0.3, railZ: -1.25, skin: 0x8b9198, skinShade: 0x757b83, jet: true,
+    noWingGuns: true, guns: [[0.72, 0.42, 3.3]], nose: [[7.45, 5.5]], noseColor: 0x4a4f55, finFlash: [2.75, -5.25],
+    fuse: TALON_FUSE,
+    wing: talonDetails,
+    tail: { z: -5.8, span: 3.7, chord: 1.9, y: -0.05 }, fin: { z: -4.6, h: 2.7, chord: 2.8, y: 0.45 },
+    canopy: [3.3, 2.7, 0.82, 0.92], gear: 'tricycle', cockpitY: 0.95, engineX: 0, engineZ: -6.4,
   },
 };
 
@@ -530,10 +593,11 @@ export function buildPlane(type, team = 'blue', paint = type) {
     colors.forEach((c, i) => {
       const r = (sh.markR ?? 0.75) * (1 - i * 0.34);
       const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, (sh.markT ?? 0.3) + i * 0.03, 12), mat(c));
-      disc.position.set(side * mx, my, sh.markZ ?? 0.2);
+      disc.position.set(side * (sh.discX ?? mx), my, sh.markZ ?? 0.2);
       group.add(disc);
     });
   }
+  if (sh.finFlash) group.add(new THREE.Mesh(box(0.17, 0.5, 1.3, 0, sh.finFlash[0], sh.finFlash[1]), mat(mark)));
   const bar = new THREE.Mesh(box(0.05, 0.5, 1.1, 0, (sh.fuse[3][3] ?? 0) + 0.1, sh.fuse[4][0] * 0.8), mat(mark));
   bar.scale.x = (sh.fuse[4][1] ?? 1) / 0.05 * 1.02;
   group.add(bar);
