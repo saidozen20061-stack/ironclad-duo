@@ -1,5 +1,5 @@
 import { Vector3, Euler, Quaternion } from 'three';
-import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP } from '../../../shared/planes.js';
+import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET } from '../../../shared/planes.js';
 import { TICK_RATE } from '../../../shared/constants.js';
 import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES } from '../../../shared/map.js';
 import { PROPS, propsNear, segmentHitsProp, FORT } from '../../../shared/props.js';
@@ -372,11 +372,15 @@ export class PlaneSystem {
       const r = s.rockets;
       p.rocketCd = 0.28;
       p.rockets--;
-      // Launched close to the fuselage and angled in, so they meet on the nose line ahead.
+      // Dropped close to the fuselage. Its line is set now, once: from where the motor will light
+      // to a point on the nose line ahead, so both sides' rockets still meet where the plane aimed.
       const off = Math.min(ROCKET_OFFSET, s.size.width * 0.12) * (p.rockets % 2 ? 1 : -1);
       const pos = new Vector3(p.x + Math.cos(p.h) * off, p.y - 0.5, p.z - Math.sin(p.h) * off);
-      const dir = new Vector3(p.x + f.x * ROCKET_CONVERGE, p.y + f.y * ROCKET_CONVERGE, p.z + f.z * ROCKET_CONVERGE).sub(pos).normalize();
-      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4, air: true }, pos, dir);
+      const fallV = ROCKET.gravity * ROCKET.drop;
+      const lit = pos.clone().addScaledVector(f, p.v * ROCKET.drop);
+      lit.y -= (fallV * ROCKET.drop) / 2 + (fallV * ROCKET.ramp) / 2;
+      const dir = new Vector3(p.x + f.x * ROCKET_CONVERGE, p.y + f.y * ROCKET_CONVERGE, p.z + f.z * ROCKET_CONVERGE).sub(lit).normalize();
+      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4 + ROCKET.drop, air: true, coast: ROCKET.drop, coastV: [f.x * p.v, f.y * p.v, f.z * p.v] }, pos, dir);
     }
     this.rearGun(p);
     this.sixCheck(p);

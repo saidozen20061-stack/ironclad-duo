@@ -106,6 +106,29 @@ for (const p of Object.values(PLANES)) {
   p.rockets = { damage: 240, splash: 5, splashDamage: 110, spread: 0.012, count: 4, ...p.rockets, speed: 125 };
 }
 
+// A plane's rocket: released with the motor off, it falls away under the plane, then the motor
+// lights and it speeds up along the line it was given at release. Host and clients run the same step.
+export const ROCKET = { drop: 0.6, ramp: 0.3, gravity: 9.81 };
+
+// Returns true on the step the motor lights.
+export function rocketStep(p, dt) {
+  if (p.coast > 0) {
+    p.coast -= dt;
+    p.vy -= ROCKET.gravity * dt;
+    if (p.coast > 0) return false;
+    p.ramp = ROCKET.ramp;
+    return true;
+  }
+  if (p.ramp > 0) {
+    const k = Math.min(1, dt / p.ramp);
+    p.vx += (p.b[0] - p.vx) * k;
+    p.vy += (p.b[1] - p.vy) * k;
+    p.vz += (p.b[2] - p.vz) * k;
+    p.ramp -= dt;
+  }
+  return false;
+}
+
 export const PLANE_IDS = Object.keys(PLANES);
 export const COOP_PLANE_IDS = PLANE_IDS.filter((id) => PLANES[id].seats === 2);
 export const isPlane = (type) => !!PLANES[type];

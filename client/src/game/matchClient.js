@@ -400,14 +400,16 @@ export class MatchClient {
     switch (ev.k) {
       case 'f': {
         // Our own soldier's shots already played locally.
-        if (!(this.view.isFoot && ev.o === this.view.myId)) this.sound.shot(ev.kind, ev, ev.o === myId);
+        // A dropped rocket is silent until its motor lights.
+        if (!ev.coast && !(this.view.isFoot && ev.o === this.view.myId)) this.sound.shot(ev.kind, ev, ev.o === myId);
         if (ev.o === myId && gunner) this.view.kick = ev.kind === 'heavy' ? 0.05 : ev.kind === 'mg' ? 0.002 : ev.kind === 'ac' ? 0.008 : 0.03;
         if (this.fx) {
           const shot = this.fromDrawnPlane(ev);
+          this.fx.onIgnite ??= (p) => this.sound.shot('rocket', p, p.o === this.me?.id);
           this.fx.spawnProjectile(shot);
           const pos = new THREE.Vector3(shot.x, shot.y, shot.z);
           const dir = new THREE.Vector3(ev.vx, ev.vy, ev.vz).normalize();
-          this.fx.muzzleFlash(pos, dir, ev.air && ev.kind === 'mg' ? 'ac' : ev.kind);
+          if (!ev.coast) this.fx.muzzleFlash(pos, dir, ev.air && ev.kind === 'mg' ? 'ac' : ev.kind);
         }
         if (ev.o === myId && driver) {
           if (ev.kind !== 'mg') this.view.addShake(ev.kind === 'heavy' ? 0.5 : ev.kind === 'ac' ? 0.05 : 0.3);

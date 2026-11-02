@@ -3,7 +3,7 @@ import { DIFFICULTY, TANKS, UNITS, TICK_RATE, PING, MATCH, TYPE_IDS, FOOT } from
 import { footBlocked, nearGarage } from '../../../shared/foot.js';
 import { WarDirector } from './war.js';
 import { PlaneSystem } from './planes.js';
-import { PLANES } from '../../../shared/planes.js';
+import { PLANES, rocketStep } from '../../../shared/planes.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, HALF, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
 import { tankPose, muzzlePose, planePitchAlong, wrapAngle } from '../../../shared/tank.js';
@@ -802,8 +802,13 @@ export class Match {
       vz: dir.z * p.speed,
       life: p.life ?? (p.kind === 'rocket' ? 2 : 4),
     };
+    // Dropped rockets: what's above is the speed under power; they start out just falling.
+    if (p.coastV) {
+      proj.b = [r2(proj.vx), r2(proj.vy), r2(proj.vz)];
+      [proj.vx, proj.vy, proj.vz] = p.coastV;
+    }
     this.projectiles.push(proj);
-    this.events.push({ k: 'f', id: proj.id, o: t.id, kind: p.kind, x: r2(pos.x), y: r2(pos.y), z: r2(pos.z), vx: r2(proj.vx), vy: r2(proj.vy), vz: r2(proj.vz), ...(p.air ? { air: 1 } : {}) });
+    this.events.push({ k: 'f', id: proj.id, o: t.id, kind: p.kind, x: r2(pos.x), y: r2(pos.y), z: r2(pos.z), vx: r2(proj.vx), vy: r2(proj.vy), vz: r2(proj.vz), ...(p.air ? { air: 1 } : {}), ...(proj.b ? { coast: p.coast, b: proj.b } : {}) });
   }
 
   updateProjectiles() {
@@ -811,7 +816,8 @@ export class Match {
     for (const p of this.projectiles) {
       p.life -= DT;
       const x0 = p.x, y0 = p.y, z0 = p.z;
-      if (p.kind !== 'rocket') p.vy -= GRAVITY * DT; // rockets fly flat under thrust
+      if (p.b) rocketStep(p, DT);
+      else if (p.kind !== 'rocket') p.vy -= GRAVITY * DT; // rockets fly flat under thrust
       const x1 = x0 + p.vx * DT, y1 = y0 + p.vy * DT, z1 = z0 + p.vz * DT;
       const hit = this.traceSegment(p, x0, y0, z0, x1, y1, z1);
       if (hit) {

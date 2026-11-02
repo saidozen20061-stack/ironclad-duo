@@ -3,6 +3,7 @@ import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { quality } from '../settings.js';
 import { markHeat, noHeat, LAYER_FX } from './thermal.js';
 import { rocketGeometry, bombGeometry, flameGeometry, ROCKET_TAIL } from '../models/munitions.js';
+import { rocketStep, ROCKET } from '../../../shared/planes.js';
 
 // Projectiles (client-side ballistic replay of server fire events) and simple particle effects.
 const GRAVITY = 9.81;
@@ -89,6 +90,7 @@ export class FX {
       glow.scale.set(2.2, 2.2, 1.7);
       flame.add(glow);
       noHeat(flame);
+      flame.visible = !ev.coast; // no flame until the motor lights
       mesh.add(flame);
     } else if (ev.air) {
       // A soft glow around the core.
@@ -100,7 +102,7 @@ export class FX {
     if (munition) mesh.scale.setScalar(ev.air || ev.kind === 'bomb' ? munition.size : FOOT_ROCKET_SIZE);
     else mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
-    this.projectiles.set(ev.id, { mesh, flame, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && ev.kind !== 'rocket' ? 2.2 : 4, air: !!ev.air, style, munition: ev.air || ev.kind === 'bomb' ? munition : null, streak: ev.kind === 'mg' || ev.kind === 'ac' });
+    this.projectiles.set(ev.id, { mesh, flame, o: ev.o, coast: ev.coast, b: ev.b, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && ev.kind !== 'rocket' ? 2.2 : ev.coast ? 4 + ROCKET.drop : 4, air: !!ev.air, style, munition: ev.air || ev.kind === 'bomb' ? munition : null, streak: ev.kind === 'mg' || ev.kind === 'ac' });
   }
 
   removeProjectile(id) {
@@ -268,6 +270,14 @@ export class FX {
     }
   }
 
+  // A dropped rocket's motor lights: flame on, a burst of fire, and its sound.
+  igniteRocket(p) {
+    p.flame.visible = true;
+    const dir = new THREE.Vector3(p.b[0], p.b[1], p.b[2]).normalize();
+    this.muzzleFlash(new THREE.Vector3(p.x, p.y, p.z), dir.negate(), 'rocket');
+    this.onIgnite?.(p);
+  }
+
   update(dt, cam) {
     for (const [id, p] of this.projectiles) {
       // Fast bullets are drawn as a streak of what they cover in a frame, and don't get
@@ -281,7 +291,10 @@ export class FX {
         p.mesh.scale.setScalar(p.munition.size * Math.min(p.munition.max, Math.max(1, d / p.munition.far)));
       }
       if (p.flame) p.flame.scale.z = 0.8 + Math.random() * 0.5;
-      if (p.kind === 'rocket' && p.air) this.rocketTrail(p, dt);
+      if (p.b && rocketStep(p, dt)) this.igniteRocket(p);
+      if (p.kind === 'rocket' && p.air) {
+        if (!(p.coast > 0)) this.rocketTrail(p, dt);
+      }
       else if (p.kind === 'rocket') {
         // Smoke trail
         p.trail = (p.trail ?? 0) - dt;
