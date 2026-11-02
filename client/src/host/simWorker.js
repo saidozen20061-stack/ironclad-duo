@@ -13,6 +13,10 @@ self.onmessage = (e) => {
     match?.onMessage({ crew: d.crew, role: d.role }, d.msg);
   } else if (d.type === 'left') {
     match?.playerLeft(d.crew, d.role);
+  } else if (d.type === 'joined') {
+    match?.playerJoined(d.crew, d.role);
+  } else if (d.type === 'swap') {
+    match?.swapSeat(d.crew, d.from, d.to);
   } else if (d.type === 'stop') {
     match?.dispose();
     match = null;

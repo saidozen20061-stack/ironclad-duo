@@ -288,7 +288,7 @@ export function buildPlane(type, team = 'blue', paint = type) {
     }
   }
   add.dark.push(cyl(0.15, 0.15, 0.1, 8).rotateY(Math.PI / 2).translate(0, -spec.gearH + 0.72, sh.fuse[sh.fuse.length - 1][0] + 1));
-  add.metal.push(box(0.06, spec.gearH * 0.45, 0.08, 0, -spec.gearH * 0.55, sh.fuse[sh.fuse.length - 1][0] + 1));
+  add.metal.push(box(0.06, spec.gearH * 0.62, 0.08, 0, -spec.gearH * 0.465, sh.fuse[sh.fuse.length - 1][0] + 1));
 
   // Bombs hang under the fuselage on the planes that carry them: nose, body, tail fins, rack.
   if (spec.bombs) {

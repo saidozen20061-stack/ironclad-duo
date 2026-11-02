@@ -95,6 +95,23 @@ class Heap {
   }
 }
 
+// The bridge rails: a deck can only be entered at its ends, not from the side.
+const RAILS = new Map();
+function railBetween(k, nk) {
+  const deck = (c) => {
+    let v = RAILS.get(c);
+    if (v === undefined) {
+      const [x, z] = cellCenter(c % N, (c / N) | 0);
+      const b = onBridge(x, z);
+      v = !b ? 0 : Math.abs(z - b.z) < b.halfLength - 4 ? 2 : 1;
+      RAILS.set(c, v);
+    }
+    return v;
+  };
+  const a = deck(k), n = deck(nk);
+  return (a === 0) !== (n === 0) && (a === 2 || n === 2);
+}
+
 const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
 
 function flowField(cost, tx, tz, radius) {
@@ -123,6 +140,7 @@ function flowField(cost, tx, tz, radius) {
       if (c === Infinity) continue;
       // No corner cutting past blocked cells.
       if (di && dj && (cost[idx(i + di, j)] === Infinity || cost[idx(i, j + dj)] === Infinity)) continue;
+      if (railBetween(k, nk)) continue;
       const nd = d + c * w;
       if (nd < dist[nk]) {
         dist[nk] = nd;

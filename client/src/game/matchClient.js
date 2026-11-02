@@ -236,24 +236,40 @@ export class MatchClient {
     }
   }
 
+  // Someone took an empty seat during the match.
+  setCrewNames(crews, names) {
+    this.crewList = crews;
+    this.names = names;
+  }
+
+  crewLabel(c) {
+    return `${PLANES[c?.tank] ? 'Plane' : 'Tank'} ${(c?.id ?? 0) + 1}`;
+  }
+
+  // One name per player, even when one player holds both seats (solo).
+  crewPlayers(c) {
+    return [...new Set([c.driver, c.gunner])].map((p) => this.names[p]).filter(Boolean);
+  }
+
   crewName(id) {
     const c = this.crewList.find((q) => q.id === id);
     if (!c) return `Tank ${id + 1}`;
-    const n = [c.driver, c.gunner].map((p) => this.names[p]).filter(Boolean);
-    return `Tank ${id + 1}${n.length ? ` (${n.join(' & ')})` : ''}`;
+    const n = this.crewPlayers(c);
+    return `${this.crewLabel(c)}${n.length ? ` (${n.join(' & ')})` : ''}`;
   }
 
   scoreboardHtml(stats = this.stats) {
+    const caps = this.mode !== 'fortress'; // no capture points to count there
     const row = (c) => {
       const st = stats.find((q) => q[0] === c.id) ?? [c.id, 0, 0, 0];
-      const n = [c.driver, c.gunner].map((p) => escapeHtml(this.names[p] ?? '—')).join(' & ');
-      return `<tr class="${c.id === this.crew.id ? 'mine' : ''}"><td>Tank ${c.id + 1}<small>${n}</small></td><td>${st[1]}</td><td>${st[2]}</td><td>${st[3]}</td></tr>`;
+      const n = this.crewPlayers(c).map(escapeHtml).join(' & ') || '—';
+      return `<tr class="${c.id === this.crew.id ? 'mine' : ''}"><td>${this.crewLabel(c)}<small>${n}</small></td><td>${st[1]}</td><td>${st[2]}</td>${caps ? `<td>${st[3]}</td>` : ''}</tr>`;
     };
     return ['blue', 'red']
       .map((team) => {
         const crews = this.crewList.filter((c) => c.team === team);
         const body = crews.length ? crews.map(row).join('') : '<tr><td colspan="4">NPC army only</td></tr>';
-        return `<div class="${team}"><h4>${team === 'blue' ? 'BLUE' : 'RED'}</h4><table><tr><th>Crew</th><th>Kills</th><th>Deaths</th><th>Caps</th></tr>${body}</table></div>`;
+        return `<div class="${team}"><h4>${team === 'blue' ? 'BLUE' : 'RED'}</h4><table><tr><th>Crew</th><th>Kills</th><th>Deaths</th>${caps ? '<th>Caps</th>' : ''}</tr>${body}</table></div>`;
       })
       .join('');
   }
@@ -326,6 +342,7 @@ export class MatchClient {
   updateChoice(crew) {
     const on = crew?.mode === 'choice';
     this.choiceEl.classList.toggle('show', on);
+    this.hud.classList.toggle('choosing', on); // the choice replaces the plain "destroyed" notice
     if (!on) this.choiceEl.querySelector('.bail-skip').classList.remove('sel');
     if (!on) return;
     this.choiceEl.querySelector('.bail-timer i').style.width = `${(crew.left / FOOT.choiceTime) * 100}%`;
@@ -549,7 +566,7 @@ export class MatchClient {
   updateFort([wave, fighting, countdown, enemies, bunker]) {
     const el = this.capEl;
     el.querySelector('.wave b').textContent = `${wave}/10`;
-    el.querySelector('.wave-info').textContent = fighting ? `${enemies} attackers left` : `${wave ? 'Next wave' : 'First wave'} in ${countdown}s`;
+    el.querySelector('.wave-info').textContent = fighting ? `${enemies} attackers left${wave < 10 ? ` · next wave in ${countdown}s` : ''}` : `${wave ? 'Next wave' : 'First wave'} in ${countdown}s`;
     const bar = el.querySelector('.bunker u');
     bar.style.width = `${bunker}%`;
     bar.classList.toggle('low', bunker < 35);

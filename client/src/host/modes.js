@@ -31,7 +31,7 @@ function installTdm(m) {
   m.modeTick = () => {
     if (m.time < MATCH.duration) return;
     const { blue, red } = m.score;
-    m.endMatch(blue === red ? (m.tickets.blue >= m.tickets.red ? 'blue' : 'red') : blue > red ? 'blue' : 'red', 'Time is up');
+    m.endMatch(blue === red ? m.leader() : blue > red ? 'blue' : 'red', 'Time is up');
   };
 }
 
@@ -53,6 +53,7 @@ const WAVES = [
 export const WAVE_COUNT = WAVES.length;
 const FIRST_BREAK = 30;
 const BREAK = 20;
+const WAVE_LIMIT = 180; // s: the next wave comes anyway, whoever is still out there
 const ARTY = { id: -1, team: 'red' }; // off-map Red battery
 
 function installFortress(m) {
@@ -74,7 +75,7 @@ function installFortress(m) {
     f.wave++;
     const w = WAVES[f.wave - 1];
     f.phase = 'fight';
-    f.alive = [];
+    f.until = m.time + WAVE_LIMIT;
     const squads = Math.round(w.inf * scale);
     for (let i = 0; i < squads; i++) {
       const [x, z] = spot(i % 3);
@@ -123,7 +124,10 @@ function installFortress(m) {
     }
     f.alive = f.alive.filter((u) => !u.dead && m.units.includes(u));
     if (f.arty) artillery();
-    if (f.alive.length) return;
+    if (f.alive.length) {
+      if (f.wave < WAVES.length && m.time >= f.until) startWave();
+      return;
+    }
     if (f.wave >= WAVES.length) return m.endMatch('blue', `All ${WAVES.length} waves repelled`);
     f.phase = 'break';
     f.until = m.time + BREAK;

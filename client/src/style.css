@@ -164,7 +164,13 @@ input, select {
 .p-bombsight { display: none; position: absolute; left: 50%; top: 50%; width: min(70vh, 80vw); height: min(70vh, 80vw); transform: translate(-50%, -50%); pointer-events: none; }
 .p-bombsight.on { display: block; }
 .p-drift { position: absolute; left: 0; right: 0; bottom: -28px; text-align: center; font: 700 18px var(--ui); color: #ffdc8c; text-shadow: 0 1px 2px #000; }
-.hud.plane .g-pingcd { right: 18px; left: auto; bottom: 196px; top: auto; }
+.hud.plane .g-pingcd { right: 18px; left: auto; bottom: 240px; top: auto; width: 200px; }
+/* In the cockpit the panel shows speed, height and damage itself; the rest moves clear of it. */
+.hud.cockpit .p-panel { bottom: auto; top: 170px; }
+.hud.cockpit .p-row, .hud.cockpit .p-bar, .hud.cockpit .p-mods { display: none; }
+.hud.cockpit .p-arms { margin-top: 2px; }
+.hud.cockpit .g-minimap { bottom: auto; top: 110px; }
+.hud.choosing .g-dead, .hud.choosing .g-lock { visibility: hidden; }
 .p-panel { position: absolute; right: 18px; bottom: 18px; width: 200px; padding: 10px 12px; font-size: 12px; }
 .p-name { font-weight: 700; color: var(--accent); margin-bottom: 4px; font-size: 13px; }
 .p-row { display: flex; align-items: baseline; gap: 6px; }

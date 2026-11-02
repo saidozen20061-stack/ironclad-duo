@@ -201,6 +201,8 @@ function buildWheeled(c) {
   const L = 5.6, W = 2.8;
   const tyre = mat(0x23231f);
   const hub = mat(0x55584c);
+  for (const z of [-1.8, 0, 1.8]) group.add(box(W - 0.5, 0.14, 0.14, hub, 0, 0.55, z)); // axles
+  group.add(box(0.5, 1.3, L * 0.75, hub, 0, 1.0, 0)); // chassis tying them to the hull
   for (const side of [-1, 1]) {
     for (const z of [-1.8, 0, 1.8]) {
       const w = cyl(0.55, 0.55, 0.42, 9, tyre);

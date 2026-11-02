@@ -151,6 +151,55 @@ export class Room {
     return player.id === this.hostId;
   }
 
+  // A seat emptied during the running match, if any: { crew, role }.
+  freeMatchSeat() {
+    if (this.phase !== 'match') return null;
+    for (const c of this.matchInfo.crews) {
+      for (const role of ROLES) if (this.crews[c.id][role] == null) return { crew: c, role };
+    }
+    return null;
+  }
+
+  // Someone joined a running match: they take over the empty seat.
+  addToMatch(player) {
+    const { crew, role } = this.freeMatchSeat();
+    this.players.push(player);
+    player.room = this;
+    player.ready = true;
+    this.place(player, this.crews[crew.id], role);
+    crew[role] = player.id;
+    this.match?.playerJoined?.(crew.id, role);
+    player.send({ t: 'joined', code: this.code, you: player.id });
+    this.sendMatchStart(player);
+    this.broadcast({ t: 'crewNames', crews: this.matchInfo.crews, names: this.names() }, player);
+    this.broadcast({ t: 'peerBack', name: player.name }, player);
+    this.sync();
+  }
+
+  // Alone in a crew during a match: move to the other seat.
+  swapSeat(player) {
+    if (this.phase !== 'match' || player.crew == null) return;
+    const live = this.crews[player.crew];
+    const to = player.role === 'driver' ? 'gunner' : 'driver';
+    if (live[to] != null) return;
+    const from = player.role;
+    this.place(player, live, to);
+    const crew = this.matchInfo.crews.find((c) => c.id === live.id);
+    crew[from] = null;
+    crew[to] = player.id;
+    this.match?.swapSeat?.(live.id, from, to);
+    this.sendMatchStart(player);
+    this.sync();
+  }
+
+  names() {
+    return Object.fromEntries(this.players.map((p) => [p.id, p.name]));
+  }
+
+  sendMatchStart(player) {
+    player.send({ t: 'matchStart', ...this.matchInfo, names: this.names() });
+  }
+
   unready(crew) {
     for (const p of this.players) if (p.crew === crew.id) p.ready = false;
   }
@@ -199,9 +248,9 @@ export class Room {
 
   setMode(player, mode, killLimit, difficulty, airStart) {
     if (this.phase !== 'lobby' || !this.isHost(player)) return;
-    if (mode in MODES) this.mode = mode;
+    if (Object.hasOwn(MODES, mode ?? '')) this.mode = mode;
     if (KILL_LIMITS.includes(killLimit)) this.killLimit = killLimit;
-    if (difficulty in DIFFICULTY) this.difficulty = difficulty;
+    if (Object.hasOwn(DIFFICULTY, difficulty ?? '')) this.difficulty = difficulty;
     if (typeof airStart === 'boolean') this.airStart = airStart;
     this.sync();
   }
@@ -236,7 +285,7 @@ export class Room {
     this.broadcast({
       t: 'matchStart',
       ...this.matchInfo,
-      names: Object.fromEntries(this.players.map((p) => [p.id, p.name])),
+      names: this.names(),
     });
     this.sync();
   }
@@ -304,7 +353,12 @@ export class RoomManager {
         if (!r) return player.send({ t: 'error', msg: `No room with code ${code || '(empty)'}.` }), true;
         if (r === room) return true;
         if (r.full) return player.send({ t: 'error', msg: 'That room is full (10 players).' }), true;
-        if (r.phase !== 'lobby') return player.send({ t: 'error', msg: 'That match is already running.' }), true;
+        if (r.phase !== 'lobby') {
+          if (!r.freeMatchSeat()) return player.send({ t: 'error', msg: 'That match is running and every seat is taken.' }), true;
+          room?.remove(player);
+          r.addToMatch(player);
+          return true;
+        }
         room?.remove(player);
         r.add(player);
         player.send({ t: 'joined', code: r.code, you: player.id });
@@ -330,6 +384,9 @@ export class RoomManager {
       case 'mode':
         room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty, msg.airStart);
         return true;
+      case 'swapSeat':
+        room?.swapSeat(player);
+        return true;
       case 'ready':
         room?.setReady(player, msg.ready);
         return true;
@@ -337,7 +394,7 @@ export class RoomManager {
         room?.start(player);
         return true;
       case 'toLobby':
-        if (room && room.phase === 'match' && room.match?.over) room.returnToLobby();
+        if (room && room.phase === 'match' && room.match?.over && room.isHost(player)) room.returnToLobby();
         return true;
       case 'signal':
         // WebRTC voice signaling relay to one player; payload is opaque to the host.

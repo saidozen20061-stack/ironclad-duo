@@ -287,6 +287,8 @@ export const TANKS = {
 
 // Tank guns can swing right up at the sky, so crews can shoot at planes.
 export const GUN_MAX_ELEVATION = deg(68);
+// Hulls whose track ends reach past size.length: shots stop at the drawn length.
+for (const [id, len] of Object.entries({ medium: 7.1, heavy: 8.4, destroyer: 7.4, assault: 7.3, superheavy: 9.7 })) TANKS[id].hitLength = len;
 for (const t of Object.values(TANKS)) t.elevation.max = GUN_MAX_ELEVATION;
 
 export const TANK_IDS = Object.keys(TANKS);

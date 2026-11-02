@@ -91,8 +91,9 @@ class LocalHost {
 
   accept(conn) {
     conn.on('open', () => {
-      if (this.closed || this.room.full || this.room.phase !== 'lobby') {
-        conn.send({ t: 'error', msg: this.room.phase !== 'lobby' ? 'That match is already running.' : 'That room is full (10 players).' });
+      const running = this.room.phase !== 'lobby';
+      if (this.closed || this.room.full || (running && !this.room.freeMatchSeat())) {
+        conn.send({ t: 'error', msg: running ? 'That match is running and every seat is taken.' : 'That room is full (10 players).' });
         setTimeout(() => conn.close(), 500);
         return;
       }
@@ -220,6 +221,14 @@ class SimProxy {
 
   playerLeft(crew, role) {
     this.worker.postMessage({ type: 'left', crew, role });
+  }
+
+  playerJoined(crew, role) {
+    this.worker.postMessage({ type: 'joined', crew, role });
+  }
+
+  swapSeat(crew, from, to) {
+    this.worker.postMessage({ type: 'swap', crew, from, to });
   }
 
   dispose() {

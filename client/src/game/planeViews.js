@@ -127,6 +127,11 @@ function drawGauge(ctx, cx, cy, r, label, frac, value) {
   ctx.fillText(value, cx, cy + r * 0.62);
 }
 
+// Wheels above the ground (or water), the same figure on every altitude readout.
+function heightAboveGround(self, pl, spec) {
+  return Math.max(0, (pl.y ?? 0) - Math.max(groundAt(self.x, self.z), WATER_LEVEL) - spec.gearH);
+}
+
 function drawInstruments(cp, self, me, spec, pingBearing) {
   const ctx = cp.ctx;
   const pl = me.pl ?? {};
@@ -134,7 +139,8 @@ function drawInstruments(cp, self, me, spec, pingBearing) {
   ctx.fillStyle = '#20221c';
   ctx.fillRect(0, 0, W, H);
   drawGauge(ctx, 92, 120, 84, 'SPEED', Math.abs(self.v ?? me.v) / (spec.maxSpeed * 1.4), `${Math.round(Math.abs(me.v) * 3.6)}`);
-  drawGauge(ctx, 268, 120, 84, 'ALT', (pl.y ?? 0) / FLIGHT.maxAlt, `${Math.round(pl.y ?? 0)}`);
+  const alt = heightAboveGround(self, pl, spec);
+  drawGauge(ctx, 268, 120, 84, 'ALT', alt / FLIGHT.maxAlt, `${Math.round(alt)}`);
   // Artificial horizon.
   ctx.save();
   ctx.beginPath();
@@ -284,7 +290,8 @@ class PlaneBase extends GunnerView {
     $('.g-lock').style.display = this.aiming() || this.paused ? 'none' : '';
     $('.g-thermal').classList.toggle('on', this.thermalActive());
     $('.p-speed').textContent = Math.round(Math.abs(me.v) * 3.6);
-    $('.p-alt').textContent = Math.round((pl.y ?? 0) - Math.max(groundAt(self.x, self.z), WATER_LEVEL));
+    $('.p-alt').textContent = Math.round(heightAboveGround(self, pl, this.plane));
+    this.el.classList.toggle('cockpit', !!this.cockpitOn);
     $('.p-th').style.width = `${(pl.th ?? 0) * 100}%`;
     $('.p-fuel').style.width = `${(pl.fuel ?? 0) * 100}%`;
     const s = this.plane;
@@ -383,6 +390,7 @@ export class PilotView extends PlaneBase {
   constructor(opts) {
     super(opts);
     this.el.classList.add('pilot');
+    this.$('.g-lock').textContent = 'Click to take control';
     this.stick = { pitch: 0, roll: 0 };
     this.look = { yaw: 0, pitch: 0 };
     this.freeLook = false;
@@ -596,6 +604,7 @@ export class PlaneSoloView extends PlaneBase {
     this.$('.g-pingcd').style.display = 'none';
     this.onPing = null;
     this.camDist = null;
+    this.$('.g-lock').textContent = 'Click to take control';
     this.$('.p-hint').textContent = 'Mouse aims · W/S throttle · A,D roll · Q,E rudder · LMB guns · Space bombs · R rockets · RMB cockpit · X bail out';
     this.bindFlight();
     this.look = { yaw: 0, pitch: 0 };

@@ -57,6 +57,9 @@ const FLATS = [
   { x: POINTS[1].x, z: POINTS[1].z, r: 28, blend: 30 }, // hilltop plateau
 ];
 
+// Half-sizes of the levelled ground around a base (it holds the whole fortress too).
+const BASE_LEVEL = { x: 115, z: 95, blend: 50 };
+
 const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
 export const smoothstep = (a, b, x) => {
   const t = clamp01((x - a) / (b - a));
@@ -101,12 +104,23 @@ function computeHeight(x, z) {
   h += e * e * 0.006 + e * 0.2;
   h = Math.max(h, WATER_LEVEL + 1.6);
 
+  // Bases are levelled out to their perimeter, or the edge mountains would rise through them.
+  for (const [k, b] of [[0, BASES.blue], [1, BASES.red]]) {
+    const dx = Math.max(0, Math.abs(x - b.x) - BASE_LEVEL.x);
+    const dz = Math.max(0, Math.abs(z - b.z) - BASE_LEVEL.z);
+    const d = Math.hypot(dx, dz);
+    if (d < BASE_LEVEL.blend) h = lerp(FLATS[k].h, h, smoothstep(0, BASE_LEVEL.blend, d));
+  }
+
   // Airfields are levelled, including where the edge mountains would start to rise.
   for (const f of Object.values(AIRFIELDS)) {
-    const dx = Math.max(0, Math.abs(x - f.x) - (f.len / 2 + 30));
+    // On the side facing the base it stops short, so its slope doesn't reach the base's walls.
+    const inner = (x - f.x) * f.dir > 0;
+    const dx = Math.max(0, Math.abs(x - f.x) - (f.len / 2 + (inner ? 6 : 30)));
     const dz = Math.max(0, Math.abs(z - f.z) - (f.width / 2 + 60));
     const d = Math.hypot(dx, dz);
-    if (d < 45) h = lerp(f.h, h, smoothstep(0, 45, d));
+    const blend = inner ? 24 : 45;
+    if (d < blend) h = lerp(f.h, h, smoothstep(0, blend, d));
   }
 
   // Bridge approaches: ramp the banks to deck height so the road meets the bridge.

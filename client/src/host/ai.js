@@ -4,7 +4,7 @@
 
 import { Vector3 } from 'three';
 import { UNITS, MATCH, TANKS } from '../../../shared/constants.js';
-import { POINTS, BASES, groundAt, heightAt, WATER_LEVEL } from '../../../shared/map.js';
+import { POINTS, BASES, BRIDGES, groundAt, heightAt, waterDepthAt } from '../../../shared/map.js';
 import { propsNear, circleHitsProp, segmentHitsProp, FORT } from '../../../shared/props.js';
 import { wrapAngle, planePitchAlong, muzzlePose } from '../../../shared/tank.js';
 import { nextWaypoint, passable, distanceTo } from './nav.js';
@@ -15,6 +15,7 @@ const ENEMY = { blue: 'red', red: 'blue' };
 const FIELD_OF_VIEW = (65 * Math.PI) / 180; // to each side of where it's facing
 const TRACK_MEMORY = 2; // s: a target that just left the view isn't forgotten instantly
 const NOTICE_CLOSE = 10; // m: you can hear someone this close
+const STORM_RANGE = 30; // m: Fortress attackers keep walking until a target is this close
 
 // ---------- Helpers ----------
 
@@ -219,7 +220,12 @@ export class ArmyAI {
     const squad = { members: out, leader: null };
     for (let i = 0; i < n; i++) {
       const type = i === 0 || (i === 3 && Math.random() < 0.5) ? 'rocket' : 'rifle';
-      const u = new Infantry(team, type, cx + rand(-6, 6), cz + rand(-6, 6));
+      let x = cx + rand(-6, 6), z = cz + rand(-6, 6);
+      for (let k = 0; k < 6 && this.infBlocked(x, z); k++) {
+        x = cx + rand(-14, 14);
+        z = cz + rand(-14, 14);
+      }
+      const u = new Infantry(team, type, x, z);
       u.ai.objective = objective;
       u.squad = squad;
       this.match.units.push(u);
@@ -236,6 +242,9 @@ export class ArmyAI {
     if (!sq.leader || sq.leader.dead) sq.leader = sq.members.find((m) => !m.dead) ?? null;
     const L = sq.leader;
     if (!L || L === u) return null;
+    // Only follow a leader who's actually going somewhere: one who is fighting or
+    // falling back shouldn't hold the rest of the squad where they stand.
+    if (L.ai.state !== 'move') return null;
     const i = sq.members.filter((m) => !m.dead && m !== L).indexOf(u) + 1;
     const row = Math.ceil(i / 2), side = i % 2 ? 1 : -1;
     const lx = side * 3.2 * row, lz = -2.8 * row; // local: x left, z forward
@@ -405,16 +414,21 @@ export class ArmyAI {
     ai.cd -= dt;
     if (ai.think <= 0) {
       ai.think = rand(0.4, 0.7);
+      if (this.infBlocked(u.x, u.z)) this.popOut(u);
       if (ai.target && (ai.target.dead || !m.units.includes(ai.target))) ai.target = null;
       ai.target = this.findTarget(u, w.range, w.kind === 'rocket' ? 'armor' : 'soft');
-      if (!ai.target && m.mode === 'fortress' && u.team === 'red' && w.kind === 'rocket') ai.target = this.structureTarget(u, 90);
+      // Fortress attackers come to fight: no running home, and everyone chips at the walls.
+      const storming = m.mode === 'fortress' && u.team === 'red';
+      if (!ai.target && storming) ai.target = this.structureTarget(u, w.kind === 'rocket' ? 90 : STORM_RANGE);
       const prevTarget = ai.lastTarget;
       ai.lastTarget = ai.target;
-      if (u.hp < 35 && ai.state !== 'retreat') {
+      if (u.hp < 35 && ai.state !== 'retreat' && !storming) {
         ai.state = 'retreat';
         ai.cover = null;
         this.callForDrag(u);
       } else if (ai.state === 'retreat' && u.hp >= 35) ai.state = 'move';
+      // Patched up at base, then back to the war.
+      if (ai.state === 'retreat' && Math.hypot(BASES[u.team].x - u.x, BASES[u.team].z - u.z) < 60) u.hp = Math.min(u.spec.hp, u.hp + 6);
       // Squad leaders wave their squad on when they spot a new enemy.
       if (u.squad?.leader === u && ai.target && ai.target !== prevTarget && ai.signalT <= 0) ai.signalT = 1.6;
       // Riflemen lob a grenade at infantry in throwing range now and then.
@@ -426,7 +440,11 @@ export class ArmyAI {
       if (ai.state !== 'retreat') {
         const objPt = m.points.find((p) => p.id === ai.objective);
         if (!objPt || (objPt.owner === u.team && Math.random() < 0.08)) ai.objective = chooseObjective(m, u);
-        if (ai.target) {
+        if (ai.target && storming) {
+          // Shooting on the move, closing in on the walls, no sitting in cover.
+          ai.cover = null;
+          ai.state = Math.hypot(ai.target.x - u.x, ai.target.z - u.z) > STORM_RANGE ? 'advance' : 'engage';
+        } else if (ai.target) {
           if (!ai.cover) ai.cover = this.findCover(u, ai.target);
           ai.state = ai.cover ? 'cover' : 'engage';
         } else {
@@ -449,12 +467,15 @@ export class ArmyAI {
     // Being dragged to safety by a squadmate: just follow along.
     if (ai.draggedBy) {
       const b = ai.draggedBy;
-      if (b.dead || b.ai.drag !== u || u.dead) {
+      if (b.dead || b.ai.drag !== u || u.dead || this.match.time > b.ai.dragUntil) {
         ai.draggedBy = null;
         if (!b.dead) b.ai.drag = null;
       } else {
-        u.x = b.x + Math.sin(b.h + Math.PI) * 0.9;
-        u.z = b.z + Math.cos(b.h + Math.PI) * 0.9;
+        const dx = b.x + Math.sin(b.h + Math.PI) * 0.9, dz = b.z + Math.cos(b.h + Math.PI) * 0.9;
+        if (!this.infBlocked(dx, dz)) {
+          u.x = dx;
+          u.z = dz;
+        }
         u.h = b.h + Math.PI;
         u.pose.y = groundAt(u.x, u.z);
         u.ty = POSE.PRONE | POSE.WOUNDED;
@@ -466,10 +487,10 @@ export class ArmyAI {
     let goal = null;
     // Squads move as a wedge behind their leader instead of a single file.
     const slot = ai.state === 'move' ? this.formationSlot(u) : null;
-    if (ai.drag) goal = nextWaypoint('inf', u.team, u.x, u.z, 2);
-    else if (slot && Math.hypot(slot.x - u.x, slot.z - u.z) < 30) goal = slot;
-    else if (ai.state === 'move') goal = nextWaypoint('inf', ai.objective, u.x, u.z, 2);
-    else if (ai.state === 'retreat') goal = nextWaypoint('inf', u.team, u.x, u.z, 2);
+    if (ai.drag) goal = this.pathGoal(u, u.team);
+    else if (slot && Math.hypot(slot.x - u.x, slot.z - u.z) < 30 && !this.infBlocked(slot.x, slot.z)) goal = slot;
+    else if (ai.state === 'move' || ai.state === 'advance') goal = this.pathGoal(u, ai.objective);
+    else if (ai.state === 'retreat') goal = this.pathGoal(u, u.team);
     else if (ai.state === 'cover' && ai.cover) goal = ai.cover;
     else if (ai.state === 'hold' && !ai.holdSpot) {
       if (ai.objective === 'fortress' && FORT.spots.length) {
@@ -477,8 +498,10 @@ export class ArmyAI {
         ai.holdSpot = { x: sp.x + rand(-2, 2), z: sp.z + rand(-1, 1) };
       } else {
         const pt = objPoint(ai.objective);
-        const a = rand(0, Math.PI * 2);
-        ai.holdSpot = { x: pt.x + Math.cos(a) * rand(5, pt.r * 0.7), z: pt.z + Math.sin(a) * rand(5, pt.r * 0.7) };
+        for (let k = 0; k < 8 && (!ai.holdSpot || this.infBlocked(ai.holdSpot.x, ai.holdSpot.z)); k++) {
+          const a = rand(0, Math.PI * 2);
+          ai.holdSpot = { x: pt.x + Math.cos(a) * rand(5, pt.r * 0.7), z: pt.z + Math.sin(a) * rand(5, pt.r * 0.7) };
+        }
       }
     }
     if (ai.state === 'hold') goal = ai.holdSpot;
@@ -489,7 +512,7 @@ export class ArmyAI {
       const dx = goal.x - u.x, dz = goal.z - u.z;
       const d = Math.hypot(dx, dz);
       if (d > 0.8) {
-        let sp = u.spec.speed * (ai.state === 'retreat' || ai.state === 'cover' ? 1.25 : 1) * (heightAt(u.x, u.z) < WATER_LEVEL ? 0.45 : 1);
+        let sp = u.spec.speed * (ai.state === 'retreat' || ai.state === 'cover' ? 1.25 : 1) * (waterDepthAt(u.x, u.z) > 0 ? 0.45 : 1);
         if (ai.proneT > 0) sp *= 0.3; // crawling
         if (u.hp < 50) sp *= 0.75; // limping
         if (ai.drag) sp = 1.3; // hauling a wounded squadmate
@@ -508,14 +531,10 @@ export class ArmyAI {
           }
         }
         if (this.infBlocked(nx, nz)) {
-          // Slide along whichever axis is free.
-          if (!this.infBlocked(nx, u.z)) nz = u.z;
-          else if (!this.infBlocked(u.x, nz)) nx = u.x;
-          else {
-            nx = u.x;
-            nz = u.z;
-          }
-        }
+          const free = this.stepAround(u, dx / d, dz / d, step);
+          nx = free ? free[0] : u.x;
+          nz = free ? free[1] : u.z;
+        } else ai.aroundT = 0;
         if (nx !== u.x || nz !== u.z) {
           // The dragger walks backwards, facing the casualty.
           u.h = Math.atan2(nx - u.x, nz - u.z) + (ai.drag ? Math.PI : 0);
@@ -537,7 +556,7 @@ export class ArmyAI {
     // Shooting: only when not sprinting to cover / retreating.
     const t = ai.target;
     const reacting = this.reacting(ai, t, dt);
-    if (t && !t.dead && !reacting && ai.state !== 'retreat' && !ai.drag && ai.cd <= 0 && ai.reloadT <= 0 && ai.throwT <= 0 && (!moving || ai.state === 'engage')) {
+    if (t && !t.dead && !reacting && ai.state !== 'retreat' && !ai.drag && ai.cd <= 0 && ai.reloadT <= 0 && ai.throwT <= 0 && (!moving || ai.state === 'engage' || ai.state === 'advance')) {
       u.h = Math.atan2(t.x - u.x, t.z - u.z);
       const d = Math.hypot(t.x - u.x, t.z - u.z);
       if (d <= w.range) {
@@ -583,11 +602,8 @@ export class ArmyAI {
     }
     if (!best || Math.random() < 0.4) return;
     best.ai.drag = u;
+    best.ai.dragUntil = this.match.time + 12;
     u.ai.draggedBy = best;
-    setTimeout(() => {
-      if (best.ai.drag === u) best.ai.drag = null;
-      if (u.ai.draggedBy === best) u.ai.draggedBy = null;
-    }, 12000);
   }
 
   throwGrenade(u, t, d) {
@@ -607,7 +623,50 @@ export class ArmyAI {
     for (const p of propsNear(x, z, 2)) {
       if (p.solid && !this.match.propDead.has(p.id) && circleHitsProp(p, x, z, 0.4)) return true;
     }
-    return heightAt(x, z) < WATER_LEVEL - 1.2;
+    return waterDepthAt(x, z) > 1.2; // a bridge deck counts as dry, whatever is underneath
+  }
+
+  // Look two nav cells ahead for smooth walking, unless the straight line there crosses deep
+  // water or a wall (at a ford, say): then just take the next cell.
+  pathGoal(u, key) {
+    const far = nextWaypoint('inf', key, u.x, u.z, 2);
+    if (!far) return far;
+    for (const t of [0.25, 0.5, 0.75]) {
+      if (this.infBlocked(u.x + (far.x - u.x) * t, u.z + (far.z - u.z) * t)) return nextWaypoint('inf', key, u.x, u.z, 1);
+    }
+    return far;
+  }
+
+  // The way ahead is blocked (the 8 m nav grid misses small things like hedgehogs and AA guns):
+  // walk round it, keeping to one side, and try the other side if that gets nowhere.
+  stepAround(u, fx, fz, step) {
+    const ai = u.ai;
+    ai.aroundSide ??= Math.random() < 0.5 ? 1 : -1;
+    ai.aroundT = (ai.aroundT ?? 0) + step;
+    if (ai.aroundT > 18) {
+      ai.aroundT = 0;
+      ai.aroundSide = -ai.aroundSide;
+    }
+    for (const a of [0.6, 1.1, 1.6, 2.2, 2.8]) {
+      const s = Math.sin(a * ai.aroundSide), c = Math.cos(a);
+      const x = u.x + (fx * c - fz * s) * step, z = u.z + (fx * s + fz * c) * step;
+      if (!this.infBlocked(x, z)) return [x, z];
+    }
+    return null;
+  }
+
+  // Standing inside something solid: come out at the nearest free spot.
+  popOut(u) {
+    for (let r = 1; r <= 24; r += 1.5) {
+      for (let k = 0; k < 12; k++) {
+        const x = u.x + Math.cos((k * Math.PI) / 6) * r, z = u.z + Math.sin((k * Math.PI) / 6) * r;
+        if (this.infBlocked(x, z)) continue;
+        u.x = x;
+        u.z = z;
+        u.pose.y = groundAt(x, z);
+        return;
+      }
+    }
   }
 
   findCover(u, threat) {
@@ -639,7 +698,8 @@ export class ArmyAI {
       ai.think = rand(0.4, 0.6);
       ai.target = this.findTarget(t, 420, 'armor');
       if (m.mode === 'fortress' && t.team === 'red' && (!ai.target || Math.hypot(ai.target.x - t.x, ai.target.z - t.z) > 160)) ai.target = this.structureTarget(t, 160) ?? ai.target;
-      if (t.hp < t.spec.hp * 0.25) ai.state = 'retreat';
+      // Fortress attackers don't drive all the way home to repair.
+      if (t.hp < t.spec.hp * 0.25 && !(m.mode === 'fortress' && t.team === 'red')) ai.state = 'retreat';
       else if (ai.state === 'retreat' && t.hp > t.spec.hp * 0.7) ai.state = 'move';
       if (ai.state !== 'retreat') {
         const objPt = m.points.find((p) => p.id === ai.objective);
@@ -673,6 +733,10 @@ export class ArmyAI {
       const key = ai.state === 'retreat' ? t.team : ai.objective;
       const goal = ai.state === 'engage' || ai.state === 'hold' ? null : nextWaypoint('tank', key, t.x, t.z, 3);
       if (goal) {
+        // Line up with the deck before driving onto a bridge: the rails stop anything coming in at an angle.
+        for (const b of BRIDGES) {
+          if (Math.abs(t.x - b.x) < 26 && Math.abs(t.z - b.z) < b.halfLength + 22 && Math.abs(goal.x - b.x) < 26) goal.x = b.x;
+        }
         const want = Math.atan2(goal.x - t.x, goal.z - t.z);
         const diff = wrapAngle(want - t.h);
         drive.st = Math.max(-1, Math.min(1, diff * 2));

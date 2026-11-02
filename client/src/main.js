@@ -195,9 +195,12 @@ net.on('peerLeft', (msg) => {
     toast(`${msg.name} ${why}. Match ended — back to the lobby.`, { error: true, ms: 6000 });
     returnToLobbyView();
   } else {
-    toast(match ? `${msg.name} ${why}. Their seat is empty now.` : `${msg.name} ${why} the lobby.`);
+    toast(match ? `${msg.name} ${why}. Esc, Switch Seat to take over, or they can rejoin with the room code.` : `${msg.name} ${why} the lobby.`);
   }
 });
+
+net.on('peerBack', (msg) => toast(`${msg.name} took the empty seat.`));
+net.on('crewNames', (msg) => match?.setCrewNames(msg.crews, msg.names));
 
 net.on('disconnected', (msg) => {
   const wasInRoom = !!lobby.state;
@@ -228,7 +231,18 @@ net.on('matchStart', (msg) => {
   const crew = msg.crews.find((c) => c.driver === net.id || c.gunner === net.id);
   const role = msg.solo ? 'solo' : crew.driver === net.id ? 'driver' : 'gunner';
   if (!msg.solo) voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
-  match = new MatchClient({ role, tank: crew.tank, crew, info: msg, onPause: () => showScreen('pause') });
+  match = new MatchClient({
+    role,
+    tank: crew.tank,
+    crew,
+    info: msg,
+    onPause: () => {
+      showScreen('pause');
+      // Alone in the crew: the other seat can be taken.
+      const mine = lobby.myCrew;
+      $('#btn-pause-swap').style.display = mine && (mine.driver == null || mine.gunner == null) ? '' : 'none';
+    },
+  });
   clearHistory();
   hideScreens();
   setActiveView(match);
@@ -241,23 +255,25 @@ net.on('toLobby', () => {
 
 net.on('matchEnd', (msg) => {
   const victory = msg.winner === (match?.team ?? 'blue');
+  const draw = msg.winner == null;
   const mine = msg.crews.find((c) => c[0] === match?.crew.id) ?? [0, 0, 0, 0];
   const res = $('#end-result');
-  res.textContent = victory ? 'VICTORY' : 'DEFEAT';
-  res.className = `result ${victory ? 'win' : 'lose'}`;
+  res.textContent = draw ? 'DRAW' : victory ? 'VICTORY' : 'DEFEAT';
+  res.className = `result ${draw ? '' : victory ? 'win' : 'lose'}`;
   $('#end-reason').textContent = msg.reason ?? '';
   const secs = Math.floor(msg.time);
   $('#end-time').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
   $('#end-kills').textContent = mine[1];
   $('#end-caps').textContent = mine[3];
+  $('#end-caps').parentElement.style.display = msg.mode === 'fortress' ? 'none' : '';
   $('#end-board').innerHTML = match?.scoreboardHtml(msg.crews) ?? '';
   match?.onMatchEnd?.(msg);
-  $('#btn-end-lobby').textContent = net.mode === 'solo' ? 'Back to Menu' : 'Return to Lobby';
+  $('#btn-end-lobby').textContent = net.mode === 'solo' ? 'Back to Menu' : lobby.isHost ? 'Return to Lobby' : 'Leave to Menu';
   showScreen('end', { remember: false });
 });
 
 $('#btn-end-lobby').addEventListener('click', () => {
-  if (net.mode !== 'solo') return net.send({ t: 'toLobby' });
+  if (net.mode !== 'solo' && lobby.isHost) return net.send({ t: 'toLobby' });
   leaveRoom();
   goMenu();
 });
@@ -269,6 +285,7 @@ function resume() {
 }
 $('#btn-resume').addEventListener('click', resume);
 $('#btn-pause-settings').addEventListener('click', () => showScreen('settings'));
+$('#btn-pause-swap').addEventListener('click', () => net.send({ t: 'swapSeat' }));
 $('#btn-pause-leave').addEventListener('click', () => {
   leaveRoom();
   goMenu();

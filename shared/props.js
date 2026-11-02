@@ -8,6 +8,9 @@ import { POINTS, BASES, BRIDGES, FORD, AIRFIELDS, inAirfield, riverZ, heightAt, 
 // Rotation convention (matches Three.js rotation.y): local X = width, local Z = depth.
 // world = (lx*cos + lz*sin, -lx*sin + lz*cos)
 
+// How far a roof rises above a prop's walls: shells have to stop at the roof, not fly through it.
+const ROOF = { house: 1.6, church: 3, chapel: 3, ruin: 0.8, bunker: 0.6, fbunker: 0.6, dugout: 0.6, command: 1.2 };
+
 export const PROP_TYPES = {
   house: { solid: true, hp: 900, cover: true },
   ruin: { solid: true, hp: 500, cover: true },
@@ -99,7 +102,7 @@ const rr = (a, b) => a + rand() * (b - a);
 export const PROPS = [];
 function add(type, x, z, rot, w, d, h, extra = {}) {
   const t = PROP_TYPES[type];
-  const p = { id: PROPS.length, type, x, z, rot, w, d, h, y: groundAt(x, z), hp: t.hp, maxHp: t.hp, solid: t.solid, cover: !!t.cover, ...extra };
+  const p = { id: PROPS.length, type, x, z, rot, w, d, h, y: groundAt(x, z), top: h + (ROOF[type] ?? 0), hp: t.hp, maxHp: t.hp, solid: t.solid, cover: !!t.cover, ...extra };
   PROPS.push(p);
   return p;
 }
@@ -168,7 +171,7 @@ function add(type, x, z, rot, w, d, h, extra = {}) {
   add('silo', C.x + 40, C.z + 6, 0, 6, 6, 18);
   add('silo', C.x + 48, C.z + 2, 0, 6, 6, 14);
   // Fuel depot: a row of tanks that explode when shot.
-  for (let i = 0; i < 4; i++) add('fueltank', C.x - 12 + i * 7.5, C.z - 46, 0, 4.6, 9, 4.6);
+  for (let i = 0; i < 4; i++) add('fueltank', C.x - 14 + i * 7.5, C.z + 66, 0, 4.6, 9, 4.6);
   add('house', C.x + 6, C.z - 10, 0, 9, 8, 6, { variant: 0 });
   for (let k = 0; k < 6; k++) add('wall', C.x + rr(-55, 55), C.z + rr(-55, 55), rr(0, Math.PI), rr(6, 12), 0.6, rr(1.4, 2));
   for (let k = 0; k < 5; k++) add('crates', C.x + rr(-30, 30), C.z + rr(-30, 30), rr(0, 3), 2.4, 2.4, 1.6);
@@ -208,7 +211,10 @@ for (const [team, b] of Object.entries(BASES)) {
 for (const pt of POINTS) {
   const a = (pt.x + pt.z) * 0.01;
   for (const k of [0, 1]) {
-    const ang = a + k * 2.4;
+    let ang = a + k * 2.4;
+    // Not in the river or on its bank.
+    const wet = (t) => Math.abs(pt.z + Math.sin(t) * (pt.r + 16) - riverZ(pt.x + Math.cos(t) * (pt.r + 16))) < 30;
+    for (let n = 0; n < 15 && wet(ang); n++) ang += 0.4;
     add('aagun', pt.x + Math.cos(ang) * (pt.r + 16), pt.z + Math.sin(ang) * (pt.r + 16), 0, 4, 4, 2.6, { point: pt.id });
   }
 }
@@ -408,6 +414,18 @@ export const CRATERS = [];
     // Bigger shell holes in low ground fill with rain water.
     CRATERS.push({ x, z, r, water: r > 3.5 && rand() < 0.35 });
   }
+  // A hole on a steep bank looks wrong, and a pool can only lie on level ground.
+  for (let i = CRATERS.length - 1; i >= 0; i--) {
+    const c = CRATERS[i];
+    let lo = Infinity, hi = -Infinity;
+    for (let a = 0; a < 8; a++) {
+      const g = groundAt(c.x + Math.cos((a * Math.PI) / 4) * c.r, c.z + Math.sin((a * Math.PI) / 4) * c.r);
+      lo = Math.min(lo, g);
+      hi = Math.max(hi, g);
+    }
+    if ((hi - lo) / (2 * c.r) > 0.35) CRATERS.splice(i, 1);
+    else if (hi - lo > 0.6) c.water = false;
+  }
 }
 
 // ---------- Fields (crop rows + hedgerows are drawn by the client) ----------
@@ -556,7 +574,7 @@ export function segmentHitsProp(p, x0, y0, z0, dx, dy, dz) {
   const o = [ox, y0 - p.y, oz];
   const d = [ldx, dy, ldz];
   const min = [-p.w / 2, -0.5, -p.d / 2];
-  const max = [p.w / 2, p.h, p.d / 2];
+  const max = [p.w / 2, p.top ?? p.h, p.d / 2];
   let tmin = 0, tmax = 1;
   for (let a = 0; a < 3; a++) {
     if (Math.abs(d[a]) < 1e-9) {

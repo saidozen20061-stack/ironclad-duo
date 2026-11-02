@@ -14,6 +14,9 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a = -1, b = 1) => (v < a ? a : v > b ? b : v);
 const r2 = (v) => Math.round(v * 100) / 100;
 
+const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
+const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
+
 const fwd = (h, p, out = new Vector3()) => out.set(Math.sin(h) * Math.cos(p), Math.sin(p), Math.cos(h) * Math.cos(p));
 
 let nextId = 500000;
@@ -123,9 +126,9 @@ export class PlaneSystem {
       k.fire = !!msg.fire;
       k.bomb = !!msg.bomb;
       k.rocket = !!msg.rocket;
-      k.aim = Number.isFinite(msg.aimYaw) && Number.isFinite(msg.aimPitch) ? { yaw: msg.aimYaw, pitch: clamp(msg.aimPitch, -1.4, 1.4) } : null;
+      k.aim = Number.isFinite(msg.aimYaw) && Number.isFinite(msg.aimPitch) ? { yaw: wrapAngle(msg.aimYaw), pitch: clamp(msg.aimPitch, -1.4, 1.4) } : null;
     } else if (role === 'gunner' && msg.t === 'rear') {
-      if (Array.isArray(msg.dir) && msg.dir.every(Number.isFinite)) p.rear.dir = new Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
+      if (Array.isArray(msg.dir) && msg.dir.length === 3 && msg.dir.every((v) => Math.abs(v) <= 2) && Math.hypot(...msg.dir) > 0.01) p.rear.dir = new Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
       p.rear.fire = !!msg.fire;
       if (msg.bomb) this.dropBomb(p);
     } else if (role === 'gunner' && msg.t === 'ping' && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
@@ -369,9 +372,11 @@ export class PlaneSystem {
       const r = s.rockets;
       p.rocketCd = 0.28;
       p.rockets--;
-      const side = p.rockets % 2 ? 1 : -1;
-      const pos = new Vector3(p.x + Math.cos(p.h) * s.size.width * 0.3 * side, p.y - 0.5, p.z - Math.sin(p.h) * s.size.width * 0.3 * side);
-      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4, air: true }, pos, f.clone());
+      // Launched close to the fuselage and angled in, so they meet on the nose line ahead.
+      const off = Math.min(ROCKET_OFFSET, s.size.width * 0.12) * (p.rockets % 2 ? 1 : -1);
+      const pos = new Vector3(p.x + Math.cos(p.h) * off, p.y - 0.5, p.z - Math.sin(p.h) * off);
+      const dir = new Vector3(p.x + f.x * ROCKET_CONVERGE, p.y + f.y * ROCKET_CONVERGE, p.z + f.z * ROCKET_CONVERGE).sub(pos).normalize();
+      m.fire(p, { kind: 'rocket', damage: r.damage, speed: r.speed + p.v, splash: r.splash, splashDamage: r.splashDamage, spread: r.spread * (p.ai ? m.skill.rocket : 1), life: 4, air: true }, pos, dir);
     }
     this.rearGun(p);
     this.sixCheck(p);
