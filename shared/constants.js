@@ -8,8 +8,9 @@ export const MAX_NAME_LENGTH = 16;
 export const ROLES = ['driver', 'gunner'];
 
 // Up to 5 tank crews (10 players) per room.
-export const MAX_CREWS = 5;
-export const MAX_PLAYERS = MAX_CREWS * 2;
+export const MAX_CREWS = 10; // five slots per team
+export const MAX_PLAYERS = 10;
+export const PLAY_STYLES = { duo: 'Duo crews', solo: 'Solo vehicles' };
 export const MODES = {
   flags: { name: 'Flag Capture', blurb: 'Hold A, B and C. The team with fewer flags bleeds tickets.' },
   tdm: { name: 'Team Deathmatch', blurb: 'Crews fight crews. Player tank = 3 pts, NPC tank = 1.' },
@@ -326,7 +327,7 @@ export const MATCH = {
   bleedInterval: 3,
   capRate: 0.02, // progress per second per capture weight
   capWeight: { player: 5, tank: 2, inf: 1 },
-  caps: { inf: 22, tank: 5 }, // per team, alive at once
+  caps: { inf: 22, tank: 8 }, // per team, alive at once
   waveInterval: 25,
 };
 

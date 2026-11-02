@@ -1,5 +1,5 @@
 import { Vector3, Euler, Quaternion } from 'three';
-import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET } from '../../../shared/planes.js';
+import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET, MAX_SIDE_PLANES } from '../../../shared/planes.js';
 import { TICK_RATE } from '../../../shared/constants.js';
 import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES } from '../../../shared/map.js';
 import { PROPS, propsNear, segmentHitsProp, FORT } from '../../../shared/props.js';
@@ -109,9 +109,9 @@ export class PlaneSystem {
   crewSpawn(team, slot) {
     const f = AIRFIELDS[team];
     const y = groundAt(f.startX, f.z);
-    const z = f.z + (slot - 2) * 4;
+    const z = f.z + (slot ? 10 : -8); // side by side, each with its own half of the runway
     if (this.airStart) return { x: f.startX + f.dir * 120, y: FLIGHT.airStartAlt, z, v: 45, grounded: false, h: f.heading };
-    return { x: f.startX - f.dir * slot * 26, y, z, v: 0, grounded: true, h: f.heading };
+    return { x: f.startX, y, z, v: 0, grounded: true, h: f.heading };
   }
 
   createPlayerPlane(team, type, slot) {
@@ -204,8 +204,6 @@ export class PlaneSystem {
     p.h = wrapAngle(p.h + (-(pitchRate * sn) + yawRate * c) / cp * DT);
     const bankTurn = -sn * (G / Math.max(12, speed)) * 1.3 * authority * turnK;
     p.h = wrapAngle(p.h + (bankTurn / cp) * DT);
-    // Wings level themselves slightly in hands-off flight.
-    if (Math.abs(stickR) < 0.05 && !k.aim) p.ty -= p.ty * Math.min(1, DT * 0.5);
 
     // Speed: thrust against drag, gravity along the flight path.
     const thin = 1 - clamp((p.y - FLIGHT.maxAlt + 60) / 60, 0, 1);
@@ -598,16 +596,16 @@ export class PlaneSystem {
       this.nextNpc[team] -= DT;
       if (this.nextNpc[team] > 0) continue;
       this.nextNpc[team] = NPC_PLANES.every;
-      if (!this.sideHasPlane(team)) {
+      if (!this.sideFull(team)) {
         this.spawnNpc(team, this.nextRole[team]);
         this.nextRole[team] = this.nextRole[team] === 'fighter' ? 'attack' : 'fighter';
       }
     }
   }
 
-  // One plane per side: a player crew's plane holds the slot even while it waits to respawn.
-  sideHasPlane(team) {
-    return this.m.units.some((u) => u.kind === 'plane' && u.team === team && (u.player || !u.dead));
+  // A player crew's plane holds its slot even while it waits to respawn.
+  sideFull(team) {
+    return this.m.units.filter((u) => u.kind === 'plane' && u.team === team && (u.player || !u.dead)).length >= MAX_SIDE_PLANES;
   }
 
   spawnNpc(team, role) {

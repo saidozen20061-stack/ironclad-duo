@@ -20,6 +20,7 @@ const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const BANK_LIMIT = 1.1; // rad: how far A and D lean the plane over
+const BANK_EASE = 2.5; // how firmly the stick holds that angle
 const AIM_FAR = 900; // m: where the guns converge with nothing under the crosshair
 const FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
@@ -317,8 +318,8 @@ class PlaneBase extends GunnerView {
     if (k.hit('plane.bail')) net.send({ t: 'jump' });
     const onGround = !!me.pl?.ground;
     const turn = (k.on('plane.right') ? 1 : 0) - (k.on('plane.left') ? 1 : 0);
-    // Banks to a limit and levels itself when A and D are let go.
-    const roll = turn ? (Math.abs(self.ty) < BANK_LIMIT || Math.sign(self.ty) !== turn ? turn : 0) : Math.max(-1, Math.min(1, -self.ty * 1.6));
+    // Eases to the bank angle while A or D is held, and back to level when they're let go.
+    const roll = Math.max(-1, Math.min(1, (turn * BANK_LIMIT - self.ty) * BANK_EASE));
     const up = (k.on('plane.more') || (onGround && k.on('plane.up')) ? 1 : 0) - (k.on('plane.less') || (onGround && k.on('plane.down')) ? 1 : 0);
     const look = this.camera.getWorldDirection(_v);
     const reach = this.raycast(this.camera.position, look, this.states, me.id) ?? AIM_FAR;

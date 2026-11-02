@@ -179,6 +179,8 @@ class SimProxy {
     this.worker.onerror = (e) => console.error('simulation worker error', e.message ?? e);
     const info = room.matchInfo;
     this.worker.postMessage({ type: 'start', crews: info.crews, mode: info.mode, killLimit: info.killLimit, difficulty: info.difficulty, airStart: info.airStart });
+    // Solo vehicles: nobody in the gunner's seat, so only one soldier bails out and the side gun is automatic.
+    if (info.style === 'solo') for (const c of info.crews) this.playerLeft(c.id, 'gunner');
   }
 
   sendSnapshot(msg) {
@@ -216,7 +218,9 @@ class SimProxy {
 
   onMessage(player, msg) {
     if (msg.t === 'toLobby') return;
-    this.worker.postMessage({ type: 'input', crew: player.crew, role: player.role, msg });
+    // A solo player works both seats: gun inputs go to the gunner's, the rest to the driver's.
+    const role = this.room.matchInfo.style === 'solo' ? soloRole(msg) : player.role;
+    this.worker.postMessage({ type: 'input', crew: player.crew, role, msg });
   }
 
   playerLeft(crew, role) {
@@ -234,6 +238,10 @@ class SimProxy {
   dispose() {
     this.worker.terminate();
   }
+}
+
+function soloRole(msg) {
+  return ['aim', 'trigger', 'shell', 'rear'].includes(msg.t) ? 'gunner' : 'driver';
 }
 
 function same(a, b) {
@@ -300,12 +308,12 @@ export class Net {
 
   // Solo: the simulation worker runs right here, no PeerJS / room. One player drives and
   // shoots; their crew's gunner seat stays empty so only one soldier bails out.
-  startSolo({ tank, paint, mode, killLimit, difficulty, airStart }) {
+  startSolo({ tank, paint, mode, killLimit, difficulty, airStart, team = 'blue' }) {
     this.leave();
     this.mode = 'solo';
     this.id = 1;
     const me = { id: 1, crew: 0, role: 'driver', send: (msg) => this.deliver(msg) };
-    const crew = { id: 0, team: 'blue', tank, driver: 1, gunner: 1 };
+    const crew = { id: 0, team: mode === 'fortress' ? 'blue' : team, tank, driver: 1, gunner: 1 };
     const room = { players: [me], matchInfo: { mode, killLimit, difficulty, airStart, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
     this.solo = new SimProxy(room);
     this.solo.playerLeft(0, 'gunner');
@@ -317,8 +325,7 @@ export class Net {
       if (msg.t === 'leave') return this.leave();
       if (!this.solo || ['hello', 'hb', 'toLobby', 'signal'].includes(msg.t)) return;
       // Gun inputs act as the gunner seat, everything else (drive, bail-out, on foot) as the driver.
-      const role = ['aim', 'trigger', 'shell', 'rear'].includes(msg.t) ? 'gunner' : 'driver';
-      return this.solo.onMessage({ crew: 0, role }, msg);
+      return this.solo.onMessage({ crew: 0 }, msg);
     }
     switch (msg.t) {
       case 'hello':

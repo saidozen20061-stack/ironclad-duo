@@ -406,6 +406,15 @@ input, select {
 @media (max-width: 900px) { .f-status { left: 16px; bottom: 228px; } .f-hint { display: none; } }
 
 /* ---------- Crews lobby ---------- */
+.teams { width: min(1040px, 94vw); max-height: 94vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 6px; margin: auto; }
+.teams-hint { margin: 0; padding: 0 24px 8px; }
+.teams .status#lobby-voice { padding: 0 24px; margin: 4px 0; }
+.teams-body { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 6px 24px 12px; overflow-y: auto; }
+.team-col h3 { margin: 0 0 8px; padding-bottom: 6px; border-bottom: 3px solid #5fa0e0; color: #8fc4f5; }
+.team-col.red h3 { border-bottom-color: #e0645a; color: #f39a90; }
+.team-slots { display: flex; flex-direction: column; gap: 8px; }
+.team-slot .crew-tank { margin-left: auto; }
+.team-switch { width: 100%; }
 .crew-list { display: flex; flex-direction: column; gap: 8px; max-height: 56vh; overflow-y: auto; padding-right: 4px; }
 .crew-card { border: 1px solid #2f3626; border-left: 4px solid #5fa0e0; border-radius: 4px; background: rgba(0, 0, 0, 0.25); padding: 8px 10px; }
 .crew-card.red { border-left-color: #e0645a; }

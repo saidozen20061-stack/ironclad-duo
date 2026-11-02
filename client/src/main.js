@@ -5,7 +5,7 @@ import { setActiveView } from './render.js';
 import { MenuScene } from './scenes/menuScene.js';
 import { $, showScreen, hideScreens, backScreen, clearHistory, currentScreen, onScreenChange, toast, setStatus } from './ui/screens.js';
 import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
-import { initLobbyScreen, renderLobby, lobby, setSpeaking } from './ui/lobbyScreen.js';
+import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } from './ui/lobbyScreen.js';
 import { voice } from './voice.js';
 import { MatchClient } from './game/matchClient.js';
 import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../shared/constants.js';
@@ -63,7 +63,7 @@ $('#btn-settings').addEventListener('click', () => showScreen('settings'));
 $('#btn-controls').addEventListener('click', () => showScreen('controls'));
 
 // ---------- Solo setup: tank, camo, mode; the match runs locally ----------
-const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy', airStart: false };
+const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy', airStart: false, team: 'blue' };
 const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
 function renderSolo() {
   const pick = (root, items, cur, key) => {
@@ -100,7 +100,7 @@ $('#btn-solo').addEventListener('click', () => {
   renderSolo();
 });
 $('#btn-solo-back').addEventListener('click', () => backScreen());
-$('#btn-solo-go').addEventListener('click', () => net.startSolo({ ...solo }));
+$('#btn-solo-go').addEventListener('click', () => showOfflineTeams(solo));
 $('#btn-quit').addEventListener('click', () => {
   leaveRoom();
   window.close(); // only works for script-opened tabs; otherwise show a farewell screen
@@ -121,7 +121,7 @@ onScreenChange((name) => {
   if (name === 'settings') onSettingsOpen();
   if (name === 'controls') onControlsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
-  if (name === 'lobby' || name === 'solo') menuScene.setMode('lobby');
+  if (name === 'lobby' || name === 'solo' || name === 'teams') menuScene.setMode('lobby');
 });
 
 initSettingsScreen();
@@ -233,7 +233,7 @@ function endMatchClient() {
 net.on('matchStart', (msg) => {
   endMatchClient();
   const crew = msg.crews.find((c) => c.driver === net.id || c.gunner === net.id);
-  const role = msg.solo ? 'solo' : crew.driver === net.id ? 'driver' : 'gunner';
+  const role = msg.solo || msg.style === 'solo' ? 'solo' : crew.driver === net.id ? 'driver' : 'gunner';
   if (!msg.solo) voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
   match = new MatchClient({
     role,
@@ -244,7 +244,7 @@ net.on('matchStart', (msg) => {
       showScreen('pause');
       // Alone in the crew: the other seat can be taken.
       const mine = lobby.myCrew;
-      $('#btn-pause-swap').style.display = mine && (mine.driver == null || mine.gunner == null) ? '' : 'none';
+      $('#btn-pause-swap').style.display = lobby.state?.style === 'duo' && mine && (mine.driver == null || mine.gunner == null) ? '' : 'none';
     },
   });
   clearHistory();

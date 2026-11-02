@@ -169,13 +169,13 @@ export class Match {
     const infos = room.crews ?? [{ id: 0, team: 'blue', tank: room.tank ?? 'medium' }];
     for (const team of ['blue', 'red']) {
       const mine = infos.filter((c) => c.team === team);
+      let planeSlot = 0;
       const b = BASES[team];
       const fwd = team === 'blue' ? 1 : -1;
       mine.forEach((info, k) => {
         const x = b.x + (k - (mine.length - 1) / 2) * 16;
         // Plane crews start on their airfield's runway instead.
-        // One plane per side, so a plane crew always has the start of the runway to itself.
-        const t = this.addTank(PLANES[info.tank] ? this.planes.createPlayerPlane(team, info.tank, 0) : new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
+        const t = this.addTank(PLANES[info.tank] ? this.planes.createPlayerPlane(team, info.tank, planeSlot++) : new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
         t.crewId = info.id;
         this.crews.set(info.id, new Crew(info, t));
       });
@@ -666,9 +666,11 @@ export class Match {
       t.v -= Math.sign(t.v) * Math.min(Math.abs(t.v), 3 * DT);
     }
 
-    // Tracks: steering slows at speed; reversing keeps "A = hull rotates left".
+    // Tracks: steering slows at speed. Reversing steers like a car backing up: with D held
+    // the back swings right, so the hull turns the other way.
     const speedFrac = Math.min(1, Math.abs(t.v) / s.maxSpeed);
-    t.h = wrapAngle(t.h + d.st * s.turnRate * (1 - 0.35 * speedFrac) * DT * (d.brake ? 0.6 : 1));
+    const steer = d.th < 0 ? -d.st : d.st;
+    t.h = wrapAngle(t.h + steer * s.turnRate * (1 - 0.35 * speedFrac) * DT * (d.brake ? 0.6 : 1));
 
     const nx = t.x + Math.sin(t.h) * t.v * DT;
     const nz = t.z + Math.cos(t.h) * t.v * DT;

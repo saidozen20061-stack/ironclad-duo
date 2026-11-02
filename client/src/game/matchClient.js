@@ -689,7 +689,7 @@ export class MatchClient {
       this.boardEl.classList.toggle('show', board);
       if (board) this.boardEl.innerHTML = this.scoreboardHtml();
     }
-    const waiting = this.solo && this.me?.dead && this.me.crew?.mode === 'tank' && this.me.respawnIn < 1e6 && !this.ended;
+    const waiting = this.solo && this.crewList.length === 1 && this.me?.dead && this.me.crew?.mode === 'tank' && this.me.respawnIn < 1e6 && !this.ended;
     this.respawnSkipEl.classList.toggle('show', !!waiting);
     if (waiting && !this.paused && this.keys.hit('death.skip')) this.skipRespawn();
     if (this.choiceEl.classList.contains('show')) {

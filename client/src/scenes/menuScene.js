@@ -291,7 +291,7 @@ export class MenuScene {
     this.rigs = [];
     this.crewCount = Math.max(1, used.length);
     used.forEach((c, i) => {
-      const x = (i - (used.length - 1) / 2) * 11;
+      const x = (i - (used.length - 1) / 2) * Math.min(11, 66 / used.length); // room for ten vehicles
       const tank = buildVehicle(c.tank, team(c));
       if (PLANES[c.tank]) {
         // Planes taxi out of the hangar door at the back of their bay, wings folded to fit.
@@ -307,7 +307,7 @@ export class MenuScene {
         tank.turret.rotation.y = (i % 2 ? 1 : -1) * 0.25;
       }
       this.lineup.add(tank.group);
-      const tag = labelSprite(`TANK ${c.id + 1}`, team(c) === 'blue' ? '#8fc4f5' : '#f39a90');
+      const tag = labelSprite(`${PLANES[c.tank] ? 'PLANE' : 'TANK'} ${c.id + 1}`, team(c) === 'blue' ? '#8fc4f5' : '#f39a90');
       tag.position.set(x, 5.2, -2);
       this.lineup.add(tag);
       for (const [role, dx] of [['driver', -1.6], ['gunner', 1.6]]) {

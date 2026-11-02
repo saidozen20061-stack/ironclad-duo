@@ -1,12 +1,13 @@
-import { COOP_PLANE_IDS } from '../../../shared/planes.js';
-import { ROOM_CODE_LETTERS, ROOM_CODE_LENGTH, MAX_NAME_LENGTH, ROLES, TANK_IDS, MAX_CREWS, MAX_PLAYERS, MODES, KILL_LIMITS, DIFFICULTY } from '../../../shared/constants.js';
+import { COOP_PLANE_IDS, PLANE_IDS, MAX_SIDE_PLANES } from '../../../shared/planes.js';
+import { ROOM_CODE_LETTERS, ROOM_CODE_LENGTH, MAX_NAME_LENGTH, ROLES, TANK_IDS, MAX_CREWS, MAX_PLAYERS, MODES, KILL_LIMITS, DIFFICULTY, PLAY_STYLES } from '../../../shared/constants.js';
 
 // Lobby logic, run inside the HOST player's browser. A Player's transport is just a
 // function: the host's own client gets messages delivered locally, guests' go over
 // their WebRTC data channels (star setup: everyone talks to the host).
 //
-// A room holds up to 5 tank crews; each crew is a driver seat + a gunner seat, a team
-// and a tank. Players click a free seat to join a crew.
+// A room has five vehicle slots per team. In a 'duo' room a slot is a driver seat + a gunner
+// seat; in a 'solo' room each player has a vehicle to themselves, in the driver's seat.
+// Players click a free seat on either team to move there.
 
 let nextPlayerId = 1;
 
@@ -37,6 +38,7 @@ export class Room {
     this.players = [];
     this.hostId = null;
     this.crews = Array.from({ length: MAX_CREWS }, (_, id) => ({ id, team: id % 2 ? 'red' : 'blue', tank: 'medium', driver: null, gunner: null }));
+    this.style = 'duo';
     this.mode = 'flags';
     this.killLimit = 20;
     this.difficulty = 'easy';
@@ -66,8 +68,8 @@ export class Room {
     player.room = this;
     player.ready = false;
     if (this.hostId == null) this.hostId = player.id;
-    // Auto-seat: complete a half-filled crew first, otherwise start a new one.
-    const half = this.crews.find((c) => (c.driver == null) !== (c.gunner == null));
+    // Auto-seat: complete a half-filled crew first (duo), otherwise start a new one.
+    const half = this.style === 'duo' ? this.crews.find((c) => (c.driver == null) !== (c.gunner == null)) : null;
     const crew = half ?? this.crews.find((c) => c.driver == null && c.gunner == null);
     if (crew) this.place(player, crew, crew.driver == null ? 'driver' : 'gunner');
     this.sync();
@@ -117,6 +119,7 @@ export class Room {
       code: this.code,
       hostId: this.hostId,
       phase: this.phase,
+      style: this.style,
       mode: this.mode,
       killLimit: this.killLimit,
       difficulty: this.difficulty,
@@ -130,15 +133,40 @@ export class Room {
     return this.mode === 'fortress' ? 'blue' : crew.team;
   }
 
-  // One plane per side: if team changes put two together, the later crew goes back to a tank.
+  // The planes this play style can use: single-seat fighters need a solo pilot.
+  planeIds() {
+    return this.style === 'solo' ? PLANE_IDS : COOP_PLANE_IDS;
+  }
+
+  // Too many planes on a side after a team change, or one that doesn't fit the play style:
+  // the later crew goes back to a tank.
   limitPlanes() {
-    const taken = new Set();
+    const taken = { blue: 0, red: 0 };
     for (const c of this.occupied()) {
-      if (!COOP_PLANE_IDS.includes(c.tank)) continue;
-      if (taken.has(this.sideOf(c))) {
+      if (!PLANE_IDS.includes(c.tank)) continue;
+      if (!this.planeIds().includes(c.tank) || taken[this.sideOf(c)] >= MAX_SIDE_PLANES) {
         c.tank = 'medium';
         this.unready(c);
-      } else taken.add(this.sideOf(c));
+      } else taken[this.sideOf(c)]++;
+    }
+  }
+
+  // Switching play style: in a solo room nobody shares a vehicle.
+  setStyle(style) {
+    if (style === this.style) return;
+    this.style = style;
+    for (const p of this.players) p.ready = false;
+    if (style !== 'solo') return;
+    for (const c of this.crews) {
+      if (c.gunner == null) continue;
+      const p = this.byId(c.gunner);
+      const free = c.driver == null ? c : this.crews.find((q) => q.driver == null && q.gunner == null && q.team === c.team) ?? this.crews.find((q) => q.driver == null && q.gunner == null);
+      if (!free) continue;
+      if (free !== c) free.tank = c.tank;
+      c.gunner = null;
+      free.driver = p.id;
+      p.crew = free.id;
+      p.role = 'driver';
     }
   }
 
@@ -155,7 +183,7 @@ export class Room {
   freeMatchSeat() {
     if (this.phase !== 'match') return null;
     for (const c of this.matchInfo.crews) {
-      for (const role of ROLES) if (this.crews[c.id][role] == null) return { crew: c, role };
+      for (const role of this.style === 'solo' ? ['driver'] : ROLES) if (this.crews[c.id][role] == null) return { crew: c, role };
     }
     return null;
   }
@@ -178,7 +206,7 @@ export class Room {
 
   // Alone in a crew during a match: move to the other seat.
   swapSeat(player) {
-    if (this.phase !== 'match' || player.crew == null) return;
+    if (this.phase !== 'match' || player.crew == null || this.style === 'solo') return;
     const live = this.crews[player.crew];
     const to = player.role === 'driver' ? 'gunner' : 'driver';
     if (live[to] != null) return;
@@ -207,12 +235,14 @@ export class Room {
   seat(player, crewId, role) {
     if (this.phase !== 'lobby') return;
     const crew = this.crews[crewId];
-    if (!crew || !ROLES.includes(role)) return;
+    if (!crew || !ROLES.includes(role) || (this.style === 'solo' && role !== 'driver')) return;
     if (crew[role] != null && crew[role] !== player.id) {
       player.send({ t: 'error', msg: 'That seat is taken.' });
       return;
     }
     const old = this.crews[player.crew];
+    // Moving to an empty slot, you bring the vehicle you picked.
+    if (old && old !== crew && crew.driver == null && crew.gunner == null) crew.tank = old.tank;
     this.place(player, crew, role);
     player.ready = false;
     if (old) this.unready(old);
@@ -222,10 +252,10 @@ export class Room {
 
   setCrewTank(player, crewId, tank) {
     const crew = this.crews[crewId];
-    if (this.phase !== 'lobby' || !crew || !(TANK_IDS.includes(tank) || COOP_PLANE_IDS.includes(tank))) return;
+    if (this.phase !== 'lobby' || !crew || !(TANK_IDS.includes(tank) || this.planeIds().includes(tank))) return;
     if (player.crew !== crewId && !this.isHost(player)) return;
-    if (COOP_PLANE_IDS.includes(tank) && this.occupied().some((c) => c !== crew && COOP_PLANE_IDS.includes(c.tank) && this.sideOf(c) === this.sideOf(crew))) {
-      return player.send({ t: 'error', msg: 'Your side already has a plane.' });
+    if (PLANE_IDS.includes(tank) && this.occupied().filter((c) => c !== crew && PLANE_IDS.includes(c.tank) && this.sideOf(c) === this.sideOf(crew)).length >= MAX_SIDE_PLANES) {
+      return player.send({ t: 'error', msg: `Your side already has ${MAX_SIDE_PLANES} planes.` });
     }
     crew.tank = tank;
     this.unready(crew);
@@ -246,8 +276,9 @@ export class Room {
     this.sync();
   }
 
-  setMode(player, mode, killLimit, difficulty, airStart) {
+  setMode(player, mode, killLimit, difficulty, airStart, style) {
     if (this.phase !== 'lobby' || !this.isHost(player)) return;
+    if (Object.hasOwn(PLAY_STYLES, style ?? '')) this.setStyle(style);
     if (Object.hasOwn(MODES, mode ?? '')) this.mode = mode;
     if (KILL_LIMITS.includes(killLimit)) this.killLimit = killLimit;
     if (Object.hasOwn(DIFFICULTY, difficulty ?? '')) this.difficulty = difficulty;
@@ -259,7 +290,7 @@ export class Room {
     if (this.phase !== 'lobby') return;
     const crew = this.crews[player.crew];
     if (ready && !crew) return player.send({ t: 'error', msg: 'Take a seat in a crew first.' });
-    if (ready && (crew.driver == null || crew.gunner == null)) return player.send({ t: 'error', msg: 'Your crew needs both a driver and a gunner.' });
+    if (ready && this.style === 'duo' && (crew.driver == null || crew.gunner == null)) return player.send({ t: 'error', msg: 'Your crew needs both a driver and a gunner.' });
     player.ready = !!ready;
     this.sync();
   }
@@ -269,7 +300,7 @@ export class Room {
     const crews = this.occupied();
     if (!crews.length) return 'No crews yet.';
     if (this.players.some((p) => p.crew == null)) return 'Everyone needs a seat.';
-    if (crews.some((c) => c.driver == null || c.gunner == null)) return 'Every crew needs a driver and a gunner.';
+    if (this.style === 'duo' && crews.some((c) => c.driver == null || c.gunner == null)) return 'Every crew needs a driver and a gunner.';
     if (this.players.some((p) => !p.ready && p.id !== this.hostId)) return 'Waiting for everyone to ready up…';
     return null;
   }
@@ -280,7 +311,7 @@ export class Room {
     if (problem) return player.send({ t: 'error', msg: problem });
     const crews = this.occupied().map((c) => ({ ...c, team: this.mode === 'fortress' ? 'blue' : c.team }));
     this.phase = 'match';
-    this.matchInfo = { mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, airStart: this.airStart, crews };
+    this.matchInfo = { style: this.style, mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, airStart: this.airStart, crews };
     this.manager.onMatchStart?.(this);
     this.broadcast({
       t: 'matchStart',
@@ -382,7 +413,7 @@ export class RoomManager {
         room?.autoBalance(player);
         return true;
       case 'mode':
-        room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty, msg.airStart);
+        room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty, msg.airStart, msg.style);
         return true;
       case 'swapSeat':
         room?.swapSeat(player);

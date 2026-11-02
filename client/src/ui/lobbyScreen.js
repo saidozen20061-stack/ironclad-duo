@@ -1,8 +1,8 @@
-import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../../shared/constants.js';
-import { PLANES, COOP_PLANE_IDS } from '../../../shared/planes.js';
+import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY, PLAY_STYLES } from '../../../shared/constants.js';
+import { PLANES, PLANE_IDS, COOP_PLANE_IDS, MAX_SIDE_PLANES } from '../../../shared/planes.js';
 import { net } from '../net.js';
 import { PAINT } from '../models/paint.js';
-import { $, $$, escapeHtml, toast, setStatus } from './screens.js';
+import { $, $$, escapeHtml, toast, setStatus, showScreen } from './screens.js';
 
 // Renders lobby state pushed by the host. All mutations go through the host.
 
@@ -26,9 +26,9 @@ const STAT_LABELS = { speed: 'Speed', armor: 'Armor', firepower: 'Firepower', re
 function buildTankCards() {
   const root = $('#tank-pick');
   root.innerHTML = '';
-  for (const id of [...TANK_IDS, ...COOP_PLANE_IDS]) {
+  for (const id of [...TANK_IDS, ...PLANE_IDS]) {
     const t = TANKS[id] ?? PLANES[id];
-    if (id === COOP_PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', '<h3 class="pick-head">Planes <small>pilot + side gunner · one per side</small></h3>');
+    if (id === PLANE_IDS[0]) root.insertAdjacentHTML('beforeend', `<h3 class="pick-head">Planes <small>${MAX_SIDE_PLANES} per side</small></h3>`);
     const btn = document.createElement('button');
     btn.className = 'tank-card';
     btn.dataset.tank = id;
@@ -39,13 +39,15 @@ function buildTankCards() {
     btn.addEventListener('click', () => {
       const crew = lobby.myCrew;
       if (crew) net.send({ t: 'crewTank', crew: crew.id, tank: id });
-      else toast('Take a seat in a crew first.');
+      else toast('Take a seat on the team screen first.');
     });
     root.appendChild(btn);
   }
 }
 
 function buildModeCards() {
+  $('#style-pick').innerHTML = `<label>Play style</label>${Object.entries(PLAY_STYLES).map(([id, name]) => `<button class="btn small" data-style="${id}" title="${id === 'solo' ? 'Each player alone in their own vehicle, driving and shooting' : 'A driver and a gunner in each vehicle'}">${name}</button>`).join('')}`;
+  for (const b of $$('[data-style]')) b.addEventListener('click', () => net.send({ t: 'mode', style: b.dataset.style }));
   const root = $('#mode-pick');
   root.innerHTML = Object.entries(MODES)
     .map(([id, m]) => `<button class="mode-card" data-mode="${id}"><b>${m.name}</b><span>${m.blurb}</span></button>`)
@@ -62,19 +64,29 @@ function buildModeCards() {
 export function initLobbyScreen({ onLeave }) {
   buildTankCards();
   buildModeCards();
-  // Seat and team buttons are re-rendered, so listen on the container.
-  $('#lobby-crews').addEventListener('click', (e) => {
-    const seat = e.target.closest('[data-seat]');
-    if (seat) return net.send({ t: 'seat', crew: Number(seat.dataset.crew), role: seat.dataset.seat });
-    const team = e.target.closest('[data-team-toggle]');
-    if (team && lobby.isHost) {
-      const crew = lobby.state.crews[Number(team.dataset.teamToggle)];
-      net.send({ t: 'crewTeam', crew: crew.id, team: crew.team === 'blue' ? 'red' : 'blue' });
+  // Slots are re-rendered, so listen on the container.
+  $('.teams-body').addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-offline-team]');
+    if (pick && offline) {
+      offline.state.team = pick.dataset.offlineTeam;
+      return renderOffline();
     }
+    const seat = e.target.closest('[data-seat]');
+    if (seat) net.send({ t: 'seat', crew: Number(seat.dataset.crew), role: seat.dataset.seat });
+  });
+  $('#btn-lobby-next').addEventListener('click', () => showScreen('teams'));
+  $('#btn-teams-back').addEventListener('click', () => {
+    if (offline) showScreen('solo', { remember: false });
+    else showScreen('lobby', { remember: false });
   });
   $('#btn-balance').addEventListener('click', () => net.send({ t: 'balance' }));
   $('#btn-ready').addEventListener('click', () => net.send({ t: 'ready', ready: !lobby.me?.ready }));
-  $('#btn-start').addEventListener('click', () => net.send({ t: 'start' }));
+  $('#btn-start').addEventListener('click', () => {
+    if (!offline) return net.send({ t: 'start' });
+    const { state } = offline;
+    offline = null;
+    net.startSolo({ ...state });
+  });
   $('#btn-lobby-leave').addEventListener('click', onLeave);
   $('#btn-copy-code').addEventListener('click', async () => {
     try {
@@ -86,14 +98,77 @@ export function initLobbyScreen({ onLeave }) {
   });
 }
 
+// Offline solo: the same screen, with you the only player on it.
+let offline = null;
+
+export function showOfflineTeams(state) {
+  offline = { state };
+  renderOffline();
+  showScreen('teams');
+}
+
+function renderOffline() {
+  const { state } = offline;
+  const t = TANKS[state.tank] ?? PLANES[state.tank];
+  const fortress = state.mode === 'fortress';
+  if (fortress) state.team = 'blue';
+  $('#teams-room').style.display = 'none';
+  $('#btn-balance').style.display = 'none';
+  $('#teams-title').textContent = 'Choose Your Team';
+  $('#teams-hint').textContent = fortress ? 'Fortress Defence: you defend with Blue against the Red waves.' : 'Pick a side. NPC armies fill out both teams.';
+  $('#teams-blue-count').textContent = $('#teams-red-count').textContent = '';
+  for (const team of ['blue', 'red']) {
+    const you = `<div class="crew-card team-slot ${team} mine"><header><b>${escapeHtml(t.name)}</b><span class="crew-tank">${t.class}</span></header><div class="seats"><div class="seat you"><span>You</span></div></div></div>`;
+    const join = fortress ? '' : `<button class="btn team-switch" data-offline-team="${team}">Join ${team === 'blue' ? 'Blue' : 'Red'}</button>`;
+    $(`#teams-${team}`).innerHTML = state.team === team ? you : join;
+  }
+  $('#btn-ready').style.display = 'none';
+  $('#btn-start').style.display = '';
+  $('#btn-start').disabled = false;
+  $('#lobby-voice').textContent = '';
+  setStatus('lobby-status', '');
+}
+
 function seatHtml(s, crew, role) {
   const p = s.players.find((q) => q.id === crew[role]);
-  const label = role === 'driver' ? 'Driver' : 'Gunner';
-  if (!p) return `<button class="seat free" data-crew="${crew.id}" data-seat="${role}"><small>${label}</small><span>Take seat</span></button>`;
+  const label = s.style === 'solo' ? 'Player' : role === 'driver' ? 'Driver' : 'Gunner';
+  if (!p) return `<button class="seat free" data-crew="${crew.id}" data-seat="${role}"><small>${label}</small><span>Join here</span></button>`;
   const you = p.id === net.id ? ' you' : '';
   const tags = `${p.id === s.hostId ? '<i class="tag host">Host</i>' : ''}${p.ready || p.id === s.hostId ? '<i class="tag ready">Ready</i>' : ''}`;
   const speaking = lobby.speaking.get(p.id) ? ' on' : '';
   return `<div class="seat${you}"><small>${label}</small><span><i class="speak-dot${speaking}" data-speak="${p.id}"></i>${escapeHtml(p.name)}${p.id === net.id ? ' (you)' : ''}</span>${tags}</div>`;
+}
+
+// One vehicle slot: who's in it and what they're driving; an empty slot can be joined.
+function slotHtml(s, c, me) {
+  const used = c.driver != null || c.gunner != null;
+  const t = TANKS[c.tank] ?? PLANES[c.tank];
+  const roles = s.style === 'solo' ? ['driver'] : ['driver', 'gunner'];
+  const side = s.mode === 'fortress' ? 'blue' : c.team;
+  return `<div class="crew-card team-slot ${side}${used ? '' : ' empty'}${me?.crew === c.id ? ' mine' : ''}">
+    <header><b>${PLANES[c.tank] ? 'Plane' : 'Tank'} ${c.id + 1}</b>${used ? `<span class="crew-tank">${escapeHtml(t.name)} · ${t.class}</span>` : ''}</header>
+    <div class="seats">${roles.map((r) => seatHtml(s, c, r)).join('')}</div>
+  </div>`;
+}
+
+function renderTeams(s, me) {
+  offline = null;
+  const fortress = s.mode === 'fortress';
+  $('#teams-room').style.display = '';
+  $('#teams-code').textContent = s.code;
+  $('#teams-title').textContent = 'Choose Your Team';
+  $('#teams-hint').textContent = fortress
+    ? 'Fortress Defence: every player defends with Blue against the Red waves.'
+    : `Click "Join here" to move, on either team. ${s.style === 'solo' ? 'Everyone has their own vehicle.' : 'Each vehicle needs a driver and a gunner.'} NPC armies fill out both teams.`;
+  for (const team of ['blue', 'red']) {
+    const crews = s.crews.filter((c) => (fortress ? 'blue' : c.team) === team);
+    const players = crews.reduce((n, c) => n + (c.driver != null ? 1 : 0) + (c.gunner != null ? 1 : 0), 0);
+    $(`#teams-${team}`).innerHTML = fortress && team === 'red' ? '<p class="hint">Red is all NPC attackers in this mode.</p>' : crews.map((c) => slotHtml(s, c, me)).join('');
+    $(`#teams-${team}-count`).textContent = fortress && team === 'red' ? '' : `${players} player${players === 1 ? '' : 's'}`;
+  }
+  const unseated = s.players.filter((p) => p.crew == null);
+  if (unseated.length) $('#teams-blue').insertAdjacentHTML('beforeend', `<p class="hint small">Not on a team yet: ${unseated.map((p) => escapeHtml(p.name)).join(', ')}</p>`);
+  $('#btn-balance').style.display = lobby.isHost && !fortress ? '' : 'none';
 }
 
 export function renderLobby() {
@@ -102,24 +177,12 @@ export function renderLobby() {
   $('#lobby-code').textContent = s.code;
   const me = lobby.me;
   const fortress = s.mode === 'fortress';
+  renderTeams(s, me);
 
-  $('#lobby-crews').innerHTML = s.crews
-    .map((c) => {
-      const used = c.driver != null || c.gunner != null;
-      const t = TANKS[c.tank] ?? PLANES[c.tank];
-      const team = fortress ? 'blue' : c.team;
-      const mine = me?.crew === c.id ? ' mine' : '';
-      return `<div class="crew-card ${team}${used ? '' : ' empty'}${mine}">
-        <header><b>Tank ${c.id + 1}</b>
-          <button class="team-badge ${team}" data-team-toggle="${c.id}" ${lobby.isHost && !fortress ? '' : 'disabled'}>${team === 'blue' ? 'BLUE' : 'RED'}</button>
-          <span class="crew-tank">${t.name} · ${t.class} · <em>${PAINT[c.tank]?.name ?? ''}</em></span></header>
-        <div class="seats">${seatHtml(s, c, 'driver')}${seatHtml(s, c, 'gunner')}</div>
-      </div>`;
-    })
-    .join('');
-  const unseated = s.players.filter((p) => p.crew == null);
-  if (unseated.length) $('#lobby-crews').insertAdjacentHTML('beforeend', `<p class="hint small">Not in a crew: ${unseated.map((p) => escapeHtml(p.name)).join(', ')}</p>`);
-
+  for (const b of $$('[data-style]')) {
+    b.classList.toggle('on', b.dataset.style === s.style);
+    b.disabled = !lobby.isHost;
+  }
   for (const b of $$('.mode-card')) {
     b.classList.toggle('sel', b.dataset.mode === s.mode);
     b.disabled = !lobby.isHost;
@@ -136,17 +199,17 @@ export function renderLobby() {
     b.disabled = !lobby.isHost;
   }
   $('#mode-host-note').textContent = lobby.isHost ? '(you choose)' : '(host chooses)';
-  $('#host-tools').style.display = lobby.isHost && !fortress ? '' : 'none';
-
   const crew = lobby.myCrew;
   for (const card of $$('.tank-card')) {
     card.classList.toggle('sel', card.dataset.tank === crew?.tank);
-    // One plane per side: taken planes are greyed out for everyone else on that side.
+    // Planes are greyed out once a side has its share; single-seat fighters are solo only.
     const side = (c) => (fortress ? 'blue' : c.team);
-    card.classList.toggle('taken', !!PLANES[card.dataset.tank] && !!crew && s.crews.some((c) => c !== crew && (c.driver != null || c.gunner != null) && PLANES[c.tank] && side(c) === side(crew)));
+    const onSide = crew ? s.crews.filter((c) => c !== crew && (c.driver != null || c.gunner != null) && PLANES[c.tank] && side(c) === side(crew)).length : 0;
+    card.classList.toggle('taken', !!PLANES[card.dataset.tank] && onSide >= MAX_SIDE_PLANES);
+    card.style.display = PLANES[card.dataset.tank] && s.style !== 'solo' && !COOP_PLANE_IDS.includes(card.dataset.tank) ? 'none' : '';
     card.disabled = !crew;
   }
-  $('#tank-host-note').textContent = crew ? `(Tank ${crew.id + 1})` : '(join a crew first)';
+  $('#tank-host-note').textContent = crew ? (s.style === 'solo' ? '(just you)' : '(your crew shares it)') : '(take a seat on the team screen first)';
 
   const ready = $('#btn-ready');
   ready.style.display = lobby.isHost ? 'none' : '';
@@ -158,11 +221,12 @@ export function renderLobby() {
   const used = s.crews.filter((c) => c.driver != null || c.gunner != null);
   let status = '';
   if (s.players.some((p) => p.crew == null)) status = 'Everyone needs a seat.';
-  else if (used.some((c) => c.driver == null || c.gunner == null)) status = 'Every crew needs a driver and a gunner.';
+  else if (s.style === 'duo' && used.some((c) => c.driver == null || c.gunner == null)) status = 'Every vehicle needs a driver and a gunner.';
   else if (s.players.some((p) => !p.ready && p.id !== s.hostId)) status = 'Waiting for everyone to ready up…';
   else status = lobby.isHost ? 'All set — start the match!' : 'Waiting for the host to start…';
-  const players = `${s.players.length}/10 players · ${used.length} crew${used.length === 1 ? '' : 's'}`;
+  const players = `${s.players.length}/10 players · ${used.length} vehicle${used.length === 1 ? '' : 's'}`;
   setStatus('lobby-status', `${players} — ${status}`);
+  setStatus('lobby-setup-status', `${players} · ${PLAY_STYLES[s.style]}. Pick a vehicle, then choose your team.`);
   $('#btn-start').disabled = !status.startsWith('All set');
 }
 

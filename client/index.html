@@ -44,7 +44,7 @@
         <div class="solo-pick" id="solo-modes"></div>
         <div class="kill-pick" id="solo-kills"></div>
         <div class="kill-pick" id="solo-diff"></div>
-        <button class="btn primary" id="btn-solo-go">Start</button>
+        <button class="btn primary" id="btn-solo-go" data-next="1">Start</button>
         <button class="btn ghost" id="btn-solo-back">Back</button>
       </div>
       <div class="preview-slot" id="preview-solo"><div class="preview-cap"></div><div class="preview-hint">Drag to rotate</div></div>
@@ -124,29 +124,50 @@
         </header>
         <div class="lobby-body">
           <div class="lobby-col">
-            <h3>Crews <small>click a free seat to join a crew</small></h3>
-            <div id="lobby-crews" class="crew-list"></div>
-            <p class="status" id="lobby-voice"></p>
-          </div>
-          <div class="lobby-col">
-            <h3>Game mode <small id="mode-host-note"></small></h3>
+            <h3>Game <small id="mode-host-note"></small></h3>
+            <div class="kill-pick" id="style-pick"></div>
             <div class="mode-pick" id="mode-pick"></div>
             <div class="kill-pick" id="kill-pick"></div>
             <div class="kill-pick" id="diff-pick"></div>
-            <div class="host-tools" id="host-tools">
-              <button class="btn small" id="btn-balance">Auto-balance teams</button>
-            </div>
-            <h3>Your crew's vehicle <small id="tank-host-note"></small></h3>
+          </div>
+          <div class="lobby-col">
+            <h3>Your vehicle <small id="tank-host-note"></small></h3>
             <div class="tank-pick" id="tank-pick"></div>
           </div>
         </div>
+        <footer class="lobby-foot">
+          <p class="status" id="lobby-setup-status"></p>
+          <button class="btn primary big" id="btn-lobby-next">Next: Choose Team</button>
+        </footer>
+      </div>
+      <div class="preview-slot" id="preview-lobby"><div class="preview-cap"></div><div class="preview-hint">Drag to rotate</div></div>
+    </section>
+
+    <!-- TEAMS -->
+    <section class="screen dim" id="screen-teams">
+      <div class="teams">
+        <header class="lobby-head">
+          <div id="teams-room">
+            <div class="label">Room code</div>
+            <div class="room-code" id="teams-code">-----</div>
+          </div>
+          <h2 id="teams-title">Choose Your Team</h2>
+          <div class="spacer"></div>
+          <button class="btn small" id="btn-balance">Auto-balance</button>
+          <button class="btn ghost small" id="btn-teams-back">Back to vehicles</button>
+        </header>
+        <p class="hint teams-hint" id="teams-hint"></p>
+        <div class="teams-body">
+          <div class="team-col blue"><h3>Blue Team <small id="teams-blue-count"></small></h3><div id="teams-blue" class="team-slots"></div></div>
+          <div class="team-col red"><h3>Red Team <small id="teams-red-count"></small></h3><div id="teams-red" class="team-slots"></div></div>
+        </div>
+        <p class="status" id="lobby-voice"></p>
         <footer class="lobby-foot">
           <p class="status" id="lobby-status"></p>
           <button class="btn primary big" id="btn-ready">Ready</button>
           <button class="btn primary big" id="btn-start">Start Match</button>
         </footer>
       </div>
-      <div class="preview-slot" id="preview-lobby"><div class="preview-cap"></div><div class="preview-hint">Drag to rotate</div></div>
     </section>
 
     <!-- PAUSE -->

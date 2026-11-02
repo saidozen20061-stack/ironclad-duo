@@ -129,6 +129,7 @@ export function rocketStep(p, dt) {
   return false;
 }
 
+export const MAX_SIDE_PLANES = 2; // per team, players and NPCs together
 export const PLANE_IDS = Object.keys(PLANES);
 export const COOP_PLANE_IDS = PLANE_IDS.filter((id) => PLANES[id].seats === 2);
 export const isPlane = (type) => !!PLANES[type];
