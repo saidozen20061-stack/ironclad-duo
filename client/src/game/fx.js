@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
 import { quality } from '../settings.js';
 import { markHeat, noHeat, LAYER_FX } from './thermal.js';
+import { rocketGeometry, bombGeometry, flameGeometry, ROCKET_TAIL } from '../models/munitions.js';
 
 // Projectiles (client-side ballistic replay of server fire events) and simple particle effects.
 const GRAVITY = 9.81;
@@ -13,9 +14,7 @@ const TRACER = {
   heavy: { color: 0xffd080, len: 9, width: 0.3 },
   mg: { color: 0xffa050, len: 3, width: 0.09 },
   rifle: { color: 0xffe070, len: 2.2, width: 0.04 },
-  rocket: { color: 0xffc060, len: 1.4, width: 0.22 },
   grenade: { color: 0x2f3a26, len: 0.14, width: 0.1 },
-  bomb: { color: 0x25261f, len: 1.5, width: 0.32 },
 };
 
 // In the thermal sight, smoke and dust are mostly see-through, but a thick cloud still hides a bit.
@@ -28,7 +27,13 @@ const HEAT_DIRT = { heat: 0.3 };
 
 // Plane bullets fly straight away from the camera, so they need real size to read as a line.
 const AIR_TRACER = { len: 12, width: 0.13 };
-const AIR_ROCKET = { len: 4, width: 0.3 };
+
+// Rockets and bombs are real models. Far away they grow a bit so they don't shrink to a speck.
+const MUNITION = {
+  rocket: { size: 1, far: 50, max: 4 },
+  bomb: { size: 1, far: 70, max: 2.5 },
+};
+const FOOT_ROCKET_SIZE = 0.4; // an infantry launcher's round
 
 const IMPACT_SIZE = { bomb: 7, ac: 1.2, ap: 2, he: 4.5, heavy: 7, mg: 0.35, rifle: 0.25, rocket: 3, grenade: 3.5 };
 
@@ -47,8 +52,12 @@ export class FX {
     // Plane guns: bright enough to read through the haze, like tracers do at dusk.
     this.airTracerMat = new THREE.MeshBasicMaterial({ color: 0xffe090, fog: false, toneMapped: false });
     this.airGlowMat = new THREE.MeshBasicMaterial({ color: 0xff9030, fog: false, toneMapped: false, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
-    this.rocketMat = new THREE.MeshBasicMaterial({ color: 0xfff4d0, fog: false, toneMapped: false });
-    this.rocketGlowMat = new THREE.MeshBasicMaterial({ color: 0xff7a18, fog: false, toneMapped: false, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.munitionGeo = { rocket: rocketGeometry(), bomb: bombGeometry() };
+    // A little self-light so they aren't black shapes when flying towards the sun.
+    this.munitionMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.7, emissive: 0x3a3a30 });
+    this.flameGeo = flameGeometry();
+    this.flameMat = new THREE.MeshBasicMaterial({ color: 0xfff4d0, fog: false, toneMapped: false });
+    this.flameGlowMat = new THREE.MeshBasicMaterial({ color: 0xff7a18, fog: false, toneMapped: false, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
     this.puffGeo = new THREE.IcosahedronGeometry(1, 0);
     this.chunkGeo = new THREE.TetrahedronGeometry(0.4, 0);
     this.mats = {
@@ -68,20 +77,30 @@ export class FX {
   }
 
   spawnProjectile(ev) {
-    const rocket = ev.air && ev.kind === 'rocket';
-    const style = rocket ? AIR_ROCKET : ev.air ? AIR_TRACER : TRACER[ev.kind] ?? TRACER.ap;
-    const mesh = new THREE.Mesh(this.tracerGeo, rocket ? this.rocketMat : ev.air ? this.airTracerMat : this.tracerMats[ev.kind] ?? this.tracerMats.ap);
+    const munition = MUNITION[ev.kind];
+    const style = munition ? null : ev.air ? AIR_TRACER : TRACER[ev.kind] ?? TRACER.ap;
+    const mesh = munition ? new THREE.Mesh(this.munitionGeo[ev.kind], this.munitionMat) : new THREE.Mesh(this.tracerGeo, ev.air ? this.airTracerMat : this.tracerMats[ev.kind] ?? this.tracerMats.ap);
     markHeat(mesh, ev.kind === 'bomb' ? HEAT_DIRT : HEAT_TRACER);
-    if (ev.air) {
+    let flame = null;
+    if (ev.kind === 'rocket') {
+      flame = new THREE.Mesh(this.flameGeo, this.flameMat);
+      flame.position.z = ROCKET_TAIL;
+      const glow = new THREE.Mesh(this.flameGeo, this.flameGlowMat);
+      glow.scale.set(2.2, 2.2, 1.7);
+      flame.add(glow);
+      noHeat(flame);
+      mesh.add(flame);
+    } else if (ev.air) {
       // A soft glow around the core.
-      const glow = new THREE.Mesh(this.tracerGeo, rocket ? this.rocketGlowMat : this.airGlowMat);
-      glow.scale.set(2.6, 2.6, rocket ? 1.5 : 1);
+      const glow = new THREE.Mesh(this.tracerGeo, this.airGlowMat);
+      glow.scale.set(2.6, 2.6, 1);
       noHeat(glow);
       mesh.add(glow);
     }
-    mesh.scale.set(style.width, style.width, style.len);
+    if (munition) mesh.scale.setScalar(ev.air || ev.kind === 'bomb' ? munition.size : FOOT_ROCKET_SIZE);
+    else mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
-    this.projectiles.set(ev.id, { mesh, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && !rocket ? 2.2 : 4, air: !!ev.air, style, streak: ev.kind === 'mg' || ev.kind === 'ac' || rocket });
+    this.projectiles.set(ev.id, { mesh, flame, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && ev.kind !== 'rocket' ? 2.2 : 4, air: !!ev.air, style, munition: ev.air || ev.kind === 'bomb' ? munition : null, streak: ev.kind === 'mg' || ev.kind === 'ac' });
   }
 
   removeProjectile(id) {
@@ -239,9 +258,10 @@ export class FX {
     const speed = Math.hypot(p.vx, p.vy, p.vz);
     const step = 4 / Math.max(0.5, quality().particles);
     p.gap = Math.min(step * 10, (p.gap ?? step) + speed * dt);
+    const tail = -ROCKET_TAIL * p.mesh.scale.z;
     while (p.gap >= step) {
       p.gap -= step;
-      const back = p.gap / speed;
+      const back = (p.gap + tail) / speed;
       const pos = new THREE.Vector3(p.x - p.vx * back, p.y - p.vy * back, p.z - p.vz * back);
       this.particle({ geo: this.puffGeo, mat: this.mats.trailFire, pos: pos.clone(), vel: new THREE.Vector3(), size: 0.55, grow: -0.6, life: 0.3, fade: 0.95 });
       this.particle({ geo: this.puffGeo, mat: this.mats.trail, pos, vel: rand3(1).setY(0.5), size: 0.45, grow: 2.5, life: 2 + Math.random() * 0.6, fade: 0.55 });
@@ -256,6 +276,11 @@ export class FX {
         const w = p.style.width * Math.max(1, Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) / (p.air ? 30 : 40));
         p.mesh.scale.set(w, w, Math.min(20, Math.max(p.style.len, Math.hypot(p.vx, p.vy, p.vz) * dt * 1.5)));
       }
+      if (p.munition && cam) {
+        const d = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
+        p.mesh.scale.setScalar(p.munition.size * Math.min(p.munition.max, Math.max(1, d / p.munition.far)));
+      }
+      if (p.flame) p.flame.scale.z = 0.8 + Math.random() * 0.5;
       if (p.kind === 'rocket' && p.air) this.rocketTrail(p, dt);
       else if (p.kind === 'rocket') {
         // Smoke trail
