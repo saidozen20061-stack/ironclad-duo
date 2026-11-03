@@ -262,6 +262,7 @@ export class Match {
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
     if (import.meta.env?.DEV && msg.t === 'debugElite') return this.planes.spawnElites();
     if (import.meta.env?.DEV && msg.t === 'debugAa') return void (t.aaClock = msg.clock);
+    if (import.meta.env?.DEV && msg.t === 'debugEnd') return this.endMatch(msg.winner, 'Test');
     if (import.meta.env?.DEV && msg.t === 'debugWave' && this.fort) {
       if (this.fort.phase === 'break') this.fort.until = this.time;
       else for (const u of this.fort.alive) this.damage(u, 1e6, { owner: 0 });
@@ -1116,7 +1117,8 @@ export class Match {
     }
     const timeUp = this.time >= MATCH.duration;
     if (this.tickets.blue <= 0 || this.tickets.red <= 0 || timeUp) {
-      this.endMatch(this.tickets.red <= 0 ? 'blue' : this.tickets.blue <= 0 ? 'red' : this.leader());
+      const out = this.tickets.red <= 0 ? 'Red' : this.tickets.blue <= 0 ? 'Blue' : null;
+      this.endMatch(out === 'Red' ? 'blue' : out === 'Blue' ? 'red' : this.leader(), out ? `${out} ran out of tickets` : 'Time is up');
     }
   }
 

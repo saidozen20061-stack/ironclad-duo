@@ -106,6 +106,7 @@ export class VehiclePreview {
   set(key, build) {
     if (key === this.key) return;
     this.key = key;
+    this.holder.traverse((o) => o.geometry?.dispose());
     this.holder.clear();
     const obj = build();
     obj.position.set(0, 0, 0);

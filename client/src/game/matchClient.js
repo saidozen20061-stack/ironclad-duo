@@ -347,6 +347,8 @@ export class MatchClient {
   // The host gave the crew another vehicle (their plane can't be replaced).
   setVehicle(type) {
     this.tank = type;
+    const own = this.crewList.find((c) => c.id === this.crew.id);
+    if (own) own.tank = type; // the scoreboard calls the crew by what it's in
     this.sound.stopPlane();
     if (!this.view.isFoot) this.setFoot(false);
   }
@@ -858,6 +860,7 @@ export class MatchClient {
     document.removeEventListener('pointerlockchange', this.onLockChange);
     if (document.pointerLockElement) document.exitPointerLock();
     this.keys.dispose();
+    this.world?.dispose(); // first, while everything is still in the scene to be found
     this.view.dispose();
     renderer.shadowMap.autoUpdate = true;
     this.fx?.dispose();

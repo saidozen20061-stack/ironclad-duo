@@ -35,8 +35,12 @@ export const inAirfield = (x, z, pad = 0) => Object.values(AIRFIELDS).some((f) =
 export const POINTS = [
   { id: 'A', name: 'Ruined Village', x: -400, z: -175, r: 42 },
   { id: 'B', name: 'Hill 112', x: 20, z: 165, r: 38 },
-  { id: 'C', name: 'Kolkhoz Farm', x: 420, z: 35, r: 45 },
+  // In the river, where the two armies meet: both get here at about the same time. With a flag on
+  // each bank and this one on neither, the front line doesn't decide the match by itself.
+  { id: 'C', name: 'River Ford', x: 45, z: 18, r: 44 },
 ];
+// The farm by the railway, which used to be a flag and is still worth fighting over.
+export const FARM = { x: 420, z: 35 };
 
 export function riverZ(x) {
   return -40 + 30 * Math.sin(x / 160 + 0.5) + 8 * Math.sin(x / 55);
@@ -57,7 +61,7 @@ const FLATS = [
   { x: BASES.blue.x, z: BASES.blue.z, r: 70, blend: 60 },
   { x: BASES.red.x, z: BASES.red.z, r: 70, blend: 60 },
   { x: POINTS[0].x, z: POINTS[0].z, r: 70, blend: 50 },
-  { x: POINTS[2].x, z: POINTS[2].z, r: 80, blend: 50 },
+  { x: FARM.x, z: FARM.z, r: 80, blend: 50 },
   { x: POINTS[1].x, z: POINTS[1].z, r: 28, blend: 30 }, // hilltop plateau
 ];
 

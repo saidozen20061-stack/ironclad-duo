@@ -265,7 +265,7 @@ function skyEnvironment(skyMesh) {
   const scene = new THREE.Scene();
   scene.add(new THREE.Mesh(skyMesh.geometry, skyMesh.material));
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const env = pmrem.fromScene(scene, 0.02, 1, 5000).texture;
+  const env = pmrem.fromScene(scene, 0.02, 1, 5000);
   pmrem.dispose();
   return env;
 }
@@ -303,6 +303,8 @@ function buildRain(q) {
         vec3 p = position; p.y -= time * 34.0; p.x -= time * 2.5;
         p = mod(p - focus, box) - box * 0.5 + focus;
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+        // A drop right next to the camera would be a line from the top of the screen to the bottom.
+        if (distance(p, cameraPosition) < 7.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       }`,
     fragmentShader: `void main(){ gl_FragColor = vec4(0.72, 0.78, 0.85, 0.32); }`,
   });
@@ -313,6 +315,26 @@ function buildRain(q) {
 }
 
 export class World {
+  // Frees what this battlefield holds on the graphics card, or each match leaves it all behind. Models
+  // and textures shared between matches are simply uploaded again the next time they're drawn.
+  dispose() {
+    this.thermal?.dispose();
+    const seen = new Set();
+    this.scene.traverse((o) => {
+      o.geometry?.dispose();
+      o.skeleton?.dispose();
+      o.shadow?.dispose();
+      if (o.isInstancedMesh) o.dispose();
+      for (const m of [].concat(o.material ?? [])) {
+        if (seen.has(m)) continue;
+        seen.add(m);
+        for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+        for (const u of Object.values(m.uniforms ?? {})) if (u.value?.isTexture) u.value.dispose();
+      }
+    });
+    this.envTarget.dispose();
+  }
+
   constructor() {
     const q = quality();
     this.scene = new THREE.Scene();
@@ -367,7 +389,8 @@ export class World {
     renderer.shadowMap.needsUpdate = true;
     this.frame = 0;
 
-    this.envMap = skyEnvironment(this.sky);
+    this.envTarget = skyEnvironment(this.sky);
+    this.envMap = this.envTarget.texture;
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 1, 1),
       new THREE.MeshStandardMaterial({ color: 0x4a6d73, roughness: 0.12, metalness: 0.55, envMap: this.envMap, envMapIntensity: 0.9, transparent: true, opacity: 0.88, flatShading: true }),

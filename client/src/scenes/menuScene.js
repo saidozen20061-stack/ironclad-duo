@@ -269,7 +269,10 @@ export class MenuScene {
 
   setShowcase(type, paint = type) {
     if (this.showcase?.type === type && this.showcase.paint === paint) return;
-    if (this.showcase) this.scene.remove(this.showcase.group);
+    if (this.showcase) {
+      this.scene.remove(this.showcase.group);
+      this.showcase.group.traverse((o) => o.geometry?.dispose());
+    }
     this.showcase = buildVehicle(type, 'blue', paint);
     this.showcase.paint = paint;
     this.showcase.type = type;
@@ -289,6 +292,7 @@ export class MenuScene {
     const key = JSON.stringify(used.map((c) => [c.id, c.tank, team(c), name(c.driver), name(c.gunner)]));
     if (key === this.lineupKey) return;
     this.lineupKey = key;
+    this.lineup.traverse((o) => o.geometry?.dispose());
     this.lineup.clear();
     this.taxiing = [];
     this.rigs = [];

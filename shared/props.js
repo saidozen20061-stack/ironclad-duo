@@ -3,7 +3,7 @@
 // generated client-side from the same seed and never blocks movement.
 
 import { mulberry32, createNoise2D } from './noise.js';
-import { POINTS, BASES, BRIDGES, FORD, AIRFIELDS, inAirfield, riverZ, heightAt, groundAt, waterDepthAt, HALF } from './map.js';
+import { POINTS, FARM, BASES, BRIDGES, FORD, AIRFIELDS, inAirfield, riverZ, heightAt, groundAt, waterDepthAt, HALF } from './map.js';
 
 // Rotation convention (matches Three.js rotation.y): local X = width, local Z = depth.
 // world = (lx*cos + lz*sin, -lx*sin + lz*cos)
@@ -163,9 +163,9 @@ function add(type, x, z, rot, w, d, h, extra = {}) {
   }
 }
 
-// ---------- Point C: farm / industrial ----------
+// ---------- The farm: barns, silos, fuel ----------
 {
-  const C = POINTS[2];
+  const C = FARM;
   add('barn', C.x + 22, C.z + 18, 0.1, 14, 22, 9);
   add('barn', C.x - 26, C.z + 22, -0.05, 12, 18, 8);
   add('barn', C.x - 18, C.z - 30, Math.PI / 2, 10, 16, 7);
@@ -341,9 +341,9 @@ function placeNear(type, ax, az, spread, w, d, h, opts = {}, extra = {}) {
   }
 }
 
-// ---------- Point C extras: factory, warehouses, water tower, stopped train ----------
+// ---------- The farm's factory, warehouses, water tower, stopped train ----------
 {
-  const C = POINTS[2];
+  const C = FARM;
   const f = placeNear('factory', C.x - 70, C.z + 30, 18, 26, 16, 10, { road: 8, slope: 0.3 }, { rot: 0.08 });
   if (f) add('chimney', f.x + 16, f.z - 4, 0, 3, 3, 28);
   placeNear('warehouse', C.x + 75, C.z - 20, 20, 12, 22, 7, { road: 7, slope: 0.3 }, { rot: 0.1 });

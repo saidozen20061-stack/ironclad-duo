@@ -448,11 +448,22 @@ export class GunnerView {
     ctx.font = 'bold 13px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const onEdge = [];
     for (const pt of this.hidePoints ? [] : POINTS) {
       let [px, py] = toMap(pt.x, pt.z);
       const out = px < 8 || px > S - 8 || py < 8 || py > S - 8;
       px = Math.max(10, Math.min(S - 10, px));
       py = Math.max(10, Math.min(S - 10, py));
+      if (out) {
+        // Two flags off the same edge go side by side, not on top of each other.
+        const alongX = py <= 10 || py >= S - 10;
+        const step = (alongX ? px : py) < S / 2 ? 18 : -18;
+        for (let n = 0; n < POINTS.length && onEdge.some(([a, b]) => Math.hypot(a - px, b - py) < 18); n++) {
+          if (alongX) px += step;
+          else py += step;
+        }
+        onEdge.push([px, py]);
+      }
       ctx.fillStyle = 'rgba(20,20,16,0.75)';
       ctx.beginPath();
       ctx.arc(px, py, out ? 8 : Math.max(8, pt.r * k), 0, Math.PI * 2);

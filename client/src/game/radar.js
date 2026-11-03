@@ -157,12 +157,17 @@ export class Radar {
     ctx.font = 'bold 26px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const onRim = [];
     for (const pt of this.hidePoints ? [] : POINTS) {
       let [sx, sy] = toScreen(pt.x, pt.z);
       const dist = Math.hypot(pt.x - tank.x, pt.z - tank.z);
       const col = this.pointColor?.(pt.id) ?? 'rgba(230,230,200,0.9)';
       if (dist > RADAR_RANGE - 8) {
-        const ang = Math.atan2(sx - c, -(sy - c));
+        let ang = Math.atan2(sx - c, -(sy - c));
+        // Two flags the same way go side by side on the rim, not on top of each other.
+        const gap = 36 / (R - 22);
+        for (let n = 0; n < POINTS.length && onRim.some((a) => Math.abs(Math.atan2(Math.sin(a - ang), Math.cos(a - ang))) < gap); n++) ang += gap;
+        onRim.push(ang);
         sx = c + Math.sin(ang) * (R - 22);
         sy = c - Math.cos(ang) * (R - 22);
         ctx.fillStyle = 'rgba(0,0,0,0.6)';

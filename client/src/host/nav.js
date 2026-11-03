@@ -22,7 +22,11 @@ function buildCosts(cls) {
       if (Math.abs(x) > PLAY_LIMIT - 8 || Math.abs(z) > PLAY_LIMIT - 8) continue;
       const bridge = onBridge(x, z);
       const depth = waterDepthAt(x, z);
-      if (!bridge && depth > (cls === 'tank' ? 1.5 : 1.1)) continue;
+      // Deepest anywhere in the cell, not just at its centre: units walk straight from one cell to the
+      // next, and a deep channel between two shallow centres would stop them there.
+      let deepest = depth;
+      for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) deepest = Math.max(deepest, waterDepthAt(x + (dx * NAV_CELL) / 2, z + (dz * NAV_CELL) / 2));
+      if (!bridge && deepest > (cls === 'tank' ? 1.5 : 1.1)) continue;
       const h = heightAt(x, z);
       const slope = Math.max(
         Math.abs(heightAt(x + NAV_CELL / 2, z) - heightAt(x - NAV_CELL / 2, z)),
@@ -180,6 +184,7 @@ export function passable(cls, x, z) {
 export function nextWaypoint(cls, key, x, z, lookahead = 2) {
   const dist = FIELDS[cls][key];
   if (!dist) return null; // not a nav target (e.g. fortress wall defenders hold position)
+  const cost = COSTS[cls];
   let [i, j] = cellOf(x, z);
   if (i < 0 || j < 0 || i >= N || j >= N) return null;
   // If standing in a blocked/unreached cell, step to the best neighbour anyway.
@@ -190,6 +195,8 @@ export function nextWaypoint(cls, key, x, z, lookahead = 2) {
       const ni = i + di, nj = j + dj;
       if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
       const d = dist[idx(ni, nj)];
+      // The same rule the field was built with: no cutting across the corner of something solid.
+      if (di && dj && cost[idx(i, j)] !== Infinity && (cost[idx(ni, j)] === Infinity || cost[idx(i, nj)] === Infinity)) continue;
       if (d < best) {
         best = d;
         bi = ni;

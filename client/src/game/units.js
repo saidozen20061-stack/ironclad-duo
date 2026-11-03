@@ -99,6 +99,10 @@ export class UnitsView {
       if (!states.has(id)) {
         this.scene.remove(m.root);
         if (m.groundShadow) this.scene.remove(m.groundShadow);
+        // A tank or plane has its own model; soldiers share theirs, all but the skeleton.
+        if (m.kind === 'tank' || m.kind === 'plane') m.root.traverse((o) => o.geometry?.dispose());
+        m.rig?.mesh.skeleton.dispose();
+        m.trackTex?.dispose();
         this.models.delete(id);
       }
     }

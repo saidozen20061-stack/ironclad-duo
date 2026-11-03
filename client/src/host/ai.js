@@ -484,6 +484,8 @@ export class ArmyAI {
     ai.proneT = Math.max(0, ai.proneT - dt);
     ai.signalT = Math.max(0, ai.signalT - dt);
     ai.throwT = Math.max(0, ai.throwT - dt);
+    // The casualty died or the time ran out: back to the war, or this soldier would stand at base for good.
+    if (ai.drag && (ai.drag.dead || ai.drag.ai.draggedBy !== u || m.time > ai.dragUntil)) ai.drag = null;
     // Being dragged to safety by a squadmate: just follow along.
     if (ai.draggedBy) {
       const b = ai.draggedBy;
@@ -657,6 +659,30 @@ export class ArmyAI {
     return far;
   }
 
+  // Same for a tank, which is a lot wider: the furthest cell it can drive straight to, so it never
+  // aims for a point on the far side of a bunker.
+  tankGoal(t, key) {
+    const r = t.radius * 0.72;
+    let goal = null;
+    for (const look of [3, 2, 1]) {
+      goal = nextWaypoint('tank', key, t.x, t.z, look);
+      if (!goal) return goal;
+      const n = Math.max(2, Math.ceil(Math.hypot(goal.x - t.x, goal.z - t.z) / 3));
+      let clear = true;
+      for (let i = 1; i <= n && clear; i++) {
+        const x = t.x + ((goal.x - t.x) * i) / n, z = t.z + ((goal.z - t.z) * i) / n;
+        for (const p of propsNear(x, z, r + 2)) {
+          if (p.solid && !this.match.propDead.has(p.id) && circleHitsProp(p, x, z, r) && !circleHitsProp(p, t.x, t.z, r)) {
+            clear = false;
+            break;
+          }
+        }
+      }
+      if (clear) return goal;
+    }
+    return goal;
+  }
+
   // The way ahead is blocked (the 8 m nav grid misses small things like hedgehogs and AA guns):
   // walk round it, keeping to one side, and try the other side if that gets nowhere.
   stepAround(u, fx, fz, step) {
@@ -752,7 +778,7 @@ export class ArmyAI {
       drive.st = ai.reverseSteer;
     } else {
       const key = ai.state === 'retreat' ? t.team : ai.objective;
-      const goal = ai.state === 'engage' || ai.state === 'hold' ? null : nextWaypoint('tank', key, t.x, t.z, 3);
+      const goal = ai.state === 'engage' || ai.state === 'hold' ? null : this.tankGoal(t, key);
       if (goal) {
         // Line up with the deck before driving onto a bridge: the rails stop anything coming in at an angle.
         for (const b of BRIDGES) {

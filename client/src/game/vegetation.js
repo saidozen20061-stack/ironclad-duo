@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Scatter, mergeParts, bakeOnGround } from './scatter.js';
 import { CRATERS, FIELDS, ROADS, roadSamples, treeAllowed, TREE_NOISE, distToRoad, distToRail, fieldAt, propsNear, PROPS } from '../../../shared/props.js';
-import { inAirfield, heightAt, waterDepthAt, riverZ, RIVER_HALF_WIDTH, WATER_LEVEL, POINTS, BASES, PLAY_LIMIT } from '../../../shared/map.js';
+import { inAirfield, heightAt, waterDepthAt, riverZ, RIVER_HALF_WIDTH, WATER_LEVEL, POINTS, FARM, BASES, PLAY_LIMIT } from '../../../shared/map.js';
 import { mulberry32, createNoise2D } from '../../../shared/noise.js';
 import { quality } from '../settings.js';
 
@@ -254,7 +254,7 @@ export class Vegetation {
       }
     }
     // Hay bales around the farm too.
-    const C3 = POINTS[2];
+    const C3 = FARM;
     for (let i = 0; i < 24; i++) {
       const x = C3.x + (rand() - 0.5) * 120, z = C3.z + 50 + rand() * 50;
       if (blockedByProps(x, z, 2) || distToRoad(x, z) < 4 || distToRail(x, z) < 4) continue;
