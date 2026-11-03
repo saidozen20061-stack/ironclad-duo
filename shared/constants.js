@@ -1,5 +1,5 @@
 // Shared between server and client. Units: metres, seconds, radians unless noted.
-import { PLANE_IDS } from './planes.js';
+import { ALL_PLANE_IDS } from './planes.js';
 
 export const ROOM_CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O to avoid confusion
 export const ROOM_CODE_LENGTH = 5;
@@ -316,7 +316,7 @@ export const UNITS = {
 };
 
 // Unit type codes on the wire.
-export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew', 'scout', 'wheeled', 'destroyer', 'aa', 'assault', 'superheavy', ...PLANE_IDS];
+export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew', 'scout', 'wheeled', 'destroyer', 'aa', 'assault', 'superheavy', ...ALL_PLANE_IDS];
 
 export const MATCH = {
   tickets: 500,

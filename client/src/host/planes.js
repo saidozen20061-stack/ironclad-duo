@@ -21,6 +21,10 @@ const RUN_TIME = [14, 22]; // s of one attack run
 const REST_TIME = [20, 35]; // s before they look for the next target
 const HEAVY_RUN = 3; // × run time: a Leviathan takes that long to get anywhere
 const HEAVY_ALT = 190; // m above the ground it holds
+const ESCORT_SLOTS = [[-54, -4, -14], [54, -4, -14], [0, -14, -46]]; // m from the Leviathan: sideways, up, ahead
+const ESCORT_REPLACE = 45; // s after one is shot down, while its Leviathan still flies
+const ESCORT_GUARD = 260; // m around the Leviathan they'll go after enemy planes
+const ESCORT_LEASH = 420; // m they'll chase one before coming back
 const ELITE_REARM = 40; // s per salvo: an AI bomber can't land to rearm
 const BOMB_REACH = 34; // m around the impact point that's worth a salvo
 // A proper take-off roll: tyres and a heavy plane hold it back until it's well up to speed.
@@ -653,6 +657,7 @@ export class PlaneSystem {
   // ---------- NPC air force ----------
   updateSpawns() {
     const m = this.m;
+    if (m.tickNo % TICK_RATE === 0) this.updateEscorts();
     this.nextElite -= DT;
     if (this.nextElite <= 0) {
       this.nextElite = NPC_PLANES.eliteEvery;
@@ -668,6 +673,82 @@ export class PlaneSystem {
         this.nextRole[team] = this.nextRole[team] === 'fighter' ? 'attack' : 'fighter';
       }
     }
+  }
+
+  // A flying Leviathan keeps its escorts up: they join once it's airborne, and get replaced if shot down.
+  updateEscorts() {
+    for (const l of this.m.units) {
+      if (l.kind !== 'plane' || !l.spec.escorts || l.dead || l.grounded) continue;
+      l.escortUnits ??= [];
+      l.escortWait ??= [];
+      for (let i = 0; i < l.spec.escorts; i++) {
+        const e = l.escortUnits[i];
+        if (e && !e.dead) continue;
+        if (e) {
+          l.escortUnits[i] = null;
+          l.escortWait[i] = this.m.time + ESCORT_REPLACE;
+        }
+        if (this.m.time >= (l.escortWait[i] ?? 0)) l.escortUnits[i] = this.spawnEscort(l, i);
+      }
+    }
+  }
+
+  escortSlot(l, slot, out = new Vector3()) {
+    const [side, up, ahead] = ESCORT_SLOTS[slot];
+    const c = Math.cos(l.h), sn = Math.sin(l.h);
+    return out.set(l.x + c * side + sn * ahead, l.y + up, l.z - sn * side + c * ahead);
+  }
+
+  spawnEscort(l, slot) {
+    const at = this.escortSlot(l, slot);
+    const p = new Plane(l.team, 'escort', at.x, at.y, at.z, l.h, Math.max(l.v, PLANES.escort.minSpeed * 1.2));
+    p.ai = { role: 'fighter', think: rand(0, 0.5), target: null, climbT: 0, reactTo: null, reactT: 0, ground: null, pass: rand(0.8, 1.2) };
+    p.elite = true;
+    p.escortOf = l;
+    p.escortSlot = slot;
+    this.m.units.push(p);
+    return p;
+  }
+
+  // Holds its place by the Leviathan. False hands it over to the normal pilot: to fight, or because
+  // its Leviathan is gone or on the ground.
+  flyEscort(p) {
+    const l = p.escortOf, ai = p.ai, s = p.spec;
+    if (l.dead || l.grounded) return false;
+    if (ai.target && !ai.target.dead && Math.hypot(ai.target.x - l.x, ai.target.z - l.z) < ESCORT_LEASH) return false;
+    ai.target = null;
+    if (this.m.tickNo % 10 === p.id % 10) {
+      let best = null, bd = ESCORT_GUARD;
+      for (const o of this.planes) {
+        if (o.dead || o.grounded || o.team === p.team) continue;
+        const d = Math.hypot(o.x - l.x, o.y - l.y, o.z - l.z);
+        if (d < bd) {
+          bd = d;
+          best = o;
+        }
+      }
+      if (best) {
+        ai.target = best;
+        ai.runT = RUN_TIME[0];
+        return false;
+      }
+    }
+    const place = this.escortSlot(l, p.escortSlot);
+    const dx = place.x - p.x, dz = place.z - p.z;
+    const lf = fwd(l.h, 0);
+    // Aim at a point ahead of its place, so it settles alongside instead of weaving on to it.
+    const lookX = dx + lf.x * 40, lookZ = dz + lf.z * 40;
+    const alt = p.y - Math.max(groundAt(p.x, p.z), WATER_LEVEL);
+    const k = p.ctl;
+    k.gunDir = null;
+    k.th = 0;
+    k.fire = k.bomb = k.rocket = false;
+    k.aim = { yaw: Math.atan2(lookX, lookZ), pitch: alt < 45 ? 0.5 : clamp(Math.atan2(place.y - p.y, Math.hypot(lookX, lookZ)) * 1.5, -0.45, 0.45) };
+    // Throttle for the speed that closes the gap: the thrust that balances drag at that speed.
+    const behind = dx * lf.x + dz * lf.z;
+    const want = clamp(l.v + behind * 0.25, s.minSpeed * 1.15, s.maxSpeed);
+    p.throttle = clamp(s.drag * (want / s.maxSpeed) ** 2 + (want - p.v) * 0.2, 0.05, 1);
+    return true;
   }
 
   // Every team facing players sends one, on top of its usual planes. One Leviathan per team at a time.
@@ -702,6 +783,7 @@ export class PlaneSystem {
   }
 
   npc(p) {
+    if (p.escortOf && this.flyEscort(p)) return;
     const m = this.m, ai = p.ai, s = p.spec;
     const fortress = m.mode === 'fortress';
     ai.think -= DT;

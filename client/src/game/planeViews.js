@@ -565,7 +565,8 @@ class PlaneBase extends GunnerView {
         was = now;
       }
     }
-    this.camReach = limit < (this.camReach ?? want) ? limit : (this.camReach ?? want) + (limit - this.camReach) * Math.min(1, dt * 3);
+    this.camReach ??= limit;
+    this.camReach = limit < this.camReach ? limit : this.camReach + (limit - this.camReach) * Math.min(1, dt * 3);
     return this.camReach;
   }
 

@@ -287,6 +287,23 @@ const SHAPES = {
     tail: { z: -5.8, span: 3.7, chord: 1.9, y: -0.05 }, fin: { z: -4.6, h: 2.7, chord: 2.8, y: 0.45 },
     canopy: [3.3, 2.7, 0.82, 0.92], gear: 'tricycle', cockpitY: 0.95, engineX: 0, engineZ: -6.4,
   },
+  // The Leviathan's little escort, in its colours: a fat crimson body, an amber dome, striped wings.
+  escort: {
+    mark: [3.6, 0], markR: 0.45, markT: 0.24, markZ: -1, noWingGuns: true, internalBombs: true,
+    fuse: [[3.6, 1.6, 1.6, 0], [2, 2.5, 2.4, 0.1], [-0.8, 2.3, 2.2, 0.2], [-2.8, 1.2, 1.1, 0.3], [-4.4, 0.3, 0.3, 0.4]],
+    wing: (add) => {
+      for (const g of both(panel(0.8, 5.5, 0, 0.3, 1.4, -1.6, -0.9, -2.2, 0.3, 0.08))) add.body.push(g);
+      add.amber.push(new THREE.IcosahedronGeometry(1.15, 1).scale(1, 1, 1.2).translate(0, 0.05, 3.4));
+      add.dark.push(new THREE.ConeGeometry(0.35, 1.8, 6).rotateX(Math.PI / 2).toNonIndexed().translate(0, 0.05, 5));
+      add.dark.push(finGeoUp({ z: -3, h: 1.6, chord: 1.8, y: 0.6, hw: 0.08 }));
+      add.exhaust.push(new THREE.ConeGeometry(0.3, 1.6, 8).rotateX(-Math.PI / 2).toNonIndexed().translate(0, 0.4, -5.1));
+      for (const s of [-1, 1]) {
+        add.plate.push(box(0.5, 0.04, 1.3, s * 3, 0.26, -0.9));
+        add.dark.push(finGeoUp({ z: -1.9, h: 0.8, chord: 1.1, y: 0.25, hw: 0.05 }, s * 5.4));
+      }
+    },
+    canopy: [0.5, 0.6, 0.4, 0.2], canopyY: 1.15, gear: 'tricycle', gearX: 1, cockpitY: 0.8, engineX: 0, engineZ: -3,
+  },
   // A black flying wing: a broad arrowhead with a sawtooth back edge and the cockpit on top.
   wraith: {
     mark: [9, 0], markR: 0.75, markT: 0.62, markZ: -1, noWingGuns: true, internalBombs: true, fuseSides: 10,

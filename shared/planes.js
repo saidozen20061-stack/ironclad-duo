@@ -94,7 +94,7 @@ export const PLANES = {
     rear: { damage: 46, interval: 0.16, spread: 0.007, speed: 420, ammo: 700, kind: 'ac', splash: 2, splashDamage: 16, up: 0.98, down: -0.3 },
     bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 8, sightY: 9.5 },
     rockets: { x: 10 },
-    engineSound: 'drone', seeFar: true, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
+    engineSound: 'drone', seeFar: true, escorts: 3, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
     hitBox: { hull: [19, 7.5], wing: [-20, 8, 2.5], wingY: 2 },
     stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
   },
@@ -107,6 +107,16 @@ export const PLANES = {
     rockets: { count: 16, damage: 200, splash: 5, splashDamage: 90, pair: true, cooldown: 0.9, x: 2.9 },
     engineSound: 'jet', afterburner: 1.5, takeoff: 0.42, operator: true, turnK: 3, turnBleed: 0.25,
     stats: { speed: 5, armor: 1, firepower: 5, agility: 4 },
+  },
+  // Flies with a Leviathan; nobody can pick it.
+  escort: {
+    id: 'escort', name: 'Imp', class: 'Escort Fighter', inspired: 'Bloons TD 6 Goliath Doomship', seats: 1, engines: 1, npcOnly: true,
+    blurb: 'A small fighter that guards a Leviathan.',
+    hp: 260, maxSpeed: 92, minSpeed: 24, accel: 26, roll: 2.2, pitch: 1.05, yaw: 0.42, drag: 0.8,
+    armor: { front: 1, side: 1.05, rear: 1.1 }, size: { length: 9, width: 11, height: 3.2 }, gearH: 1.6,
+    guns: gun('2× 20mm Cannon', 13, 0.12, 0.022, 'ac', 680, 900), rear: null,
+    rockets: { count: 0 },
+    engineSound: 'inline', stats: { speed: 4, armor: 1, firepower: 2, agility: 4 },
   },
   wraith: {
     id: 'wraith', name: 'Wraith', class: 'Stealth Bomber', inspired: 'US B-2 Spirit', seats: 2, engines: 2,
@@ -165,7 +175,8 @@ export function rocketStep(p, dt) {
 }
 
 export const MAX_SIDE_PLANES = 2; // per team, players and NPCs together
-export const PLANE_IDS = Object.keys(PLANES);
+export const ALL_PLANE_IDS = Object.keys(PLANES);
+export const PLANE_IDS = ALL_PLANE_IDS.filter((id) => !PLANES[id].npcOnly); // the ones a crew can pick
 // The damage zones of a plane's engines: engine, engine2, engine3...
 export const engineZones = (n) => Array.from({ length: n }, (_, i) => (i ? `engine${i + 1}` : 'engine'));
 export const COOP_PLANE_IDS = PLANE_IDS.filter((id) => PLANES[id].seats === 2);
