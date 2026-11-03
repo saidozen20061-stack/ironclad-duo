@@ -6,13 +6,13 @@ import { PLANES } from '../../../shared/planes.js';
 // Command on the radio: the start and end of the battle, flags won and lost, and when this crew
 // destroys a tank or plane or hits or kills a teammate.
 // Real recordings: "Radio Soldier" by VoiceBosch, CC BY-SA 4.0. They all live in one file; each line is
-// [start, length] in seconds. The first line of each list comes up most often.
+// [start, length] in seconds.
 const CLIP_URL = `${import.meta.env.BASE_URL}audio/radio-soldier.mp3`;
 const CLIPS = {
   'Good work, soldier!': [41.31, 1.05],
   'Target neutralized!': [24.4, 1.38],
   'Tango down!': [10.71, 1.07],
-  'Enemy chopper down!': [38.05, 1.27],
+  'Area clear!': [13.94, 0.89],
   'Hold your position!': [73.53, 1.14],
   'Watch your ammo!': [35.09, 0.96],
   "You're on your own. Good luck.": [86.65, 2.87],
@@ -23,14 +23,13 @@ const CLIPS = {
 const LINES = {
   friendly: ['Hold your position!', 'Watch your ammo!'],
   teamkill: ["You're on your own. Good luck.", "We're losing ground!"],
-  killTank: ['Good work, soldier!', 'Target neutralized!', 'Tango down!'],
-  killPlane: ['Good work, soldier!', 'Enemy chopper down!', 'Target neutralized!'],
+  kill: ['Good work, soldier!', 'Target neutralized!', 'Tango down!', 'Area clear!'],
   start: ["You're on your own. Good luck."],
   end: ['Good work, soldier!'],
   flagWon: ['Objective secured!'],
   flagLost: ['Objective lost!'],
 };
-const FAVOURITE = 0.5; // chance of a list's first line
+const FAVOURITE = 0.5; // chance of a list's first line, except the kill lines: those are all equally likely
 const PAD = 0.06; // s kept either side of a line, so its edges aren't clipped
 
 // Most urgent first: a higher one cuts off whatever is being said. `wait`: seconds before it can repeat.
@@ -41,8 +40,7 @@ const KINDS = {
   flagLost: { rank: 2, wait: 0.5 },
   friendly: { rank: 2, wait: 3.5 },
   start: { rank: 0, wait: 0 },
-  killTank: { rank: 1, wait: 3 },
-  killPlane: { rank: 1, wait: 3 },
+  kill: { rank: 1, wait: 3 },
 };
 
 const TEAMS = ['blue', 'red'];
@@ -98,13 +96,13 @@ export class RadioLines {
       if (this.units.get(ev.u)?.team === team) this.say('friendly');
     } else if (ev.k === 'k' && this.mine(ev.by) && !this.mine(ev.u)) {
       if (ev.team === team) this.say('teamkill');
-      else if (TANKS[ev.type]) this.say('killTank');
-      else if (PLANES[ev.type]) this.say('killPlane');
+      else if (TANKS[ev.type] || PLANES[ev.type]) this.say('kill');
     }
   }
 
   pick(kind) {
     const list = LINES[kind];
+    if (kind === 'kill') return list[Math.floor(Math.random() * list.length)];
     let line = list[0];
     if (Math.random() >= FAVOURITE) {
       const rest = list.filter((l) => l !== this.last[kind] && l !== list[0]);
