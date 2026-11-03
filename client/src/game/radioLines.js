@@ -3,15 +3,13 @@ import { settings } from '../settings.js';
 import { TANKS } from '../../../shared/constants.js';
 import { PLANES } from '../../../shared/planes.js';
 
-// Command on the radio, reacting to what this crew shoots: spoken by the browser's own voice, with
+// Command on the radio, reacting when this crew destroys a tank or plane, or hits or kills a teammate: spoken by the browser's own voice, with
 // a click of static either side and a subtitle. The first line of each list comes up most often.
 const LINES = {
   friendly: ['What are you doing!!', 'Cease fire! Cease fire!', 'Check your fire, that is one of ours!', 'Friendly fire! Friendly fire!', 'Hey! We are on the same side!', 'Watch where you are shooting!', 'Whose side are you on?!', 'Stop shooting at us!', 'Are you blind? That is a friendly!', 'Hold your fire, you idiot!', 'Look at your target, soldier!', 'One more shot like that and you are walking home!'],
   teamkill: ['What have you done?!', 'You just killed one of our own!', 'Friendly down! Friendly down! That was you!', 'That was our guy! What is wrong with you?!', 'You will answer for that, soldier!', 'Unbelievable. You took out your own side.'],
-  hit: ['Good job, soldier!', 'Good hit!', 'Direct hit!', 'Nice shot!', 'Target hit, keep it up!', 'That one felt it!', 'Keep firing, they are hurting!', 'Right on target!', 'Great shooting!', 'Hit confirmed!', 'Stay on them!', 'That is how it is done!'],
   killTank: ['Good job, soldier! Tank destroyed!', 'Enemy armour down!', 'Scratch one tank!', 'That tank is finished!', 'Beautiful shot, that tank is burning!', 'Target destroyed, find the next one!'],
   killPlane: ['Good job, soldier! Enemy plane down!', 'Splash one!', 'Bandit down!', 'You got him, he is going down!', 'Great kill, the sky is a little safer!', 'That plane is not coming home!'],
-  killFoot: ['Good job, soldier!', 'Enemy down!', 'Got one!', 'Target neutralised!', 'He is not getting up!', 'Good kill!'],
 };
 const FAVOURITE = 0.35; // chance of a list's first line
 
@@ -21,8 +19,6 @@ const KINDS = {
   friendly: { rank: 2, wait: 3.5, rate: 1.25, pitch: 1.15 },
   killTank: { rank: 1, wait: 3, rate: 1.05, pitch: 0.9 },
   killPlane: { rank: 1, wait: 3, rate: 1.05, pitch: 0.9 },
-  killFoot: { rank: 1, wait: 5, rate: 1.05, pitch: 0.9 },
-  hit: { rank: 0, wait: 9, rate: 1.05, pitch: 0.95 },
 };
 
 const TEAMS = ['blue', 'red'];
@@ -53,10 +49,11 @@ export class RadioLines {
   onEvent(ev, team) {
     if (ev.k === 'i' && ev.u !== undefined && this.mine(ev.o) && !this.mine(ev.u)) {
       const victim = this.units.get(ev.u);
-      if (victim) this.say(victim.team === team ? 'friendly' : 'hit');
+      if (victim?.team === team) this.say('friendly');
     } else if (ev.k === 'k' && this.mine(ev.by) && !this.mine(ev.u)) {
       if (ev.team === team) this.say('teamkill');
-      else this.say(TANKS[ev.type] ? 'killTank' : PLANES[ev.type] ? 'killPlane' : 'killFoot');
+      else if (TANKS[ev.type]) this.say('killTank');
+      else if (PLANES[ev.type]) this.say('killPlane');
     }
   }
 
