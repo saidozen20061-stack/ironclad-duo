@@ -36,7 +36,6 @@ const KEY_UP = 0.2; // s of walkie-talkie sound before the voice
 const KEY_DOWN = 0.2; // and after it
 const GAP = 0.3; // s of silence between one line and the next in the queue
 const FRIENDLY_REPEAT = 3.5; // s: a long burst into a teammate doesn't fill the queue
-const TAKEOFF_REPEAT = 20; // s: bouncing on the runway doesn't count as taking off twice
 const TAKEOFF_DELAY = 3; // s after the wheels leave the ground
 
 const TEAMS = ['blue', 'red'];
@@ -76,12 +75,16 @@ export class RadioLines {
     const ground = msg.me?.pl?.ground;
     if (this.clips && !this.opened) {
       this.opened = true;
-      if (msg.time < JOINED_LATE && !ground) this.say('start');
+      if (msg.time < JOINED_LATE && !ground) {
+        this.say('start');
+        this.tookOff = true; // that was the same line, for a plane starting in the air
+      }
     }
     this.dead = msg.me?.dead;
-    if (this.wasGround && ground === false && !this.dead && !this.takeoffT) {
+    // Only the match's first take-off: not after landing or getting a new plane.
+    if (this.wasGround && ground === false && !this.dead && !this.tookOff) {
+      this.tookOff = true;
       this.takeoffT = setTimeout(() => {
-        this.takeoffT = null;
         if (!this.dead) this.say('takeoff');
       }, TAKEOFF_DELAY * 1000);
     }
@@ -122,7 +125,6 @@ export class RadioLines {
     const now = performance.now() / 1000;
     if (now < (this.nextAt[kind] ?? 0)) return;
     if (kind === 'friendly') this.nextAt.friendly = now + FRIENDLY_REPEAT;
-    if (kind === 'takeoff') this.nextAt.takeoff = now + TAKEOFF_REPEAT;
     this.queue.push(kind);
     this.playNext();
   }
