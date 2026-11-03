@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PLANES } from '../../../shared/planes.js';
 import { paintMaterial } from './paint.js';
 import { buildMinigun } from './guns.js';
@@ -269,18 +269,14 @@ const SHAPES = {
     canopy: [0.3, 1.5, 0.48, 0.55], prop: { z: 4.6, r: 1.45, blades: 3 }, nose: [[4.55, 3.5]], noseColor: 0xd9b72e,
     gear: 'mains', cockpitY: 0.65,
   },
-  // A broad body with twin noses, and two wings across its back: the big one swept back from beside
-  // the cockpits, a smaller one at the tail, joined by four long engines. Details in leviathanParts below.
+  // Two waterdrop hulls side by side, two smooth wings running through them and four long engines
+  // joining the wings. Most of it is in leviathanParts below.
   leviathan: {
-    mark: [47, 9.3], discX: 21, markR: 1.5, markT: 1.8, markZ: -3, railY: 9.1, railZ: -12, noWingGuns: true, internalBombs: true, fuseSides: 12,
-    fuse: [[23, 26, 11, 1.2], [14, 28, 12.5, 1.6], [2, 27, 13, 2], [-14, 19, 10, 2.8], [-35, 3, 3, 5]],
-    wing: (add) => {
-      for (const g of both(panel(0, 24, 8.8, 9.4, 18, 4, -2, -9, 2.4, 1.4))) add.body.push(g);
-      for (const g of both(panel(24, 41, 9.4, 10, 4, -18, -9, -27, 1.4, 0.4))) add.body.push(g);
-      for (const g of both(panel(0, 22, 7.6, 8, -14, -18, -25, -27, 1.8, 0.8))) add.body.push(g);
-    },
-    canopy: [8, 3, 2, 0.6], canopyY: 8, gear: 'massive', cockpitY: 6, guns: [],
-    engineX: 17.5, engineZ: -8,
+    mark: [47, 3.8], discX: 21, markR: 1.4, markT: 1.25, markZ: -3, railY: 2.9, railZ: -12, noWingGuns: true, internalBombs: true, fuseSides: 12, smooth: true,
+    fuse: [[22, 8, 11, 3.5], [14, 10, 13, 3.5], [2, 10, 13.5, 3.5], [-14, 8, 10, 4], [-30, 2, 2, 5]],
+    wing: () => {},
+    canopy: [2, 1, 1, 0.3], canopyY: 3, gear: 'massive', cockpitY: 6, guns: [],
+    engineX: 17, engineZ: -6,
   },
   f16: {
     mark: [3.1, -0.05], discX: 4.3, markR: 0.46, markZ: -2.05, markT: 0.24, railY: -0.3, railZ: -1.25, jet: true,
@@ -341,95 +337,264 @@ function wraithWing(add) {
 }
 const WRAITH_HULL = [[8.1, 0.3, 0.16, 0.02], [5.5, 2.6, 0.75, 0.12], [2, 4.2, 1.5, 0.22], [-1.5, 3.8, 1.15, 0.18], [-3.5, 1.8, 0.5, 0.08], [-4.6, 0.6, 0.16, 0.02]];
 
-// One gold hexagon cell on a dome: `tilt` from the nose, `round` about it.
-function domeCell(cx, cy, cz, r, tilt, round, cell) {
-  const d = new THREE.Vector3(Math.sin(tilt) * Math.cos(round), Math.sin(tilt) * Math.sin(round), Math.cos(tilt));
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
-  return new THREE.CylinderGeometry(cell, cell * 1.08, 0.3, 6).toNonIndexed().applyQuaternion(q).translate(cx + d.x * r, cy + d.y * r, cz + d.z * r * 1.15);
-}
-
-// Everything else on the doomship: twin black domes with gold cells, crescent jaws, wing edging and
-// stripes, four long engines, a rear wing with silver tips and a row of black fins, undercarriage and turret.
-function leviathanParts(add, group, props, spec, sh) {
-  const inner = (x) => x <= 24;
-  const bigLead = (x) => (inner(x) ? 18 - (x / 24) * 14 : 4 - ((x - 24) / 17) * 22);
-  const bigTrail = (x) => (inner(x) ? -2 - (x / 24) * 7 : -9 - ((x - 24) / 17) * 18);
-  const bigY = (x) => (inner(x) ? 8.8 + (x / 24) * 0.6 : 9.4 + ((x - 24) / 17) * 0.6);
-  const bigT = (x) => (inner(x) ? 2.4 - (x / 24) : 1.4 - ((x - 24) / 17));
-  const top = (x) => bigY(x) + bigT(x) / 2 + 0.05;
-  for (const s of [-1, 1]) {
-    const side = (g) => (s < 0 ? mirror(g) : g); // mirrored properly, so its faces still point outwards
-    const nx = s * 7.4, ny = 1.2, nz = 28, nr = 6;
-    // A nose for each cockpit: crimson shoulders, and a black dome tiled in gold hexagons.
-    add.body.push(loft([[28, 9.5, 9.5, ny], [24, 13.2, 12.2, ny], [14, 14.6, 13.6, 1.6]], 12).translate(nx, 0, 0));
-    add.dark.push(new THREE.IcosahedronGeometry(nr, 1).scale(1, 1, 1.15).translate(nx, ny, nz));
-    add.amber.push(domeCell(nx, ny, nz, nr, 0, 0, 1.45));
-    for (let i = 0; i < 6; i++) add.amber.push(domeCell(nx, ny, nz, nr, 0.62, (i / 6) * Math.PI * 2, 1.35));
-    for (let i = 0; i < 9; i++) add.amber.push(domeCell(nx, ny, nz, nr, 1.15, ((i + 0.5) / 9) * Math.PI * 2, 1.25));
-    // Gold collar behind the dome.
-    add.amber.push(new THREE.TorusGeometry(nr + 0.25, 0.4, 6, 16).toNonIndexed().translate(nx, ny, nz - 0.6));
-    // The crescent jaw under the nose: black, edged in gold, sweeping to a black point.
-    add.dark.push(new THREE.TorusGeometry(nr + 0.9, 0.95, 6, 14, Math.PI).toNonIndexed().rotateZ(Math.PI).rotateX(-0.45).translate(nx, ny, nz + 2.2));
-    add.amber.push(new THREE.TorusGeometry(nr + 1.9, 0.26, 6, 14, Math.PI).toNonIndexed().rotateZ(Math.PI).rotateX(-0.45).translate(nx, ny, nz + 1.7));
-    add.dark.push(new THREE.ConeGeometry(2.2, 8, 6).rotateX(Math.PI / 2).toNonIndexed().scale(1, 0.55, 1).translate(nx, ny - 6.3, nz + 7));
-    // Gold studs round the shoulders.
-    for (const [dx, z] of [[-5, 21], [5, 21], [-6, 15], [6, 15]]) add.amber.push(new THREE.SphereGeometry(0.42, 6, 4).toNonIndexed().translate(nx + dx * (s < 0 ? -1 : 1), 7.4, z));
-
-    // Thick black leading edge along the big wing and round its tip, which ends in a black point.
-    for (const [x0, x1] of [[13, 24], [24, 41]]) {
-      add.dark.push(side(panel(x0, x1, bigY(x0), bigY(x1), bigLead(x0) + 0.2, bigLead(x0) - 2.4, bigLead(x1) + 0.2, bigLead(x1) - 2.4, bigT(x0) + 0.35, bigT(x1) + 0.3)));
-    }
-    add.dark.push(side(panel(38, 41.4, bigY(38), bigY(41), bigLead(38) + 0.3, bigTrail(38) - 0.3, bigLead(41) + 0.3, bigTrail(41) - 0.3, 0.75, 0.6)));
-    add.dark.push(new THREE.ConeGeometry(0.75, 7, 6).rotateX(-Math.PI / 2).toNonIndexed().translate(s * 41, 10, -29));
-    // Dark raked stripes across the big wing; panel seams; gold studs.
-    for (const px of [10, 13, 29, 32.5, 36]) {
-      const l = bigLead(px), t = bigTrail(px);
-      add.wingStripe.push(box(1.35, 0.14, (l - t) * 0.74, s * px, top(px), l - (l - t) * 0.48));
-    }
-    for (const px of [5, 18, 24, 27]) add.door.push(box(0.1, 0.05, bigLead(px) - bigTrail(px) - 0.6, s * px, top(px), (bigLead(px) + bigTrail(px)) / 2));
-    for (const [px, pz] of [[7, 8], [16, 2], [21, 6], [26, -4], [33, -14], [37, -20]]) add.amber.push(new THREE.CylinderGeometry(0.6, 0.6, 0.12, 8).toNonIndexed().translate(s * px, top(px) + 0.04, pz));
-    // Two long engines each side, close together, joining the wings: amber ring in front.
-    for (const [px, plume] of [[17.5, true], [25, false]]) {
-      const y = 6.4, l = bigLead(px) + 2.5, end = -31;
-      add.dark.push(loft([[l + 3.5, 3, 3, y], [l, 5.8, 5.8, y], [l - 8, 6.2, 6.2, y], [-20, 5.2, 5.2, y], [end, 3.4, 3.4, y]], 10).translate(s * px, 0, 0));
-      add.amber.push(cyl(2.9, 2.9, 0.9, 12, s * px, y, l + 3.5));
-      add.dark.push(cyl(2, 2, 1.1, 12, s * px, y, l + 3.6));
-      add.metal.push(cyl(3.2, 3.2, 0.5, 10, s * px, y, l - 4));
-      add.amber.push(cyl(2.85, 2.85, 0.5, 10, s * px, y, -21));
-      if (plume) {
-        // The inner pair fire tall violet plumes.
-        add.amber.push(cyl(1.9, 1.9, 0.4, 10, s * px, y, end - 0.1));
-        add.exhaust.push(cyl(1.5, 1.5, 0.5, 10, s * px, y, end - 0.25));
-        add.plume.push(new THREE.ConeGeometry(1.5, 9, 10).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, y, end - 4.8));
-        add.exhaust.push(new THREE.ConeGeometry(0.85, 5.5, 8).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, y, end - 3));
-      } else add.dark.push(new THREE.ConeGeometry(1.5, 5, 8).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, y, end - 2.4));
-    }
-    // The small wing's bright silver tips, edged in black, with a black fin at each end.
-    add.silver.push(side(panel(22, 31, 8, 8.4, -18.6, -27, -21.6, -28.5, 0.9, 0.45)));
-    add.dark.push(side(panel(11, 31.6, 7.8, 8.4, -16, -17.8, -20.4, -22.2, 1.5, 0.6)));
-    add.dark.push(side(panel(29.6, 32, 8.4, 8.4, -21, -29, -21, -29, 0.8, 0.6)));
-    add.dark.push(finGeoUp({ z: -26, h: 5, chord: 7, y: 8.2, hw: 0.25 }, s * 31));
-    // Black fins raked along the small wing, and stripes between them.
-    for (const fx of [9, 21]) add.dark.push(finGeoUp({ z: -21, h: 6.5, chord: 8, y: 8.2, hw: 0.3 }, s * fx));
-    for (const px of [5, 13.5]) add.wingStripe.push(box(1.2, 0.12, 8, s * px, 8.75, -21));
-    add.amber.push(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 8).toNonIndexed().translate(s * 17, 8.85, -24));
-    // Vents along the body.
-    for (const z of [8, -6, -18]) add.dark.push(box(0.2, 1.4, 3.4, s * (z < -10 ? 9 : 14.6), 2.6, z));
-    // Undercarriage: three pairs of wheels under the body each side.
-    const r = 1.1, wy = -spec.gearH + r, x = s * 9;
-    for (const z of [16, 6, -8]) {
-      const strut = fuselageBottom(sh.fuse, z) + 1.5;
-      for (const k of [-1, 1]) add.dark.push(cyl(r, r, 0.8, 10).rotateY(Math.PI / 2).translate(x + k * 0.75, wy, z));
-      add.metal.push(box(0.55, strut - wy, 0.7, x, (strut + wy) / 2, z));
+// A smooth surface from a function of two parameters. `outward` tells it which way the faces point,
+// `uvOf` gives texture coordinates if it wears a picture.
+function gridSurface(fn, nu, nv, outward, uvOf = null) {
+  const pos = [], uv = [], idx = [];
+  for (let i = 0; i <= nu; i++) {
+    for (let j = 0; j <= nv; j++) {
+      const p = fn(i / nu, j / nv);
+      pos.push(...p);
+      if (uvOf) uv.push(...uvOf(p));
     }
   }
-  // Tall tail fin and a spike behind it.
-  add.dark.push(finGeoUp({ z: -27, h: 10, chord: 11, y: 7, hw: 0.45 }));
-  add.dark.push(new THREE.ConeGeometry(0.9, 6, 6).rotateX(-Math.PI / 2).toNonIndexed().translate(0, 5, -37));
-  // A white crest between the wings.
-  add.white.push(new THREE.CylinderGeometry(3.2, 3.2, 0.1, 16).toNonIndexed().translate(0, 8.25, -11.5));
-  add.wingStripe.push(new THREE.CylinderGeometry(2.4, 2.4, 0.12, 16).toNonIndexed().translate(0, 8.28, -11.5));
-  add.white.push(new THREE.CylinderGeometry(1.3, 1.3, 0.14, 3).toNonIndexed().rotateY(Math.PI).translate(0, 8.32, -11.5));
+  for (let i = 0; i < nu; i++) {
+    for (let j = 0; j < nv; j++) {
+      const a = i * (nv + 1) + j, c = a + nv + 1;
+      idx.push(a, c, a + 1, c, c + 1, a + 1);
+    }
+  }
+  const raw = new THREE.BufferGeometry();
+  raw.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (uvOf) raw.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  raw.setIndex(idx);
+  // Welding closes the seams, so the shading runs round without a line.
+  let g = mergeVertices(raw, 1e-3);
+  g.computeVertexNormals();
+  const mid = Math.floor(g.attributes.position.count / 2);
+  const n = new THREE.Vector3().fromBufferAttribute(g.attributes.normal, mid);
+  const at = new THREE.Vector3().fromBufferAttribute(g.attributes.position, mid);
+  if (n.dot(outward(at)) < 0) {
+    const ix = g.index.array;
+    for (let i = 0; i < ix.length; i += 3) [ix[i + 1], ix[i + 2]] = [ix[i + 2], ix[i + 1]];
+    g.computeVertexNormals();
+  }
+  return g;
+}
+
+// A round body along Z through a smooth line of [z, radius] points.
+function revolve(profile, x, y, sides = 16) {
+  const line = new THREE.SplineCurve(profile.map(([z, r]) => new THREE.Vector2(z, r)));
+  return gridSurface((u, v) => {
+    const q = line.getPoint(u), a = v * Math.PI * 2 - Math.PI / 2;
+    return [x + Math.cos(a) * q.y, y + Math.sin(a) * q.y, q.x];
+  }, 24, sides, (p) => new THREE.Vector3(p.x - x, p.y - y, 0));
+}
+
+// A flat plate with softly rounded edges, from its outline seen from above ([x, z] points).
+function softPlate(points, thick, y, edge = 0.14) {
+  const g = new THREE.ExtrudeGeometry(new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, z))), { depth: thick, steps: 1, bevelEnabled: true, bevelThickness: edge, bevelSize: edge, bevelOffset: -edge, bevelSegments: 2 });
+  g.rotateX(Math.PI / 2).translate(0, y + thick / 2, 0);
+  return toCreasedNormals(g, 0.9);
+}
+
+// An upright fin with a raked, curved edge, seen side on.
+function softFin(x, z, y, h, chord) {
+  const shape = new THREE.Shape();
+  shape.moveTo(chord * 0.55, 0);
+  shape.quadraticCurveTo(chord * 0.1, h * 0.55, -chord * 0.42, h);
+  shape.quadraticCurveTo(-chord * 0.62, h * 0.95, -chord * 0.5, h * 0.7);
+  shape.lineTo(-chord * 0.45, 0);
+  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.5, steps: 1, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.16, bevelOffset: -0.16, bevelSegments: 2, curveSegments: 10 });
+  g.translate(0, 0, -0.25).rotateY(-Math.PI / 2).translate(x, y, z);
+  return toCreasedNormals(g, 0.9);
+}
+
+const sampleCurve = (curve, n = 22) => curve.getPoints(n).map((q) => [q.x, q.y]);
+// The curve's z at this x, from sampled points in order of x.
+function zOn(points, x) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x0, z0] = points[i], [x1, z1] = points[i + 1];
+    if ((x >= x0 && x <= x1) || (x <= x0 && x >= x1)) return z0 + ((z1 - z0) * (x - x0)) / (x1 - x0 || 1);
+  }
+  return points[points.length - 1][1];
+}
+
+// The waterdrop: round at the nose, drawing out to a point at the tail, the tails leaning together.
+const DROP = { r: 7.3, x: 7, y: 3.6, nose: 36, length: 70, cap: 0.14, tall: 1.12 };
+function dropPoint(s, t, a, grow = 1) {
+  const u = Math.max(0, (t - DROP.cap) / (1 - DROP.cap));
+  const r = t < DROP.cap ? DROP.r * Math.sqrt(Math.max(0, 1 - ((DROP.cap - t) / DROP.cap) ** 2)) : DROP.r * (1 - u ** 1.8);
+  return [s * DROP.x * (1 - 0.6 * u * u) + Math.cos(a) * r * grow, DROP.y + 2.2 * u * u + Math.sin(a) * r * DROP.tall * grow, DROP.nose - DROP.length * t];
+}
+
+// The two window pictures, drawn once: yellow panes with red lines.
+let dropGlass = null;
+function dropWindows() {
+  if (dropGlass) return dropGlass;
+  const sheet = (draw) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const ctx = c.getContext('2d');
+    const at = ([x, y]) => [256 + x * 256, 256 - y * 256];
+    const poly = (pts, fill, line, width) => {
+      ctx.beginPath();
+      pts.forEach((q, i) => (i ? ctx.lineTo(...at(q)) : ctx.moveTo(...at(q))));
+      ctx.closePath();
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      if (line) {
+        ctx.strokeStyle = line;
+        ctx.lineWidth = width;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+    };
+    const seg = (a, b, line, width) => {
+      ctx.beginPath();
+      ctx.moveTo(...at(a));
+      ctx.lineTo(...at(b));
+      ctx.strokeStyle = line;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    };
+    draw(ctx, poly, seg, at);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.3, metalness: 0.1, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.32 });
+  };
+  const RED = '#a01a1a', GOLD = '#f6c61e', ORANGE = '#e9801a', BLACK = '#141414';
+  // From the front: a black visor, an orange band, and under it a big pentagon cut into panes by red
+  // lines, with a smaller pentagon in the middle.
+  const front = sheet((ctx, poly, seg, at) => {
+    ctx.fillStyle = BLACK;
+    ctx.beginPath();
+    ctx.ellipse(...at([0, 0.33]), 0.5 * 256, 0.32 * 256, 0, Math.PI, 0);
+    ctx.fill();
+    poly([[-0.74, 0.33], [0.74, 0.33], [0.78, 0.13], [-0.78, 0.13]], ORANGE, RED, 9);
+    const outer = [[-0.78, 0.13], [0.78, 0.13], [0.66, -0.34], [0, -0.78], [-0.66, -0.34]];
+    const inner = [[-0.38, 0.13], [0.38, 0.13], [0.46, -0.16], [0, -0.48], [-0.46, -0.16]];
+    poly(outer, GOLD, RED, 15);
+    poly(inner, '#ffd84a', RED, 11);
+    seg(inner[2], outer[2], RED, 11);
+    seg(inner[3], outer[3], RED, 11);
+    seg(inner[4], outer[4], RED, 11);
+    poly(outer, null, RED, 15);
+    for (const x of [-0.4, 0, 0.4]) seg([x, 0.33], [x, 0.13], RED, 7);
+  });
+  // From above: a cluster of panes along the top of the hull.
+  const top = sheet((ctx, poly, seg) => {
+    const outer = [[0, 0.96], [0.72, 0.5], [0.78, -0.4], [0.36, -0.92], [-0.36, -0.92], [-0.78, -0.4], [-0.72, 0.5]];
+    const inner = [[0, 0.42], [0.34, 0.2], [0.34, -0.22], [0, -0.44], [-0.34, -0.22], [-0.34, 0.2]];
+    poly(outer, GOLD, BLACK, 18);
+    poly(inner, '#ffd84a', RED, 10);
+    seg(inner[0], outer[0], RED, 10);
+    seg(inner[1], outer[1], RED, 10);
+    seg(inner[2], outer[2], RED, 10);
+    seg(inner[3], [0, -0.92], RED, 10);
+    seg(inner[4], outer[5], RED, 10);
+    seg(inner[5], outer[6], RED, 10);
+    poly(outer, null, BLACK, 18);
+  });
+  dropGlass = { front, top };
+  return dropGlass;
+}
+
+// Everything on the doomship: two waterdrop hulls with their windows, smooth wings through their
+// middles, four long engines, three fins, lower pods, undercarriage, bomb bays and turret.
+function leviathanParts(add, group, props, spec, sh) {
+  // The big wing's outline, one side, out along the front and back along the rear.
+  const bigFront = sampleCurve(new THREE.CubicBezierCurve(new THREE.Vector2(0, 16), new THREE.Vector2(14, 13), new THREE.Vector2(28, 2), new THREE.Vector2(40, -17)));
+  const bigTip = sampleCurve(new THREE.QuadraticBezierCurve(new THREE.Vector2(40, -17), new THREE.Vector2(42.4, -21), new THREE.Vector2(40.6, -26)), 8);
+  const bigBack = sampleCurve(new THREE.CubicBezierCurve(new THREE.Vector2(40.6, -26), new THREE.Vector2(33, -17), new THREE.Vector2(22, -9), new THREE.Vector2(10, -8)));
+  const smallFront = sampleCurve(new THREE.CubicBezierCurve(new THREE.Vector2(0, -13), new THREE.Vector2(10, -14), new THREE.Vector2(20, -16), new THREE.Vector2(30, -20)));
+  const smallTip = sampleCurve(new THREE.QuadraticBezierCurve(new THREE.Vector2(30, -20), new THREE.Vector2(32, -23.5), new THREE.Vector2(30.6, -28)), 8);
+  const twoSides = (half) => [...half, ...half.map(([x, z]) => [-x, z]).reverse()];
+  const WY = 3.8, RY = 4.6;
+  add.smooth.push(softPlate(twoSides([...bigFront, ...bigTip.slice(1), ...bigBack.slice(1), [0, -8]]), 0.8, WY, 0.25));
+  add.smooth.push(softPlate(twoSides([...smallFront, ...smallTip.slice(1), [0, -26]]), 0.7, RY, 0.2));
+  const wingTop = WY + 0.42;
+  for (const s of [-1, 1]) {
+    const flip = (pts) => pts.map(([x, z]) => [s * x, z]);
+    // Each hull is a waterdrop, and the wings run in through its sides.
+    const hull = (t, a, grow) => dropPoint(s, t, a, grow);
+    const away = (p) => new THREE.Vector3(p.x - s * DROP.x, p.y - DROP.y, 0);
+    add.smooth.push(gridSurface((u, v) => hull(u * u, v * Math.PI * 2 - Math.PI / 2), 40, 28, away));
+    if (typeof document !== 'undefined') {
+      const glass = dropWindows();
+      // The front window, tiled on to the nose as seen straight on.
+      // Lifted clear of the hull along the view as well, or the two fight over which is in front.
+      const front = gridSurface((u, v) => {
+        const q = hull(DROP.cap * u * u, v * Math.PI * 2 - Math.PI / 2, 1.008);
+        return [q[0], q[1], q[2] + 0.12 * (1 - u)];
+      }, 18, 32, away, (p) => [0.5 + ((p[0] - s * DROP.x) / DROP.r) * 0.5, 0.5 + ((p[1] - DROP.y) / (DROP.r * DROP.tall)) * 0.5]);
+      group.add(new THREE.Mesh(front, glass.front));
+      // The window on top: a raised bubble, tall enough to see from the front too.
+      const bubble = (grow) => (u, v) => {
+        const lat = (u * Math.PI) / 2, lon = v * Math.PI * 2;
+        return [s * DROP.x + Math.sin(lat) * Math.cos(lon) * 5.4 * grow, DROP.y + DROP.r * DROP.tall - 1.2 + Math.cos(lat) * 2.6 * grow, 18 + Math.sin(lat) * Math.sin(lon) * 9.6 * grow];
+      };
+      const up = (p) => new THREE.Vector3(p.x - s * DROP.x, 1, p.z - 18);
+      add.smooth.push(gridSurface(bubble(1), 12, 28, up));
+      group.add(new THREE.Mesh(gridSurface(bubble(1.012), 12, 28, up, (p) => [0.5 + (p[0] - s * DROP.x) / 11.4, 0.5 + (p[2] - 18) / 20]), glass.top));
+    }
+    // A black chin under the window, and two black spikes raked forward from under the hull.
+    add.smoothDark.push(new THREE.SphereGeometry(3, 18, 12).toNonIndexed().scale(1.15, 0.9, 1).translate(s * DROP.x, DROP.y - 3.4, 33.6));
+    for (const k of [-1, 1]) {
+      add.smoothDark.push(new THREE.ConeGeometry(0.8, 5, 12).toNonIndexed().rotateX(2).rotateZ(k * -0.4).translate(s * DROP.x + k * 4, DROP.y - 6.4, 28));
+    }
+
+    // The big wing's thick black front edge and tip; its back edge stays crimson.
+    const edge = bigFront.filter(([x]) => x >= 12.5);
+    add.smoothDark.push(softPlate(flip([...edge, ...bigTip.slice(1), ...[...edge].reverse().map(([x, z]) => [x, z - 2.3])]), 0.92, WY));
+    // Dark raked stripes and gold studs on it.
+    for (const px of [20.6, 28, 31.5, 35]) {
+      const l = zOn(bigFront, px), t = zOn(bigBack, px);
+      add.wingStripe.push(softPlate(flip([[px - 0.7, l - 2.6], [px + 0.7, l - 3.3], [px + 0.7, t + 0.6], [px - 0.7, t + 0.9]]), 0.1, wingTop + 0.04, 0.03));
+    }
+    for (const [px, pz] of [[20.6, 6.4], [13, -4], [26, -7], [33, -11], [37, -19]]) add.smoothGold.push(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 14).toNonIndexed().translate(s * px, wingTop + 0.08, pz));
+
+    // Two long engines each side, joining the wings: crimson cowl, black ring and yellow centre in front.
+    for (const [px, plume] of [[17, true], [24, false]]) {
+      const l = zOn(bigFront, px) + 2, end = -31;
+      // Crimson lip, a black band behind it, crimson along the wings, black again at the back.
+      add.smooth.push(revolve([[l + 4.7, 2.3], [l + 4.3, 3.1], [l + 2.5, 3.5], [l + 1.2, 3.55]], s * px, WY));
+      add.smoothDark.push(revolve([[l + 1.2, 3.58], [l - 1, 3.62], [l - 3.4, 3.6]], s * px, WY));
+      add.smooth.push(revolve([[l - 3.4, 3.55], [l - 8, 3.45], [-12, 3.3], [-17, 3.05]], s * px, WY));
+      add.smoothDark.push(revolve([[-17, 3.1], [-22, 2.85], [end + 3, 2.2], [end, 1.9], [end - 0.4, 1.4]], s * px, WY));
+      add.smoothDark.push(new THREE.CircleGeometry(2.45, 20).toNonIndexed().translate(s * px, WY, l + 4.55));
+      add.smoothGold.push(new THREE.SphereGeometry(1.3, 16, 10).toNonIndexed().scale(1, 1, 0.55).translate(s * px, WY, l + 4.5));
+      add.smoothGold.push(new THREE.TorusGeometry(3.66, 0.16, 8, 22).toNonIndexed().translate(s * px, WY, l - 3.4));
+      add.smoothGold.push(new THREE.TorusGeometry(3.12, 0.16, 8, 22).toNonIndexed().translate(s * px, WY, -17));
+      if (plume) {
+        // The inner pair fire tall violet plumes.
+        add.smoothGold.push(new THREE.TorusGeometry(1.75, 0.2, 8, 18).toNonIndexed().translate(s * px, WY, end - 0.3));
+        add.exhaust.push(new THREE.CircleGeometry(1.5, 16).toNonIndexed().rotateY(Math.PI).translate(s * px, WY, end - 0.42));
+        add.plume.push(new THREE.ConeGeometry(1.5, 9, 14).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, WY, end - 4.9));
+        add.exhaust.push(new THREE.ConeGeometry(0.85, 5.5, 12).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, WY, end - 3.1));
+      } else add.smoothDark.push(new THREE.ConeGeometry(1.45, 5, 14).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, WY, end - 2.8));
+    }
+    // A big pod slung under the engines: crimson over black.
+    const pod = (geo) => geo.scale(5.2, 3.2, 11).translate(s * 20.5, -1.3, -2);
+    add.smoothDark.push(pod(new THREE.SphereGeometry(1, 20, 14).toNonIndexed()));
+    add.smooth.push(pod(new THREE.SphereGeometry(1.03, 20, 8, 0, Math.PI * 2, 0, Math.PI * 0.42).toNonIndexed()));
+
+    // The small wing: black front edge, silver tips with black ends.
+    const smallEdge = smallFront.filter(([x]) => x >= 11);
+    add.smoothDark.push(softPlate(flip([...smallEdge, ...[...smallEdge].reverse().map(([x, z]) => [x, z - 1.6])]), 0.82, RY));
+    const silverStart = smallFront.filter(([x]) => x >= 22);
+    add.silver.push(softPlate(flip([...silverStart.map(([x, z]) => [x, z - 1.5]), [29.5, -27.6], [22, -26.8]]), 0.78, RY));
+    add.smoothDark.push(softPlate(flip([[29.6, zOn(smallFront, 29.6)], ...smallTip.slice(1), [29.4, -27.8]]), 0.84, RY));
+    add.smoothGold.push(new THREE.CylinderGeometry(0.5, 0.5, 0.12, 14).toNonIndexed().translate(s * 20.5, RY + 0.46, -21));
+    // Undercarriage: three pairs of wheels under each hull.
+    const r = 1.1, wy = -spec.gearH + r;
+    for (const z of [16, 6, -8]) {
+      const low = dropPoint(s, (DROP.nose - z) / DROP.length, -Math.PI / 2);
+      const strutTop = low[1] + 1.2;
+      for (const k of [-1, 1]) add.smoothDark.push(cyl(r, r, 0.8, 16).rotateY(Math.PI / 2).translate(low[0] + k * 0.75, wy, z));
+      add.metal.push(box(0.55, strutTop - wy, 0.7, low[0], (strutTop + wy) / 2, z));
+    }
+  }
+  // Three fins, as on the real thing: one on the centre line, one each side of it.
+  add.smoothDark.push(softFin(0, -22.5, 6, 10, 10));
+  for (const s of [-1, 1]) add.smoothDark.push(softFin(s * 13.5, -21, RY, 11, 9));
+  // A white crest on the body between the wings.
+  add.white.push(new THREE.CylinderGeometry(3, 3, 0.1, 24).toNonIndexed().translate(0, 9.85, -11.5));
+  add.wingStripe.push(new THREE.CylinderGeometry(2.25, 2.25, 0.12, 24).toNonIndexed().translate(0, 9.88, -11.5));
+  add.white.push(new THREE.CylinderGeometry(1.25, 1.25, 0.14, 3).toNonIndexed().rotateY(Math.PI).translate(0, 9.92, -11.5));
   // Rows of bomb bay doors along the belly.
   for (let row = 0; row < 4; row++) {
     const z = -9 + row * 3.4;
@@ -439,27 +604,6 @@ function leviathanParts(add, group, props, spec, sh) {
   // The heavy top turret's base.
   const [, dy, dz] = spec.door;
   add.plate.push(box(3.6, 1.5, 3.6, 0, dy - 1.3, dz), box(2.8, 0.5, 2.8, 0, dy - 0.3, dz));
-  if (typeof document !== 'undefined') stencils(group);
-}
-
-// Stencilled serial number on each side of the body.
-function stencils(group) {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 128;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#e8d9b0';
-  ctx.font = 'bold 104px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('L-06', 128, 68);
-  const m = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
-  for (const s of [-1, 1]) {
-    const decal = new THREE.Mesh(new THREE.PlaneGeometry(6, 3), m);
-    decal.rotation.y = (s * Math.PI) / 2;
-    decal.position.set(s * 14.4, 0.5, -1);
-    group.add(decal);
-  }
 }
 
 // Afterburner: two nested cones behind the nozzle, shown only while it's lit.
@@ -518,9 +662,10 @@ export function buildPlane(type, team = 'blue', paint = type) {
   const spec = PLANES[type];
   const sh = SHAPES[type];
   const group = new THREE.Group();
-  const add = { body: [], shade: [], dark: [], metal: [], nose: [], glass: [], belly: [], plate: [], rivet: [], door: [], stripe: [], amber: [], exhaust: [], white: [], wingStripe: [], silver: [], plume: [] };
+  const add = { body: [], shade: [], dark: [], metal: [], nose: [], glass: [], belly: [], plate: [], rivet: [], door: [], stripe: [], amber: [], exhaust: [], white: [], wingStripe: [], silver: [], plume: [], smooth: [], smoothDark: [], smoothGold: [] };
 
-  add.body.push(loft(sh.fuse, sh.fuseSides ?? 8));
+  if (sh.smooth) add.smooth.push(toCreasedNormals(loft(sh.fuse, sh.fuseSides ?? 8), 1));
+  else add.body.push(loft(sh.fuse, sh.fuseSides ?? 8));
   sh.wing(add);
   // Tailplane.
   const t = sh.tail;
@@ -666,8 +811,11 @@ export function buildPlane(type, team = 'blue', paint = type) {
   addMesh(add.door, mat(0x34373a, { roughness: 0.7, metalness: 0.2 }));
   addMesh(add.stripe, mat(0xd9a820));
   addMesh(add.white, mat(0xe8e4d4));
+  addMesh(add.smooth, paintMaterial(paint, team, 1, true), true);
+  addMesh(add.smoothDark, mat(0x19191b, { flatShading: false, roughness: 0.5 }));
+  addMesh(add.smoothGold, mat(0xf2bb22, { flatShading: false, roughness: 0.4, emissive: 0x6a4608 }));
   addMesh(add.wingStripe, mat(0x2a0e10));
-  addMesh(add.silver, mat(0xc4cad0, { roughness: 0.4 }));
+  addMesh(add.silver, mat(0xc4cad0, { roughness: 0.4, flatShading: false }));
   if (add.plume.length) addMesh(add.plume, new THREE.MeshBasicMaterial({ color: 0x9a3dff, toneMapped: false })).castShadow = false;
   addMesh(add.amber, new THREE.MeshStandardMaterial({ color: 0xe8b23a, emissive: 0x7a4c0c, flatShading: true, roughness: 0.4 }));
   if (add.exhaust.length) addMesh(add.exhaust, new THREE.MeshBasicMaterial({ color: 0xc98bff, toneMapped: false })).castShadow = false;
@@ -735,7 +883,7 @@ function clearOfFog(material) {
 // The Leviathan's outline as a flat dark shape to lay on the ground under it.
 function wingShadow(spec) {
   const w = spec.size.width / 2;
-  const half = [[8, 36], [15, 24], [15, 15], [24, 4], [w, -18], [w, -27], [26, -11], [31, -21], [31, -29], [8, -28], [3, -35]];
+  const half = [[8, 36], [14.5, 28], [14.5, 14], [28, 2], [w, -17], [w, -26], [24, -10], [31, -21], [31, -28], [8, -26], [1, -34]];
   const outline = new THREE.Shape([[3, 26], ...half, [0, -35], ...half.map(([x, z]) => [-x, z]).reverse(), [-3, 26]].map(([x, z]) => new THREE.Vector2(x, z)));
   const g = new THREE.ShapeGeometry(outline).rotateX(Math.PI / 2);
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));

@@ -228,10 +228,11 @@ function paintTexture(type, team) {
 
 const matCache = new Map();
 // shade < 1 darkens the pattern for secondary parts (fenders, barrels, hatches).
-export function paintMaterial(type, team, shade = 1) {
-  const key = `${type}|${team}|${shade}`;
+// `smooth` shades across the faces instead of showing each one, for curved bodies.
+export function paintMaterial(type, team, shade = 1, smooth = false) {
+  const key = `${type}|${team}|${shade}|${smooth}`;
   if (matCache.has(key)) return matCache.get(key);
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 0.85, metalness: 0.1 });
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: !smooth, roughness: smooth ? 0.6 : 0.85, metalness: 0.1 });
   const map = paintTexture(type, team);
   m.onBeforeCompile = (shader) => {
     shader.uniforms.camoMap = { value: map };
