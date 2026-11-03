@@ -131,4 +131,4 @@ The simulation runs at 20 ticks per second in the host's Web Worker and sends sn
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE), except the radio voice recordings in `client/public/audio`: "Radio Soldier" by [VoiceBosch](https://voicebosch.itch.io/radio-soldier-announcer-audio-pack), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
