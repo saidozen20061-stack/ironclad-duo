@@ -17,12 +17,13 @@ const CLIPS = {
   'Watch your ammo!': [35.09, 0.96],
   "You're on your own. Good luck.": [86.65, 2.87],
   "We're losing ground!": [47.38, 1.12],
+  "We're under attack!": [79.78, 1.17],
   'Objective secured!': [53.6, 1.32],
   'Objective lost!': [57.02, 1.27],
 };
 const LINES = {
   friendly: ['Hold your position!', 'Watch your ammo!'],
-  teamkill: ["You're on your own. Good luck.", "We're losing ground!"],
+  teamkill: ["We're losing ground!", "We're under attack!"],
   kill: ['Good work, soldier!', 'Target neutralized!', 'Tango down!', 'Area clear!'],
   start: ["You're on your own. Good luck."],
   takeoff: ["You're on your own. Good luck."],
