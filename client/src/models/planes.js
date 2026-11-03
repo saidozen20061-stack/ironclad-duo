@@ -269,16 +269,15 @@ const SHAPES = {
     canopy: [0.3, 1.5, 0.48, 0.55], prop: { z: 4.6, r: 1.45, blades: 3 }, nose: [[4.55, 3.5]], noseColor: 0xd9b72e,
     gear: 'mains', cockpitY: 0.65,
   },
-  // A huge high-wing transport: wing, tail and fuselage here, the rest in leviathanParts below.
+  // Two fat hulls side by side, joined by a low centre section. Most of it is in leviathanParts below.
   leviathan: {
-    mark: [24, 7.07], discX: 33, markR: 2.2, markT: 0.95, markZ: -6, railY: 5.9, railZ: -2, noWingGuns: true, internalBombs: true, fuseSides: 12,
-    fuse: [[36, 2, 2, -1.2], [34, 7, 7, -0.6], [30, 11, 11, 0], [22, 13, 13, 0.4], [0, 13.5, 13.5, 0.4], [-14, 13, 12.5, 0.8], [-24, 10, 9, 2.8], [-32, 5.5, 5, 5.3], [-36, 2, 2.2, 6.5]],
+    mark: [36, 2.3], discX: 27, markR: 2.2, markT: 1.9, markZ: -11, railY: 1.1, railZ: -5, noWingGuns: true, internalBombs: true, fuseSides: 12,
+    fuse: [[14, 6, 3, 2], [10, 11, 4, 2], [0, 13, 4.6, 2], [-12, 11, 4, 2], [-20, 4, 2, 2.2]],
     wing: (add) => {
-      for (const g of both(panel(4, 41, 6.6, 7.2, 12, -4, -6, -12, 1.8, 0.4))) add.body.push(g);
+      for (const g of both(panel(14, 41, 1.6, 3.2, 8, -14, -8, -20, 2.8, 0.5))) add.body.push(g);
     },
-    tail: { z: -28, span: 17, chord: 8, y: 23, t: 0.8 }, fin: { z: -24, h: 18, chord: 15, y: 5.5, hw: 0.55 }, finFlash: [16, -25.5, 1.3, 2.6, 5],
-    nose: [[36.2, 34]], noseColor: 0x15171a, canopy: [29, 5.2, 6.8, 3], canopyY: 4.4, gear: 'massive', cockpitY: 6, guns: [[1.6, -2.4, 33], [-1.6, -2.4, 33]],
-    engineX: 19, engineZ: 4,
+    canopy: [4, 3, 2.4, 0.9], canopyY: 3.7, gear: 'massive', cockpitY: 6, guns: [[12, -3, 28], [-12, -3, 28]],
+    engineX: 22, engineZ: 2,
   },
   f16: {
     mark: [3.1, -0.05], discX: 4.3, markR: 0.46, markZ: -2.05, markT: 0.24, railY: -0.3, railZ: -1.25, jet: true,
@@ -322,78 +321,75 @@ function wraithWing(add) {
 }
 const WRAITH_HULL = [[8.1, 0.3, 0.16, 0.02], [5.5, 2.6, 0.75, 0.12], [2, 4.2, 1.5, 0.22], [-1.5, 3.8, 1.15, 0.18], [-3.5, 1.8, 0.5, 0.08], [-4.6, 0.6, 0.16, 0.02]];
 
-// Everything else on the Leviathan: engines, fairings, undercarriage, ramp, bomb bays, turret.
+// The twin-hulled doomship: fat hulls with glowing faceted noses and black spikes, jet engines ringed
+// in amber with violet exhaust, striped wings, black fins, undercarriage, bomb bays and turret.
 function leviathanParts(add, group, props, spec, sh) {
-  const lead = (x) => 12 - ((x - 4) / 37) * 18;
-  const trail = (x) => -4 - ((x - 4) / 37) * 8;
-  const wingY = (x) => 6.6 + ((x - 4) / 37) * 0.6;
-  for (const x of [13, 26]) for (const s of [-1, 1]) {
-    const l = lead(x), y = wingY(x) - 1.5;
-    // A long nacelle slung under the wing, its exhaust beside it, and a big curved propeller.
-    add.body.push(loft([[l + 5, 1.8, 1.8, y], [l + 3.2, 4, 4.5, y], [l - 1, 4.7, 5.2, y - 0.4], [l - 6, 3.4, 3.6, y - 0.2], [l - 11, 1.4, 1.4, y + 0.4]], 10).translate(s * x, 0, 0));
-    add.dark.push(box(1, 1.1, 2.4, s * (x + 2.1), y + 0.3, l - 2.5));
-    add.metal.push(box(0.05, 2.8, 0.05, s * (x + 2.4), y - 0.2, l + 1.5));
-    const p = scimitarProp(7.4, 8, l + 5.4, s * x, y);
-    p.userData.dir = s;
-    group.add(p);
-    props.push(p);
-  }
-  for (const x of [8.5, 18.5, 21.5, 31, 36]) for (const s of [-1, 1]) {
-    // Flap track fairings: the row of little canoes under the back of the wing.
-    const t = trail(x), y = wingY(x);
-    add.shade.push(loft([[t + 6.5, 0.4, 0.3, y - 0.5], [t + 1, 0.9, 0.9, y - 0.95], [t - 2.2, 0.15, 0.15, y - 0.55]], 6).translate(s * x, 0, 0));
-  }
-  // Where the wing sits across the top of the fuselage.
-  add.body.push(loft([[15, 3, 0.6, 7], [9, 9, 2.6, 7.3], [-6, 9, 2.6, 7.3], [-12, 2, 0.5, 7.1]], 10));
+  const HULL_X = 12;
+  const lead = (x) => 8 - ((x - 14) / 27) * 16;
+  const trail = (x) => -14 - ((x - 14) / 27) * 6;
+  const wingY = (x) => 1.6 + ((x - 14) / 27) * 1.6;
   for (const s of [-1, 1]) {
-    // The long sponsons along the belly that take the main gear, three pairs of wheels each.
-    add.body.push(loft([[10.5, 0.6, 0.6, -4.6], [7, 3.4, 3.6, -4.8], [-8, 3.4, 3.6, -4.8], [-12.5, 0.6, 0.6, -4.1]], 8).translate(s * 6.3, 0, 0));
-    const r = 1, wy = -spec.gearH + r;
-    for (const z of [3.6, -0.4, -4.4]) for (const k of [-1, 1]) add.dark.push(cyl(r, r, 0.7, 10).rotateY(Math.PI / 2).translate(s * 6.6 + k * 0.55, wy, z));
-    // Crew door and a window on the side of the nose.
-    const [w] = fuseAt(sh.fuse, 19);
-    add.door.push(box(0.1, 3.4, 2, s * w * 0.51, 0.2, 19));
-    add.dark.push(box(0.1, 0.8, 0.8, s * w * 0.515, 0.8, 19));
+    const x = s * HULL_X;
+    add.body.push(loft([[22, 11, 11, 1], [13, 14.5, 14, 1.5], [-6, 14.5, 13.5, 2], [-20, 9, 8, 3], [-31, 2.2, 2.2, 4.4]], 12).translate(x, 0, 0));
+    // A crimson collar, the big amber faceted dome in it, and black panes and a spike over that.
+    add.shade.push(loft([[24.5, 11.5, 11.5, 1], [20, 13, 12.6, 1]], 12).translate(x, 0, 0));
+    add.amber.push(new THREE.IcosahedronGeometry(5.8, 1).scale(1, 1, 1.25).translate(x, 1, 25.5));
+    for (const a of [0.5, 1.55, 2.6, 3.65, 4.7, 5.75]) {
+      add.dark.push(box(1.3, 3.6, 0.3).rotateX(-0.85).translate(0, 3.1, 31.3).rotateZ(a).translate(x, 1, 0));
+    }
+    add.dark.push(new THREE.ConeGeometry(2.2, 8, 8).rotateX(Math.PI / 2).toNonIndexed().translate(x, 1, 32));
+    // A row of black fins along each hull's back, and a tall one at its tail.
+    for (const [z, h, c] of [[-22, 8, 11], [-6, 4, 7], [6, 3, 5]]) add.dark.push(finGeoUp({ z, h, chord: c, y: z < -10 ? 5 : 8, hw: 0.4 }, x));
+    add.dark.push(new THREE.ConeGeometry(0.9, 6, 6).rotateX(-Math.PI / 2).toNonIndexed().translate(x, 4.4, -33));
+    // Two big jet engines under each wing: amber ring in front, violet fire behind.
+    for (const nx of [22, 33]) {
+      const l = lead(nx), y = wingY(nx) - 2.1, t = l - 11;
+      add.dark.push(loft([[l + 3, 4.4, 4.4, y], [l, 6.4, 6.4, y], [l - 7, 6, 6, y], [t, 3.8, 3.8, y]], 10).translate(s * nx, 0, 0));
+      add.amber.push(cyl(3.5, 3.5, 0.9, 12, s * nx, y, l + 3));
+      add.dark.push(cyl(2.5, 2.5, 1.1, 12, s * nx, y, l + 3.1));
+      add.exhaust.push(cyl(1.7, 1.7, 0.5, 10, s * nx, y, t - 0.05), new THREE.ConeGeometry(1.6, 6, 10).rotateX(-Math.PI / 2).toNonIndexed().translate(s * nx, y, t - 3));
+    }
+    // Dark stripes across the wing, a fin at its tip.
+    for (const k of [0, 1, 2]) {
+      const px = 29 + k * 4;
+      add.plate.push(box(2, 0.15, (lead(px) - trail(px)) * 0.8, s * px, wingY(px) + (2.8 - ((px - 14) / 27) * 2.3) / 2 + 0.05, (lead(px) + trail(px)) / 2));
+    }
+    add.dark.push(finGeoUp({ z: -14, h: 7, chord: 9, y: 2.4, hw: 0.3 }, s * 40.5));
+    // Undercarriage: three pairs of wheels under each hull.
+    const r = 1.1, wy = -spec.gearH + r;
+    for (const z of [10, 2, -10]) {
+      for (const k of [-1, 1]) add.dark.push(cyl(r, r, 0.8, 10).rotateY(Math.PI / 2).translate(x + k * 0.75, wy, z));
+      add.metal.push(box(0.55, 2.4, 0.7, x, wy + 1.2, z));
+    }
   }
-  // The nose gear.
-  const nr = 0.85, ny = -spec.gearH + nr, nz = 26;
-  const top = fuselageBottom(sh.fuse, nz) + 0.4;
-  add.metal.push(box(0.5, top - ny, 0.6, 0, (top + ny) / 2, nz));
-  for (const k of [-1, 1]) add.dark.push(cyl(nr, nr, 0.5, 10).rotateY(Math.PI / 2).translate(k * 0.5, ny, nz));
-  // The refuelling probe over the nose.
-  add.metal.push(cyl(0.22, 0.1, 8, 6).rotateX(-0.2).translate(1.7, 6.6, 31));
-  // A yellow band round the fuselage, as on the real thing.
-  const [bw, bh, by] = fuseAt(sh.fuse, 12);
-  add.stripe.push(loft([[12.25, bw * 1.012, bh * 1.012, by], [11.75, bw * 1.012, bh * 1.012, by]], 12));
-  // Bomb bay doors along the belly, then the big loading ramp under the upswept tail.
+  // Rows of bomb bay doors under the centre section.
   for (let row = 0; row < 4; row++) {
-    const z = -6.5 + row * 3.4;
+    const z = -7 + row * 3.4;
     const y = fuselageBottom(sh.fuse, z) - 0.02;
     for (const s of [-1, 1]) add.door.push(box(2.3, 0.2, 3, s * 1.35, y, z));
   }
-  add.door.push(box(8, 0.3, 17).rotateX(0.46).translate(0, fuselageBottom(sh.fuse, -22) + 0.05, -22));
   // The heavy top turret's base.
   const [, dy, dz] = spec.door;
-  add.plate.push(box(3.6, 1.2, 3.6, 0, dy - 0.8, dz), box(2.8, 0.5, 2.8, 0, dy - 0.1, dz));
-  if (typeof document !== 'undefined') stencils(group, fuseAt(sh.fuse, -17));
+  add.plate.push(box(3.6, 1.6, 3.6, 0, dy - 1.4, dz), box(2.8, 0.5, 2.8, 0, dy - 0.4, dz));
+  if (typeof document !== 'undefined') stencils(group);
 }
 
-// Stencilled serial number on the rear fuselage.
-function stencils(group, [w, , y]) {
+// Stencilled serial number on each hull's outer side.
+function stencils(group) {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 128;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#23262a';
+  ctx.fillStyle = '#e8d9b0';
   ctx.font = 'bold 104px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('L-06', 128, 68);
   const m = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false });
   for (const s of [-1, 1]) {
-    const decal = new THREE.Mesh(new THREE.PlaneGeometry(6, 3), m);
+    const decal = new THREE.Mesh(new THREE.PlaneGeometry(7, 3.5), m);
     decal.rotation.y = (s * Math.PI) / 2;
-    decal.position.set(s * (w * 0.52 + 0.06), y - 1, -17);
+    decal.position.set(s * 19.6, 2.5, -2);
     group.add(decal);
   }
 }
@@ -454,7 +450,7 @@ export function buildPlane(type, team = 'blue', paint = type) {
   const spec = PLANES[type];
   const sh = SHAPES[type];
   const group = new THREE.Group();
-  const add = { body: [], shade: [], dark: [], metal: [], nose: [], glass: [], belly: [], plate: [], rivet: [], door: [], stripe: [] };
+  const add = { body: [], shade: [], dark: [], metal: [], nose: [], glass: [], belly: [], plate: [], rivet: [], door: [], stripe: [], amber: [], exhaust: [] };
 
   add.body.push(loft(sh.fuse, sh.fuseSides ?? 8));
   sh.wing(add);
@@ -601,6 +597,8 @@ export function buildPlane(type, team = 'blue', paint = type) {
   addMesh(add.rivet, mat(0xa2a6a8, { roughness: 0.5, metalness: 0.3 }));
   addMesh(add.door, mat(0x34373a, { roughness: 0.7, metalness: 0.2 }));
   addMesh(add.stripe, mat(0xd9a820));
+  addMesh(add.amber, new THREE.MeshStandardMaterial({ color: 0xe8b23a, emissive: 0x7a4c0c, flatShading: true, roughness: 0.4 }));
+  if (add.exhaust.length) addMesh(add.exhaust, new THREE.MeshBasicMaterial({ color: 0xc98bff, toneMapped: false })).castShadow = false;
   addMesh(add.dark, DARK());
   addMesh(add.metal, METAL());
   addMesh(add.glass, GLASS());
@@ -656,7 +654,7 @@ function clearOfFog(material) {
     m.onBeforeCompile = material.onBeforeCompile;
     m.customProgramCacheKey = material.customProgramCacheKey;
     // So big that its underside is most of what you see: a little light keeps it from going black.
-    if (Object.hasOwn(material, 'onBeforeCompile')) m.emissive.setHex(0x34383c);
+    if (Object.hasOwn(material, 'onBeforeCompile')) m.emissive.setHex(0x1e1a1c);
     fogFree.set(material, m);
   }
   return fogFree.get(material);
@@ -665,8 +663,8 @@ function clearOfFog(material) {
 // The Leviathan's outline as a flat dark shape to lay on the ground under it.
 function wingShadow(spec) {
   const w = spec.size.width / 2;
-  const half = [[6, 30], [7, 11], [w, -6], [w, -12], [7, -5], [6, -20], [17, -27], [17, -32]];
-  const outline = new THREE.Shape([[0, 36], ...half, [0, -33], ...half.map(([x, z]) => [-x, z]).reverse()].map(([x, z]) => new THREE.Vector2(x, z)));
+  const half = [[12, 36], [19, 24], [20, 7], [w, -8], [w, -20], [19, -15], [13, -33], [6, -24]];
+  const outline = new THREE.Shape([[0, 14], ...half, [0, -20], ...half.map(([x, z]) => [-x, z]).reverse()].map(([x, z]) => new THREE.Vector2(x, z)));
   const g = new THREE.ShapeGeometry(outline).rotateX(Math.PI / 2);
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
   m.rotation.order = 'YXZ';
