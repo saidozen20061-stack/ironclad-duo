@@ -145,7 +145,7 @@ export class SoundScape {
     g.gain.value = 0;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = { radial: 520, drone: 260, jet: 2200 }[spec.engineSound] ?? 800;
+    lp.frequency.value = { radial: 520, drone: 260, jet: 2200, rotor: 340 }[spec.engineSound] ?? 800;
     lp.connect(g).connect(this.out);
     const o1 = ctx.createOscillator();
     o1.type = 'sawtooth';
@@ -177,6 +177,18 @@ export class SoundScape {
     siren.connect(sf).connect(sg).connect(this.out);
     siren.start();
     this.planeAudio = { g, o1, o2, wg, wf, siren, sg };
+    if (spec.engineSound === 'rotor') {
+      // The chop of the blades: the whole engine note pumped up and down several times a second.
+      const chop = ctx.createOscillator();
+      chop.type = 'square';
+      chop.frequency.value = 11;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.11;
+      chop.connect(depth).connect(g.gain);
+      chop.start();
+      this.planeAudio.chop = chop;
+      (this.ambientExtra ??= []).push(chop);
+    }
     this.ambientExtra = [...(this.ambientExtra ?? []), o1, o2, windSrc, siren];
     this.engGain.gain.value = 0;
   }
@@ -186,7 +198,8 @@ export class SoundScape {
     if (!a) return;
     const t = this.ctx.currentTime;
     const voice = this.planeSpec.engineSound;
-    const f = voice === 'drone' ? 24 + th * 12 + speedFrac * 4 : voice === 'jet' ? 130 + th * 150 + speedFrac * 90 + (ab ? 120 : 0) : (voice === 'radial' ? 38 : 58) + th * 60 + speedFrac * 22;
+    if (a.chop) a.chop.frequency.setTargetAtTime(9.5 + th * 5, t, 0.3);
+    const f = voice === 'rotor' ? 34 + th * 22 : voice === 'drone' ? 24 + th * 12 + speedFrac * 4 : voice === 'jet' ? 130 + th * 150 + speedFrac * 90 + (ab ? 120 : 0) : (voice === 'radial' ? 38 : 58) + th * 60 + speedFrac * 22;
     a.o1.frequency.setTargetAtTime(f, t, 0.2);
     a.o2.frequency.setTargetAtTime(f * (this.planeSpec.engines === 2 ? 1.012 : 0.5), t, 0.2);
     a.g.gain.setTargetAtTime(alive ? 0.1 + th * 0.17 + (ab ? 0.1 : 0) : 0, t, 0.25);

@@ -236,6 +236,26 @@ export const TANKS = {
     weapon: { kind: 'autocannon', label: 'Twin 25mm Autocannons', magazine: 40, fireInterval: 0.08, reload: 5, damage: 26, speed: 1050, splash: 1.2, spread: deg(0.6) },
     stats: { speed: 4, armor: 1, firepower: 2, reload: 4 },
   },
+  flak: {
+    id: 'flak',
+    name: 'Skyreaper',
+    class: 'Anti-Air Tank',
+    frame: 'medium',
+    blurb: 'Two very long guns ending in a small T. Three shells to a clip, mid-slow rounds that burst beside aircraft, double damage to anything flying.',
+    hp: 800,
+    maxSpeed: 10,
+    reverseSpeed: 4.5,
+    accel: 5,
+    turnRate: deg(38),
+    turretSpeed: deg(60),
+    elevation: { min: deg(-5), max: deg(85) },
+    armor: { front: 0.6, side: 0.9, rear: 1.2 },
+    size: { length: 6.6, width: 3.3, height: 2.5 },
+    mount: { turret: [0, 1.6, -0.3], gun: [0, 0.6, 0.55], barrel: 6.9, sight: [0, 1.35, -0.5] },
+    weapon: { kind: 'autocannon', label: 'Twin 88mm Flak', magazine: 3, fireInterval: 0.9, reload: 6, damage: 150, airMul: 2, fuse: 11, speed: 460, splash: 5, spread: deg(0.12) },
+    antiAir: true,
+    stats: { speed: 2, armor: 3, firepower: 4, reload: 2 },
+  },
   assault: {
     id: 'assault',
     name: 'Mauler',
@@ -290,7 +310,7 @@ export const TANKS = {
 export const GUN_MAX_ELEVATION = deg(68);
 // Hulls whose track ends reach past size.length: shots stop at the drawn length.
 for (const [id, len] of Object.entries({ medium: 7.1, heavy: 8.4, destroyer: 7.4, assault: 7.3, superheavy: 9.7 })) TANKS[id].hitLength = len;
-for (const t of Object.values(TANKS)) t.elevation.max = GUN_MAX_ELEVATION;
+for (const t of Object.values(TANKS)) t.elevation.max = Math.max(t.elevation.max, GUN_MAX_ELEVATION);
 
 export const TANK_IDS = Object.keys(TANKS);
 
@@ -316,7 +336,7 @@ export const UNITS = {
 };
 
 // Unit type codes on the wire.
-export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew', 'scout', 'wheeled', 'destroyer', 'aa', 'assault', 'superheavy', ...ALL_PLANE_IDS];
+export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew', 'scout', 'wheeled', 'destroyer', 'aa', 'assault', 'superheavy', 'flak', ...ALL_PLANE_IDS];
 
 export const MATCH = {
   tickets: 500,

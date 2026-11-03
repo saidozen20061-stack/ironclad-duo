@@ -1,5 +1,5 @@
 import { Vector3, Euler, Quaternion } from 'three';
-import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET, MAX_SIDE_PLANES, engineZones } from '../../../shared/planes.js';
+import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET, MAX_SIDE_PLANES, AA_TURRETS, engineZones } from '../../../shared/planes.js';
 import { TICK_RATE } from '../../../shared/constants.js';
 import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES } from '../../../shared/map.js';
 import { PROPS, propsNear, segmentHitsProp, FORT } from '../../../shared/props.js';
@@ -80,6 +80,16 @@ export class Plane {
     this.rocketCd = 0;
     this.mods = { wingL: 1, wingR: 1, tail: 1, fuel: 1, gear: 1, guns: 1, crew: 1 };
     for (const z of engineZones(sp.engines)) this.mods[z] = 1;
+    if (sp.heli) {
+      // Stub wings and skids: nothing to lose that it can't fly without.
+      delete this.mods.wingL;
+      delete this.mods.wingR;
+      delete this.mods.gear;
+      this.hv = { x: 0, y: 0, z: 0 };
+    }
+    this.aaClock = 0;
+    this.aaAway = 0;
+    this.aaWarn = 0;
     this.ab = false;
     this.opRocket = false;
     this.ctl = { th: 0, pitch: 0, roll: 0, yaw: 0, fire: false, bomb: false, rocket: false, aim: null };
@@ -102,6 +112,7 @@ export class Plane {
 // Where a body-space hit lands (x left, z forward).
 function zoneAt(p, lx, lz) {
   const s = p.spec.size;
+  if (p.spec.heli) return Math.abs(lx) > s.width * 0.22 ? 'guns' : lz > 0 ? (Math.random() < 0.5 ? 'crew' : 'fuel') : lz < -s.length * 0.25 ? 'tail' : 'engine';
   // Several engines along the wing: which one depends on how far out the hit is.
   if (p.spec.engines > 2 && Math.abs(lx) > s.width * 0.1 && Math.abs(lx) < s.width * 0.42) {
     const pairs = p.spec.engines / 2;
@@ -125,6 +136,7 @@ export class PlaneSystem {
     this.nextNpc = { blue: rand(8, 16), red: rand(12, 22) };
     // Flak: fixed AA positions scattered around bases, airfields and capture points.
     this.flak = PROPS.filter((p) => p.type === 'aagun').map((p) => ({ p, cd: rand(1, 4) }));
+    this.aaGuns = PROPS.filter((p) => p.type === 'aaturret').map((p, i) => ({ p, i, cd: rand(0, AA_TURRETS.interval), at: new Vector3(p.x, p.y + 5.2, p.z) }));
     this.flakQueue = [];
     this.planes = [];
     this.nextRole = { blue: 'fighter', red: 'attack' };
@@ -136,6 +148,11 @@ export class PlaneSystem {
   crewSpawn(team, slot, type) {
     const f = AIRFIELDS[team];
     if (this.airStart) return { x: f.startX + f.dir * 120, y: FLIGHT.airStartAlt, z: f.z + (slot ? 10 : -8), v: 45, grounded: false, h: f.heading };
+    // A helicopter waits on its pad, no runway needed.
+    if (PLANES[type].heli) {
+      const pad = PROPS.filter((p) => p.type === 'helipad' && p.team === team)[slot ? 1 : 0];
+      return { x: pad.x, y: groundAt(pad.x, pad.z), z: pad.z, v: 0, grounded: true, h: f.heading };
+    }
     // Inside a hangar, nose just short of the door, facing out. The widest plane has its own.
     const size = PLANES[type].size;
     const hangars = PROPS.filter((p) => p.type === 'hangar' && p.team === team);
@@ -163,6 +180,7 @@ export class PlaneSystem {
       k.fire = !!msg.fire;
       k.bomb = !!msg.bomb;
       k.rocket = !!msg.rocket;
+      k.face = Number.isFinite(msg.face) ? msg.face : null;
       k.gunDir = Array.isArray(msg.gun) && msg.gun.length === 3 && msg.gun.every((v) => Math.abs(v) <= 2) && Math.hypot(...msg.gun) > 0.01 ? new Vector3(msg.gun[0], msg.gun[1], msg.gun[2]).normalize() : null;
     } else if (role === 'gunner' && msg.t === 'rear') {
       if (Array.isArray(msg.dir) && msg.dir.length === 3 && msg.dir.every((v) => Math.abs(v) <= 2) && Math.hypot(...msg.dir) > 0.01) p.rear.dir = new Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
@@ -191,11 +209,13 @@ export class PlaneSystem {
       }
     }
     this.flakTick();
+    if (m.mode !== 'fortress') this.aaTick();
   }
 
   // ---------- Flight model ----------
   fly(p) {
     const s = p.spec, k = p.ctl, mods = p.mods;
+    if (s.heli) return this.flyHeli(p);
     const zones = engineZones(s.engines);
     const engines = zones.filter((z) => mods[z] > 0).length / zones.length;
     const health = 0.5 + (0.5 * zones.reduce((sum, z) => sum + mods[z], 0)) / zones.length;
@@ -295,6 +315,96 @@ export class PlaneSystem {
     p.warnLow = p.y - surface < FLIGHT.warnAlt && p.vy < -2;
     this.hitProps(p);
     if (!p.dead && p.y - s.gearH <= surface) this.touchdown(p, ground, surface);
+  }
+
+  // A helicopter: the keys set the speed it wants in its own frame, and it gets there fast. Let go and
+  // it brakes to a stop and hangs in the air. The nose turns to wherever the pilot is looking.
+  flyHeli(p) {
+    const s = p.spec, h = s.heli, k = p.ctl, v = p.hv, mods = p.mods;
+    const crew = this.m.crewOf(p);
+    const held = crew && !crew.seats.driver; // pilot's gone: it just hangs there
+    const power = p.fuel > 0 && mods.engine > 0;
+    p.fuel = Math.max(0, p.fuel - (DT / FLIGHT.fuelSeconds) * (mods.fuel < 0.5 ? 4 : 1) * (p.grounded ? 0.2 : 1));
+    p.stall = false;
+    p.warnLow = false;
+    p.ab = false;
+    const surface = () => Math.max(groundAt(p.x, p.z), WATER_LEVEL);
+    if (p.grounded) {
+      v.x = v.y = v.z = 0;
+      p.v = 0;
+      p.vy = 0;
+      p.throttle = power ? 0.25 : 0;
+      p.gp *= 1 - Math.min(1, DT * 6);
+      p.ty *= 1 - Math.min(1, DT * 6);
+      p.y = surface() + s.gearH;
+      p.pose.y = p.y - s.size.height / 2;
+      if (!held && k.th > 0 && power) {
+        p.grounded = false;
+        v.y = 3;
+      }
+      const f = AIRFIELDS[p.team];
+      if (Math.abs(p.x - f.x) < f.len / 2 + 60 && Math.abs(p.z - f.z) < f.width + 90) this.service(p);
+      return;
+    }
+    // A lost tail rotor means it spins, and the nose won't answer so well.
+    const tail = mods.tail > 0 ? 0.5 + 0.5 * mods.tail : 0.25;
+    if (!held && k.face != null) {
+      const step = h.turn * tail * DT;
+      p.h = wrapAngle(p.h + clamp(wrapAngle(k.face - p.h), -step, step));
+    }
+    if (mods.tail <= 0) p.h = wrapAngle(p.h + 1.1 * DT);
+    const fx = Math.sin(p.h), fz = Math.cos(p.h), lx = fz, lz = -fx;
+    const max = s.maxSpeed * (0.45 + 0.55 * mods.engine);
+    const ahead = held || !power ? 0 : k.pitch * max * (k.pitch < 0 ? h.back : 1);
+    const left = held || !power ? 0 : -k.roll * max * h.side;
+    let climb = !power ? -h.downAfterEngine : held ? 0 : k.th * h.climb;
+    if (p.y > FLIGHT.maxAlt) climb = Math.min(climb, -2);
+    const wx = fx * ahead + lx * left, wz = fz * ahead + lz * left;
+    const step = h.accel * DT, ups = h.climbAccel * DT;
+    v.x += clamp(wx - v.x, -step, step);
+    v.z += clamp(wz - v.z, -step, step);
+    v.y += clamp(climb - v.y, -ups, ups);
+    // Past the edge of the battle it won't go any further out.
+    const edge = Math.max(Math.abs(p.x), Math.abs(p.z));
+    p.warnEdge = edge > FLIGHT.edgeWarn;
+    if (Math.abs(p.x) > FLIGHT.edgeTurn && p.x * v.x > 0) v.x = 0;
+    if (Math.abs(p.z) > FLIGHT.edgeTurn && p.z * v.z > 0) v.z = 0;
+    // Leans into where it's going, and harder while it's getting there.
+    const vAhead = v.x * fx + v.z * fz, vLeft = v.x * lx + v.z * lz;
+    const wantP = -h.tilt * clamp((vAhead + (ahead - vAhead) * 0.5) / s.maxSpeed);
+    const wantR = -h.lean * clamp((vLeft + (left - vLeft) * 0.5) / s.maxSpeed);
+    const ease = Math.min(1, DT * 7);
+    p.gp += (wantP - p.gp) * ease;
+    p.ty += (wantR - p.ty) * ease;
+    const speed = Math.hypot(v.x, v.y, v.z);
+    p.v = Math.hypot(v.x, v.z);
+    p.vy = v.y;
+    p.throttle = power ? clamp(0.5 + (0.3 * p.v) / s.maxSpeed + (0.25 * v.y) / h.climb, 0.2, 1) : 0;
+    // Into something: at a walk it just stops; any faster it comes apart.
+    if (speed > 0.5) {
+      const reach = speed * DT + s.size.length * 0.45;
+      const ux = v.x / speed, uy = v.y / speed, uz = v.z / speed;
+      for (const pr of propsNear(p.x, p.z, reach + 6)) {
+        if (!pr.solid || this.m.propDead.has(pr.id) || pr.type === 'runway') continue;
+        if (segmentHitsProp(pr, p.x, p.y - s.gearH * 0.4, p.z, ux * reach, uy * reach, uz * reach) === null) continue;
+        if (speed > 16) return this.crash(p);
+        v.x *= -0.3;
+        v.y *= -0.3;
+        v.z *= -0.3;
+        break;
+      }
+    }
+    p.x += v.x * DT;
+    p.y += v.y * DT;
+    p.z += v.z * DT;
+    p.pose.y = p.y - s.size.height / 2;
+    const ground = groundAt(p.x, p.z), under = Math.max(ground, WATER_LEVEL);
+    if (p.y - s.gearH <= under) {
+      if (ground < WATER_LEVEL || v.y < -14 || p.v > 26) return this.crash(p);
+      p.grounded = true;
+      p.y = under + s.gearH;
+      p.pose.y = p.y - s.size.height / 2;
+    }
   }
 
   // Touching the ground: a clean landing on wheels, a belly landing, or a crash.
@@ -416,12 +526,14 @@ export class PlaneSystem {
     const f = fwd(p.h, p.gp);
     if (k.fire && p.gunCd <= 0 && p.ammo > 0 && p.mods.guns > 0 && !p.grounded) {
       const g = s.guns;
-      p.gunCd = g.interval;
+      // A helicopter's pilot works both side guns alone; with a gunner aboard each of them has one.
+      const shared = s.heli && m.crewOf(p)?.seats.gunner;
+      p.gunCd = g.interval * (shared ? 2 : 1);
       p.ammo--;
       p.mag = p.ammo;
-      const side = Math.random() < 0.5 ? 1 : -1;
+      const side = shared ? 1 : s.heli ? (p.gunSide = -(p.gunSide ?? 1)) : Math.random() < 0.5 ? 1 : -1;
       const c = Math.cos(p.h), sn = Math.sin(p.h);
-      const off = s.size.width * 0.12 * side;
+      const off = (s.gunX ?? s.size.width * 0.12) * side;
       // A player's guns follow where they look; an NPC's are fixed to the nose.
       const dir = k.gunDir ?? f;
       const pos = new Vector3(p.x + c * off + dir.x * 2, p.y + dir.y * 2 - 0.2, p.z - sn * off + dir.z * 2);
@@ -478,6 +590,12 @@ export class PlaneSystem {
     if (!s.rear) return;
     const crew = m.crewOf(p);
     const manned = crew && crew.seats.gunner;
+    // A gun that needs its gunner: with nobody there it just points ahead, for the pilot's trigger.
+    if (!manned && s.rear.noAuto) {
+      p.gunYaw = 0;
+      p.gunPitch = 0;
+      return;
+    }
     let dir = p.rear.dir;
     let fire = manned && p.rear.fire;
     let spread = s.rear.spread;
@@ -651,6 +769,75 @@ export class PlaneSystem {
         y: best.y + lead.y * best.v * fuse * m.skill.lead + rand(-err, err) * 0.7,
         z: best.z + lead.z * best.v * fuse * m.skill.lead + rand(-err, err),
       });
+    }
+  }
+
+  // Bursts beside every enemy aircraft close to this shell's path. Direct hits are dealt with before this.
+  flakFuse(p, x0, y0, z0, dx, dy, dz) {
+    const len2 = dx * dx + dy * dy + dz * dz;
+    let burst = false;
+    for (const u of this.planes) {
+      if (u.dead || u.grounded || u.team === p.team) continue;
+      const ax = u.x - x0, ay = u.y - y0, az = u.z - z0;
+      const t = clamp((ax * dx + ay * dy + az * dz) / len2, 0, 1);
+      const d = Math.max(0, Math.hypot(ax - dx * t, ay - dy * t, az - dz * t) - (u.spec.hitBox ? u.radius * 0.35 : 0));
+      if (d >= p.fuse) continue;
+      burst = true;
+      const dmg = p.damage * (p.airMul ?? 1) * u.spec.armor.side * (1 - d / p.fuse);
+      u.lastHitBy = p.owner;
+      this.damageZone(u, zoneAt(u, rand(-1, 1) * u.spec.size.width * 0.4, rand(-1, 1) * u.spec.size.length * 0.4), dmg * 0.5);
+      this.m.damage(u, dmg, { owner: p.owner });
+    }
+    if (!burst) return false;
+    const x = r2(x0 + dx), y = r2(y0 + dy), z = r2(z0 + dz);
+    this.m.events.push({ k: 'i', id: p.id, o: p.owner, kind: p.kind, x, y, z, r: 'armor' });
+    // A turret fires too fast for every shell to get a puff of smoke.
+    if (p.turret == null || Math.random() < 0.4) this.m.events.push({ k: 'flak', x, y, z });
+    return true;
+  }
+
+  // ---------- Anti-air turrets ----------
+  aaTick() {
+    const a = AA_TURRETS, m = this.m;
+    const wanted = [];
+    for (const p of this.planes) {
+      if (p.dead) {
+        p.aaClock = p.aaAway = p.aaWarn = 0;
+        continue;
+      }
+      const inside = p.team === 'blue' ? p.z > 0 : p.z < 0;
+      if (inside) {
+        p.aaAway = 0;
+        p.aaClock += DT;
+      } else if (p.aaClock > 0) {
+        // Out for less than `forget` seconds in one go counts as never having left.
+        p.aaAway += DT;
+        p.aaClock += DT;
+        if (p.aaAway >= a.forget) p.aaClock = p.aaAway = 0;
+      }
+      p.aaWarn = !inside ? 0 : p.aaClock >= a.after ? -1 : p.aaClock >= a.after - a.warn ? a.after - p.aaClock : 0;
+      if (inside && p.aaClock >= a.after) wanted.push(p);
+    }
+    if (!wanted.length) return;
+    for (const g of this.aaGuns) {
+      g.cd -= DT;
+      if (g.cd > 0) continue;
+      let best = null, bd = a.range;
+      for (const p of wanted) {
+        if (p.team === g.p.team) continue;
+        const d = g.at.distanceTo(_l.set(p.x, p.y, p.z));
+        if (d < bd) {
+          bd = d;
+          best = p;
+        }
+      }
+      if (!best) continue;
+      g.cd = a.interval;
+      // Where it'll be when the shell gets there, and high enough to allow for the shell's drop.
+      const vel = best.hv ?? fwd(best.h, best.gp, _f).multiplyScalar(best.v);
+      const t = bd / a.shell.speed;
+      const dir = new Vector3(best.x + vel.x * t - g.at.x, best.y + vel.y * t - g.at.y + 0.5 * G * t * t, best.z + vel.z * t - g.at.z).normalize();
+      m.fire({ id: -1, team: g.p.team }, { ...a.shell, life: Math.min(4, t + 0.6), turret: g.i }, g.at.clone().addScaledVector(dir, 3.2), dir);
     }
   }
 

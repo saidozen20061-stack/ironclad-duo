@@ -18,14 +18,16 @@ const GLASS = () => mat(0x1c2830, { roughness: 0.15, metalness: 0.7 });
 const DARK = () => mat(0x23241f);
 const METAL = () => mat(0x5a5d58, { roughness: 0.5, metalness: 0.6 });
 
-// Fuselage through stations [z, width, height, centreY]: flat-faced octagon rings.
-function loft(stations, sides = 8) {
+// Fuselage through stations [z, width, height, centreY]: flat-faced octagon rings. `square` below 1
+// flattens the sides and squares off the corners.
+function loft(stations, sides = 8, square = 1) {
   const pos = [];
   const ring = ([z, w, h, y = 0]) => {
     const r = [];
     for (let i = 0; i < sides; i++) {
       const a = (i / sides) * Math.PI * 2 + Math.PI / sides;
-      r.push([Math.cos(a) * w * 0.5 * 1.08, y + Math.sin(a) * h * 0.5 * 1.08, z]);
+      const c = Math.cos(a), s = Math.sin(a);
+      r.push([Math.sign(c) * Math.abs(c) ** square * w * 0.5 * 1.08, y + Math.sign(s) * Math.abs(s) ** square * h * 0.5 * 1.08, z]);
     }
     return r;
   };
@@ -168,6 +170,28 @@ function talonDetails(add) {
 }
 
 // Per-type shapes. All measures in metres.
+// Rounds a fuselage's stations into a smooth line, with `perGap` new ones between each pair.
+function smoothStations(stations, perGap = 4) {
+  const out = [];
+  const at = (i, k) => stations[Math.max(0, Math.min(stations.length - 1, i))][k];
+  for (let i = 0; i < stations.length - 1; i++) {
+    for (let j = 0; j < perGap; j++) {
+      const t = j / perGap;
+      out.push([0, 1, 2, 3].map((k) => {
+        const a = at(i - 1, k), b = at(i, k), c = at(i + 1, k), d = at(i + 2, k);
+        return 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t * t * t);
+      }));
+    }
+  }
+  out.push(stations[stations.length - 1]);
+  return out;
+}
+
+// A B-52 half as big again: a long narrow slab-sided hull, a blunt rounded nose rising to the cockpit,
+// and a tail that rises to meet the fin.
+const LEVIATHAN_SQUARE = 0.72;
+const LEVIATHAN_FUSE = smoothStations([[36, 0.5, 0.5, -0.9], [35, 2.2, 2, -1], [33, 3.4, 3.4, -1], [30.5, 4.2, 4.6, -0.8], [28, 4.7, 5.6, -0.45], [25, 5, 6.4, -0.1], [21, 5.2, 6.85, 0.15], [10, 5.2, 6.85, 0.2], [-6, 5.2, 6.85, 0.2], [-14, 5, 6.5, 0.4], [-22, 4.2, 5.4, 1], [-29, 2.9, 3.7, 1.9], [-34, 1.6, 2, 2.7], [-36, 0.5, 0.6, 3.1]]);
+
 const SHAPES = {
   stuka: {
     mark: [5, -0.21],
@@ -269,14 +293,15 @@ const SHAPES = {
     canopy: [0.3, 1.5, 0.48, 0.55], prop: { z: 4.6, r: 1.45, blades: 3 }, nose: [[4.55, 3.5]], noseColor: 0xd9b72e,
     gear: 'mains', cockpitY: 0.65,
   },
-  // Two waterdrop hulls side by side, two smooth wings running through them and four long engines
-  // joining the wings. Most of it is in leviathanParts below.
+  // The B-52: a long thin hull, a huge drooping wing with eight jets in four pods, a tall fin.
+  // Most of it is in leviathanParts below.
   leviathan: {
-    mark: [47, 3.8], discX: 21, markR: 1.4, markT: 1.25, markZ: -3, railY: 2.9, railZ: -12, noWingGuns: true, internalBombs: true, fuseSides: 12, smooth: true,
-    fuse: [[22, 8, 11, 3.5], [14, 10, 13, 3.5], [2, 10, 13.5, 3.5], [-14, 8, 10, 4], [-30, 2, 2, 5]],
+    mark: [13.4, 1.5], discX: 30, markR: 1.9, markT: 0.85, markRoll: 0.05, markSegs: 28, markZ: -18.3, noWingGuns: true, noRails: true, internalBombs: true, fuseSides: 28, fuseSquare: LEVIATHAN_SQUARE, smooth: true, noBar: true,
+    fuse: LEVIATHAN_FUSE,
     wing: () => {},
-    canopy: [2, 1, 1, 0.3], canopyY: 3, gear: 'massive', cockpitY: 6, guns: [],
-    engineX: 17, engineZ: -6,
+    teamMark: () => upright([[-26, 9.5], [-28.2, 12], [-35.42, 12], [-35.46, 9.5]], 0.95),
+    canopy: [2, 1, 1, 0.3], canopyY: 1, gear: 'massive', cockpitY: 3.5, guns: [],
+    engineX: 14.5, engineZ: -8.5,
   },
   f16: {
     mark: [3.1, -0.05], discX: 4.3, markR: 0.46, markZ: -2.05, markT: 0.24, railY: -0.3, railZ: -1.25, jet: true,
@@ -286,22 +311,32 @@ const SHAPES = {
     tail: { z: -5.8, span: 3.7, chord: 1.9, y: -0.05 }, fin: { z: -4.6, h: 2.7, chord: 2.8, y: 0.45 },
     canopy: [3.3, 2.7, 0.82, 0.92], gear: 'tricycle', cockpitY: 0.95, engineX: 0, engineZ: -6.4,
   },
-  // The Leviathan's little escort, in its colours: a fat crimson body, an amber dome, striped wings.
+  // The Leviathan's little escort, in its colours: a small grey jet with swept wings and two fins.
   escort: {
-    mark: [3.6, 0], markR: 0.45, markT: 0.24, markZ: -1, noWingGuns: true, internalBombs: true,
-    fuse: [[3.6, 1.6, 1.6, 0], [2, 2.5, 2.4, 0.1], [-0.8, 2.3, 2.2, 0.2], [-2.8, 1.2, 1.1, 0.3], [-4.4, 0.3, 0.3, 0.4]],
+    mark: [3.6, -0.22], markR: 0.5, markT: 0.26, markZ: -1.8, noWingGuns: true, internalBombs: true,
+    fuse: [[5.6, 0.2, 0.16, -0.08], [3.4, 1, 0.8, 0], [0.8, 1.7, 1.35, 0.12], [-2.4, 1.5, 1.1, 0.16], [-4.6, 0.9, 0.7, 0.2]],
     wing: (add) => {
-      for (const g of both(panel(0.8, 5.5, 0, 0.3, 1.4, -1.6, -0.9, -2.2, 0.3, 0.08))) add.body.push(g);
-      add.amber.push(new THREE.IcosahedronGeometry(1.15, 1).scale(1, 1, 1.2).translate(0, 0.05, 3.4));
-      add.dark.push(new THREE.ConeGeometry(0.35, 1.8, 6).rotateX(Math.PI / 2).toNonIndexed().translate(0, 0.05, 5));
-      add.dark.push(finGeoUp({ z: -3, h: 1.6, chord: 1.8, y: 0.6, hw: 0.08 }));
-      add.exhaust.push(new THREE.ConeGeometry(0.3, 1.6, 8).rotateX(-Math.PI / 2).toNonIndexed().translate(0, 0.4, -5.1));
+      for (const g of both(panel(0.6, 5.5, 0, -0.35, 1.6, -2.2, -2.4, -3.2, 0.3, 0.06))) add.body.push(g);
+      add.exhaust.push(new THREE.ConeGeometry(0.34, 1.8, 8).rotateX(-Math.PI / 2).toNonIndexed().translate(0, 0.2, -5.5));
       for (const s of [-1, 1]) {
-        add.plate.push(box(0.5, 0.04, 1.3, s * 3, 0.26, -0.9));
-        add.dark.push(finGeoUp({ z: -1.9, h: 0.8, chord: 1.1, y: 0.25, hw: 0.05 }, s * 5.4));
+        // Two fins leaning apart.
+        add.shade.push(finGeoUp({ z: -3.4, h: 1.7, chord: 1.9, y: 0, hw: 0.07 }).translate(0, -0.3, 0).rotateZ(s * -0.4).translate(s * 0.6, 0.6, 0));
+        add.dark.push(cyl(0.06, 0.06, 1.5, 6, s * 0.55, -0.22, 3));
+        add.plate.push(box(0.5, 0.04, 1.3, s * 2.4, 0.14, -0.9));
       }
     },
-    canopy: [0.5, 0.6, 0.4, 0.2], canopyY: 1.15, gear: 'tricycle', gearX: 1, cockpitY: 0.8, engineX: 0, engineZ: -3,
+    tail: { z: -4, span: 2.5, chord: 1.5, y: 0.1 },
+    canopy: [1.6, 2.2, 0.62, 0.55], canopyY: 0.55, gear: 'tricycle', gearX: 1, cockpitY: 0.8, engineX: 0, engineZ: -4.4,
+  },
+  // A narrow two-seat gunship: stepped glass, stub wings with a minigun on each, a long thin tail boom.
+  // Most of it is in heliParts below.
+  heli: {
+    mark: [1.7, -0.02], discX: 1.75, markR: 0.34, markT: 0.2, markZ: 0.3, noWingGuns: true, noRails: true, internalBombs: true, fuseSides: 16, smooth: true, noBar: true,
+    fuse: smoothStations([[6.4, 0.25, 0.25, -0.38], [5.6, 0.9, 1, -0.36], [4, 1.25, 1.7, -0.2], [1.5, 1.35, 2.3, 0], [-1.5, 1.3, 2.2, 0.15], [-3.2, 0.9, 1.3, 0.45], [-5, 0.5, 0.65, 0.7], [-8.4, 0.28, 0.34, 0.85]], 3),
+    wing: () => {},
+    teamMark: () => upright([[-7.3, 1.5], [-7.75, 2.1], [-8.75, 2.1], [-8.6, 1.5]], 0.24),
+    canopy: [1, 0.5, 0.2, 0.1], canopyY: 0, gear: 'massive', cockpitY: 0.75, guns: [],
+    engineX: 0, engineZ: -2,
   },
   // A black flying wing: a broad arrowhead with a sawtooth back edge and the cockpit on top.
   wraith: {
@@ -372,36 +407,40 @@ function gridSurface(fn, nu, nv, outward, uvOf = null) {
   return g;
 }
 
-// A round body along Z through a smooth line of [z, radius] points.
-function revolve(profile, x, y, sides = 16) {
+// A round body along Z through a smooth line of [z, radius] points. `squash` flattens it top to bottom.
+function revolve(profile, x, y, sides = 16, squash = 1, steps = 16) {
   const line = new THREE.SplineCurve(profile.map(([z, r]) => new THREE.Vector2(z, r)));
   return gridSurface((u, v) => {
     const q = line.getPoint(u), a = v * Math.PI * 2 - Math.PI / 2;
-    return [x + Math.cos(a) * q.y, y + Math.sin(a) * q.y, q.x];
-  }, 24, sides, (p) => new THREE.Vector3(p.x - x, p.y - y, 0));
+    return [x + Math.cos(a) * q.y, y + Math.sin(a) * q.y * squash, q.x];
+  }, steps, sides, (p) => new THREE.Vector3(p.x - x, p.y - y, 0));
 }
 
-// A flat plate with softly rounded edges, from its outline seen from above ([x, z] points).
-function softPlate(points, thick, y, edge = 0.14) {
-  const g = new THREE.ExtrudeGeometry(new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, z))), { depth: thick, steps: 1, bevelEnabled: true, bevelThickness: edge, bevelSize: edge, bevelOffset: -edge, bevelSegments: 2 });
-  g.rotateX(Math.PI / 2).translate(0, y + thick / 2, 0);
+// Rounds off an outline's corners, so nothing on it comes to a hard point.
+function softCorners(points, r) {
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i], a = points[(i + points.length - 1) % points.length], b = points[(i + 1) % points.length];
+    const la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+    const ra = Math.min(r, la * 0.45), rb = Math.min(r, lb * 0.45);
+    const q0 = [p[0] + ((a[0] - p[0]) / la) * ra, p[1] + ((a[1] - p[1]) / la) * ra], q1 = [p[0] + ((b[0] - p[0]) / lb) * rb, p[1] + ((b[1] - p[1]) / lb) * rb];
+    for (let k = 0; k <= 4; k++) {
+      const t = k / 4, c = 1 - t;
+      out.push([c * c * q0[0] + 2 * c * t * p[0] + t * t * q1[0], c * c * q0[1] + 2 * c * t * p[1] + t * t * q1[1]]);
+    }
+  }
+  return out;
+}
+
+// An upright blade from its side-on outline ([z, y] points), with softly rounded edges. `lean` tips it
+// over about the height `pivot`.
+function upright(points, thick, x = 0, lean = 0, pivot = 0) {
+  const g = new THREE.ExtrudeGeometry(new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(z, y))), { depth: thick, steps: 1, bevelEnabled: true, bevelThickness: 0.14, bevelSize: 0.14, bevelOffset: -0.14, bevelSegments: 2 });
+  g.translate(0, 0, -thick / 2).rotateY(-Math.PI / 2).translate(0, -pivot, 0).rotateZ(lean).translate(x, pivot, 0);
   return toCreasedNormals(g, 0.9);
 }
 
-// An upright fin with a raked, curved edge, seen side on.
-function softFin(x, z, y, h, chord) {
-  const shape = new THREE.Shape();
-  shape.moveTo(chord * 0.55, 0);
-  shape.quadraticCurveTo(chord * 0.1, h * 0.55, -chord * 0.42, h);
-  shape.quadraticCurveTo(-chord * 0.62, h * 0.95, -chord * 0.5, h * 0.7);
-  shape.lineTo(-chord * 0.45, 0);
-  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.5, steps: 1, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.16, bevelOffset: -0.16, bevelSegments: 2, curveSegments: 10 });
-  g.translate(0, 0, -0.25).rotateY(-Math.PI / 2).translate(x, y, z);
-  return toCreasedNormals(g, 0.9);
-}
-
-const sampleCurve = (curve, n = 22) => curve.getPoints(n).map((q) => [q.x, q.y]);
-// The curve's z at this x, from sampled points in order of x.
+// A straight-sided outline's z at this x.
 function zOn(points, x) {
   for (let i = 0; i < points.length - 1; i++) {
     const [x0, z0] = points[i], [x1, z1] = points[i + 1];
@@ -410,200 +449,233 @@ function zOn(points, x) {
   return points[points.length - 1][1];
 }
 
-// The waterdrop: round at the nose, drawing out to a point at the tail, the tails leaning together.
-const DROP = { r: 7.3, x: 7, y: 3.6, nose: 36, length: 70, cap: 0.14, tall: 1.12 };
-function dropPoint(s, t, a, grow = 1) {
-  const u = Math.max(0, (t - DROP.cap) / (1 - DROP.cap));
-  const r = t < DROP.cap ? DROP.r * Math.sqrt(Math.max(0, 1 - ((DROP.cap - t) / DROP.cap) ** 2)) : DROP.r * (1 - u ** 1.8);
-  return [s * DROP.x * (1 - 0.6 * u * u) + Math.cos(a) * r * grow, DROP.y + 2.2 * u * u + Math.sin(a) * r * DROP.tall * grow, DROP.nose - DROP.length * t];
-}
-
-// The two window pictures, drawn once: yellow panes with red lines.
-let dropGlass = null;
-function dropWindows() {
-  if (dropGlass) return dropGlass;
-  const sheet = (draw) => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 512;
-    const ctx = c.getContext('2d');
-    const at = ([x, y]) => [256 + x * 256, 256 - y * 256];
-    const poly = (pts, fill, line, width) => {
-      ctx.beginPath();
-      pts.forEach((q, i) => (i ? ctx.lineTo(...at(q)) : ctx.moveTo(...at(q))));
-      ctx.closePath();
-      if (fill) {
-        ctx.fillStyle = fill;
-        ctx.fill();
-      }
-      if (line) {
-        ctx.strokeStyle = line;
-        ctx.lineWidth = width;
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-      }
-    };
-    const seg = (a, b, line, width) => {
-      ctx.beginPath();
-      ctx.moveTo(...at(a));
-      ctx.lineTo(...at(b));
-      ctx.strokeStyle = line;
-      ctx.lineWidth = width;
-      ctx.stroke();
-    };
-    draw(ctx, poly, seg, at);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    return new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.3, metalness: 0.1, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.32 });
+// A wing: an airfoil section along the span, thick at the root, drooping to a thin tip.
+// o: span, y (at the root), droop (per metre), lead and trail ([x, z] points), t0 and t1 (thickness).
+function airfoil(o) {
+  const half = (c) => 5 * (0.2969 * Math.sqrt(c) - 0.126 * c - 0.3516 * c * c + 0.2843 * c ** 3 - 0.1036 * c ** 4);
+  const midY = (x) => o.y - o.droop * x;
+  const thick = (x) => o.t0 + ((o.t1 - o.t0) * x) / o.span;
+  const at = (s, x, c, side = 1, lift = 0) => {
+    const l = zOn(o.lead, x), t = zOn(o.trail, x);
+    const end = Math.max(0, x - (o.span - 0.8)) / 0.8;
+    return [s * x, midY(x) + side * (thick(x) * half(c) * Math.sqrt(Math.max(0, 1 - end * end)) + lift), l + (t - l) * c];
   };
-  const RED = '#a01a1a', GOLD = '#f6c61e', ORANGE = '#e9801a', BLACK = '#141414';
-  // From the front: a black visor, an orange band, and under it a big pentagon cut into panes by red
-  // lines, with a smaller pentagon in the middle.
-  const front = sheet((ctx, poly, seg, at) => {
-    ctx.fillStyle = BLACK;
-    ctx.beginPath();
-    ctx.ellipse(...at([0, 0.33]), 0.5 * 256, 0.32 * 256, 0, Math.PI, 0);
-    ctx.fill();
-    poly([[-0.74, 0.33], [0.74, 0.33], [0.78, 0.13], [-0.78, 0.13]], ORANGE, RED, 9);
-    const outer = [[-0.78, 0.13], [0.78, 0.13], [0.66, -0.34], [0, -0.78], [-0.66, -0.34]];
-    const inner = [[-0.38, 0.13], [0.38, 0.13], [0.46, -0.16], [0, -0.48], [-0.46, -0.16]];
-    poly(outer, GOLD, RED, 15);
-    poly(inner, '#ffd84a', RED, 11);
-    seg(inner[2], outer[2], RED, 11);
-    seg(inner[3], outer[3], RED, 11);
-    seg(inner[4], outer[4], RED, 11);
-    poly(outer, null, RED, 15);
-    for (const x of [-0.4, 0, 0.4]) seg([x, 0.33], [x, 0.13], RED, 7);
+  const surface = (s, nu = 28, nv = 28) => gridSurface((u, v) => at(s, o.span * (1 - (1 - u) ** 1.5), (1 - Math.cos(2 * Math.PI * v)) / 2, v <= 0.5 ? 1 : -1), nu, nv, (p) => {
+    const x = Math.abs(p.x);
+    return new THREE.Vector3(0, p.y - midY(x), p.z - (zOn(o.lead, x) + zOn(o.trail, x)) / 2);
   });
-  // From above: a cluster of panes along the top of the hull.
-  const top = sheet((ctx, poly, seg) => {
-    const outer = [[0, 0.96], [0.72, 0.5], [0.78, -0.4], [0.36, -0.92], [-0.36, -0.92], [-0.78, -0.4], [-0.72, 0.5]];
-    const inner = [[0, 0.42], [0.34, 0.2], [0.34, -0.22], [0, -0.44], [-0.34, -0.22], [-0.34, 0.2]];
-    poly(outer, GOLD, BLACK, 18);
-    poly(inner, '#ffd84a', RED, 10);
-    seg(inner[0], outer[0], RED, 10);
-    seg(inner[1], outer[1], RED, 10);
-    seg(inner[2], outer[2], RED, 10);
-    seg(inner[3], [0, -0.92], RED, 10);
-    seg(inner[4], outer[5], RED, 10);
-    seg(inner[5], outer[6], RED, 10);
-    poly(outer, null, BLACK, 18);
-  });
-  dropGlass = { front, top };
-  return dropGlass;
+  // A patch on the skin, from its corners as [x, chord] (0 at the front edge, 1 at the back).
+  const patch = (s, c, side = 1, lift = 0.03, nu = 10, nv = 4) => gridSurface((u, v) => {
+    const mix = (i) => (1 - u) * ((1 - v) * c[0][i] + v * c[3][i]) + u * ((1 - v) * c[1][i] + v * c[2][i]);
+    return at(s, mix(0), mix(1), side, lift);
+  }, nu, nv, () => new THREE.Vector3(0, side, 0));
+  return { at, surface, patch, midY, thick, lead: (x) => zOn(o.lead, x), trail: (x) => zOn(o.trail, x) };
 }
 
-// Everything on the doomship: two waterdrop hulls with their windows, smooth wings through their
-// middles, four long engines, three fins, lower pods, undercarriage, bomb bays and turret.
+// A point on the Leviathan's skin: `deg` round from the side, up is positive.
+function hullPoint(stations, s, z, deg, lift = 1) {
+  const [w, h, y] = fuseAt(stations, z), a = (deg * Math.PI) / 180;
+  const c = Math.cos(a), sn = Math.sin(a);
+  return [s * Math.abs(c) ** LEVIATHAN_SQUARE * w * 0.54 * lift, y + Math.sign(sn) * Math.abs(sn) ** LEVIATHAN_SQUARE * h * 0.54 * lift, z];
+}
+
+// A patch on the skin, from its corners as [z, deg]. `lift` raises it a hair off the skin.
+function hullPatch(stations, s, c, lift = 1.004, nu = 8, nv = 3) {
+  return gridSurface((u, v) => {
+    const mix = (i) => (1 - u) * ((1 - v) * c[0][i] + v * c[3][i]) + u * ((1 - v) * c[1][i] + v * c[2][i]);
+    return hullPoint(stations, s, mix(0), mix(1), lift);
+  }, nu, nv, (p) => new THREE.Vector3(p.x, p.y - fuseAt(stations, p.z)[2], 0));
+}
+
+// A band round a round body.
+function ringBand(x, y, r, z0, z1) {
+  return gridSurface((u, v) => {
+    const a = v * Math.PI * 2;
+    return [x + Math.cos(a) * r, y + Math.sin(a) * r, z0 + (z1 - z0) * u];
+  }, 1, 18, (p) => new THREE.Vector3(p.x - x, p.y - y, 0));
+}
+
+// Everything on the Leviathan apart from the plain hull.
 function leviathanParts(add, group, props, spec, sh) {
-  // The big wing's outline, one side, out along the front and back along the rear.
-  const bigFront = sampleCurve(new THREE.CubicBezierCurve(new THREE.Vector2(0, 16), new THREE.Vector2(14, 13), new THREE.Vector2(28, 2), new THREE.Vector2(40, -17)));
-  const bigTip = sampleCurve(new THREE.QuadraticBezierCurve(new THREE.Vector2(40, -17), new THREE.Vector2(42.4, -21), new THREE.Vector2(40.6, -26)), 8);
-  const bigBack = sampleCurve(new THREE.CubicBezierCurve(new THREE.Vector2(40.6, -26), new THREE.Vector2(33, -17), new THREE.Vector2(22, -9), new THREE.Vector2(10, -8)));
-  const smallFront = sampleCurve(new THREE.CubicBezierCurve(new THREE.Vector2(0, -13), new THREE.Vector2(10, -14), new THREE.Vector2(20, -16), new THREE.Vector2(30, -20)));
-  const smallTip = sampleCurve(new THREE.QuadraticBezierCurve(new THREE.Vector2(30, -20), new THREE.Vector2(32, -23.5), new THREE.Vector2(30.6, -28)), 8);
-  const twoSides = (half) => [...half, ...half.map(([x, z]) => [-x, z]).reverse()];
-  const WY = 3.8, RY = 4.6;
-  add.smooth.push(softPlate(twoSides([...bigFront, ...bigTip.slice(1), ...bigBack.slice(1), [0, -8]]), 0.8, WY, 0.25));
-  add.smooth.push(softPlate(twoSides([...smallFront, ...smallTip.slice(1), [0, -26]]), 0.7, RY, 0.2));
-  const wingTop = WY + 0.42;
-  for (const s of [-1, 1]) {
-    const flip = (pts) => pts.map(([x, z]) => [s * x, z]);
-    // Each hull is a waterdrop, and the wings run in through its sides.
-    const hull = (t, a, grow) => dropPoint(s, t, a, grow);
-    const away = (p) => new THREE.Vector3(p.x - s * DROP.x, p.y - DROP.y, 0);
-    add.smooth.push(gridSurface((u, v) => hull(u * u, v * Math.PI * 2 - Math.PI / 2), 40, 28, away));
-    if (typeof document !== 'undefined') {
-      const glass = dropWindows();
-      // The front window, tiled on to the nose as seen straight on.
-      // Lifted clear of the hull along the view as well, or the two fight over which is in front.
-      const front = gridSurface((u, v) => {
-        const q = hull(DROP.cap * u * u, v * Math.PI * 2 - Math.PI / 2, 1.008);
-        return [q[0], q[1], q[2] + 0.12 * (1 - u)];
-      }, 18, 32, away, (p) => [0.5 + ((p[0] - s * DROP.x) / DROP.r) * 0.5, 0.5 + ((p[1] - DROP.y) / (DROP.r * DROP.tall)) * 0.5]);
-      group.add(new THREE.Mesh(front, glass.front));
-      // The window on top: a raised bubble, tall enough to see from the front too.
-      const bubble = (grow) => (u, v) => {
-        const lat = (u * Math.PI) / 2, lon = v * Math.PI * 2;
-        return [s * DROP.x + Math.sin(lat) * Math.cos(lon) * 5.4 * grow, DROP.y + DROP.r * DROP.tall - 1.2 + Math.cos(lat) * 2.6 * grow, 18 + Math.sin(lat) * Math.sin(lon) * 9.6 * grow];
-      };
-      const up = (p) => new THREE.Vector3(p.x - s * DROP.x, 1, p.z - 18);
-      add.smooth.push(gridSurface(bubble(1), 12, 28, up));
-      group.add(new THREE.Mesh(gridSurface(bubble(1.012), 12, 28, up, (p) => [0.5 + (p[0] - s * DROP.x) / 11.4, 0.5 + (p[2] - 18) / 20]), glass.top));
-    }
-    // A black chin under the window, and two black spikes raked forward from under the hull.
-    add.smoothDark.push(new THREE.SphereGeometry(3, 18, 12).toNonIndexed().scale(1.15, 0.9, 1).translate(s * DROP.x, DROP.y - 3.4, 33.6));
-    for (const k of [-1, 1]) {
-      add.smoothDark.push(new THREE.ConeGeometry(0.8, 5, 12).toNonIndexed().rotateX(2).rotateZ(k * -0.4).translate(s * DROP.x + k * 4, DROP.y - 6.4, 28));
-    }
+  const hull = sh.fuse;
+  const smoothLoft = (stations, sides = 14, perGap = 3) => toCreasedNormals(loft(smoothStations(stations, perGap), sides), 1);
+  const wing = airfoil({ span: spec.size.width / 2, y: 3, droop: 0.05, lead: [[0, 7], [41, -24]], trail: [[0, -9], [12, -9.5], [41, -28]], t0: 2, t1: 0.35 });
+  const tail = airfoil({ span: 12, y: 2.6, droop: 0, lead: [[0, -21], [12, -30.5]], trail: [[0, -34], [12, -34.5]], t0: 0.9, t1: 0.22 });
+  const r = 1.05, wy = -spec.gearH + r;
 
-    // The big wing's thick black front edge and tip; its back edge stays crimson.
-    const edge = bigFront.filter(([x]) => x >= 12.5);
-    add.smoothDark.push(softPlate(flip([...edge, ...bigTip.slice(1), ...[...edge].reverse().map(([x, z]) => [x, z - 2.3])]), 0.92, WY));
-    // Dark raked stripes and gold studs on it.
-    for (const px of [20.6, 28, 31.5, 35]) {
-      const l = zOn(bigFront, px), t = zOn(bigBack, px);
-      add.wingStripe.push(softPlate(flip([[px - 0.7, l - 2.6], [px + 0.7, l - 3.3], [px + 0.7, t + 0.6], [px - 0.7, t + 0.9]]), 0.1, wingTop + 0.04, 0.03));
-    }
-    for (const [px, pz] of [[20.6, 6.4], [13, -4], [26, -7], [33, -11], [37, -19]]) add.smoothGold.push(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 14).toNonIndexed().translate(s * px, wingTop + 0.08, pz));
+  // The tall fin with its rudder line, on a low strake.
+  add.smooth.push(upright(softCorners([[-14, 3.3], [-22.5, 5.5], [-30.5, 14.6], [-35.2, 14.6], [-35.6, 2.8]], 0.5), 0.8));
+  add.smoothGrey.push(upright([[-31.5, 5], [-31.6, 14.2], [-31.72, 14.2], [-31.62, 5]], 0.84));
 
-    // Two long engines each side, joining the wings: crimson cowl, black ring and yellow centre in front.
-    for (const [px, plume] of [[17, true], [24, false]]) {
-      const l = zOn(bigFront, px) + 2, end = -31;
-      // Crimson lip, a black band behind it, crimson along the wings, black again at the back.
-      add.smooth.push(revolve([[l + 4.7, 2.3], [l + 4.3, 3.1], [l + 2.5, 3.5], [l + 1.2, 3.55]], s * px, WY));
-      add.smoothDark.push(revolve([[l + 1.2, 3.58], [l - 1, 3.62], [l - 3.4, 3.6]], s * px, WY));
-      add.smooth.push(revolve([[l - 3.4, 3.55], [l - 8, 3.45], [-12, 3.3], [-17, 3.05]], s * px, WY));
-      add.smoothDark.push(revolve([[-17, 3.1], [-22, 2.85], [end + 3, 2.2], [end, 1.9], [end - 0.4, 1.4]], s * px, WY));
-      add.smoothDark.push(new THREE.CircleGeometry(2.45, 20).toNonIndexed().translate(s * px, WY, l + 4.55));
-      add.smoothGold.push(new THREE.SphereGeometry(1.3, 16, 10).toNonIndexed().scale(1, 1, 0.55).translate(s * px, WY, l + 4.5));
-      add.smoothGold.push(new THREE.TorusGeometry(3.66, 0.16, 8, 22).toNonIndexed().translate(s * px, WY, l - 3.4));
-      add.smoothGold.push(new THREE.TorusGeometry(3.12, 0.16, 8, 22).toNonIndexed().translate(s * px, WY, -17));
-      if (plume) {
-        // The inner pair fire tall violet plumes.
-        add.smoothGold.push(new THREE.TorusGeometry(1.75, 0.2, 8, 18).toNonIndexed().translate(s * px, WY, end - 0.3));
-        add.exhaust.push(new THREE.CircleGeometry(1.5, 16).toNonIndexed().rotateY(Math.PI).translate(s * px, WY, end - 0.42));
-        add.plume.push(new THREE.ConeGeometry(1.5, 9, 14).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, WY, end - 4.9));
-        add.exhaust.push(new THREE.ConeGeometry(0.85, 5.5, 12).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, WY, end - 3.1));
-      } else add.smoothDark.push(new THREE.ConeGeometry(1.45, 5, 14).rotateX(-Math.PI / 2).toNonIndexed().translate(s * px, WY, end - 2.8));
-    }
-    // A big pod slung under the engines: crimson over black.
-    const pod = (geo) => geo.scale(5.2, 3.2, 11).translate(s * 20.5, -1.3, -2);
-    add.smoothDark.push(pod(new THREE.SphereGeometry(1, 20, 14).toNonIndexed()));
-    add.smooth.push(pod(new THREE.SphereGeometry(1.03, 20, 8, 0, Math.PI * 2, 0, Math.PI * 0.42).toNonIndexed()));
-
-    // The small wing: black front edge, silver tips with black ends.
-    const smallEdge = smallFront.filter(([x]) => x >= 11);
-    add.smoothDark.push(softPlate(flip([...smallEdge, ...[...smallEdge].reverse().map(([x, z]) => [x, z - 1.6])]), 0.82, RY));
-    const silverStart = smallFront.filter(([x]) => x >= 22);
-    add.silver.push(softPlate(flip([...silverStart.map(([x, z]) => [x, z - 1.5]), [29.5, -27.6], [22, -26.8]]), 0.78, RY));
-    add.smoothDark.push(softPlate(flip([[29.6, zOn(smallFront, 29.6)], ...smallTip.slice(1), [29.4, -27.8]]), 0.84, RY));
-    add.smoothGold.push(new THREE.CylinderGeometry(0.5, 0.5, 0.12, 14).toNonIndexed().translate(s * 20.5, RY + 0.46, -21));
-    // Undercarriage: three pairs of wheels under each hull.
-    const r = 1.1, wy = -spec.gearH + r;
-    for (const z of [16, 6, -8]) {
-      const low = dropPoint(s, (DROP.nose - z) / DROP.length, -Math.PI / 2);
-      const strutTop = low[1] + 1.2;
-      for (const k of [-1, 1]) add.smoothDark.push(cyl(r, r, 0.8, 16).rotateY(Math.PI / 2).translate(low[0] + k * 0.75, wy, z));
-      add.metal.push(box(0.55, strutTop - wy, 0.7, low[0], (strutTop + wy) / 2, z));
-    }
-  }
-  // Three fins, as on the real thing: one on the centre line, one each side of it.
-  add.smoothDark.push(softFin(0, -22.5, 6, 10, 10));
-  for (const s of [-1, 1]) add.smoothDark.push(softFin(s * 13.5, -21, RY, 11, 9));
-  // A white crest on the body between the wings.
-  add.white.push(new THREE.CylinderGeometry(3, 3, 0.1, 24).toNonIndexed().translate(0, 9.85, -11.5));
-  add.wingStripe.push(new THREE.CylinderGeometry(2.25, 2.25, 0.12, 24).toNonIndexed().translate(0, 9.88, -11.5));
-  add.white.push(new THREE.CylinderGeometry(1.25, 1.25, 0.14, 3).toNonIndexed().rotateY(Math.PI).translate(0, 9.92, -11.5));
-  // Rows of bomb bay doors along the belly.
-  for (let row = 0; row < 4; row++) {
-    const z = -9 + row * 3.4;
-    const y = fuselageBottom(sh.fuse, z) - 0.02;
-    for (const s of [-1, 1]) add.door.push(box(2.3, 0.2, 3, s * 1.35, y, z));
-  }
-  // The heavy top turret's base.
+  // Small blade aerials along the spine, and a heavy top turret's ring.
+  for (const z of [17, 9, -3]) add.smoothDark.push(upright(softCorners([[z + 0.8, 3.8], [z - 0.4, 5], [z - 0.8, 5], [z - 0.6, 3.8]], 0.08), 0.1));
   const [, dy, dz] = spec.door;
-  add.plate.push(box(3.6, 1.5, 3.6, 0, dy - 1.3, dz), box(2.8, 0.5, 2.8, 0, dy - 0.3, dz));
+  add.smoothDark.push(cyl(1.3, 1.5, 1.7, 16).rotateX(Math.PI / 2).translate(0, dy - 1.55, dz));
+  add.smoothGrey.push(cyl(1.38, 1.38, 0.22, 16).rotateX(Math.PI / 2).translate(0, dy - 0.82, dz));
+
+  // The dark tip of the radar nose.
+  add.smoothDark.push(toCreasedNormals(loft(hull.filter(([z]) => z >= 35.2).map(([z, w, h, y]) => [z, w * 1.012, h * 1.012, y]), sh.fuseSides, sh.fuseSquare), 1));
+  // Under the chin: two rounded sensor blisters side by side.
+  for (const k of [-1, 1]) add.smoothDark.push(revolve([[31.5, 0.08], [30.4, 0.72], [28.6, 0.85], [26.8, 0.08]], k * 0.92, -3.05, 12, 0.8, 8));
+  // Rows of bomb bay doors along the belly, between the two pairs of wheels.
+  for (let row = 0; row < 5; row++) {
+    const z = -6.5 + row * 3.1, y = fuselageBottom(hull, z) + 0.06;
+    for (const k of [-1, 1]) add.door.push(box(1.7, 0.14, 2.9, k * 0.95, y, z));
+  }
+  // Four bogies in a long row under the hull, with the outriggers near the wing tips to balance it.
+  // All of it folds away in the air.
+  for (const z of [12, -11.7]) {
+    for (const k of [-1, 1]) {
+      for (const x of [1.3, 2.55]) add.gearTyre.push(cyl(r, r, 0.75, 12).rotateY(Math.PI / 2).translate(k * x, wy, z));
+      add.gearLeg.push(box(0.45, -3.2 - wy, 0.7, k * 1.92, (-3.2 + wy) / 2, z));
+      add.gearLeg.push(box(1.55, 0.25, 0.32, k * 1.92, wy, z));
+      add.gearLeg.push(box(0.1, 1.7, 3.4, k * 2.75, -4.05, z));
+    }
+  }
+
+  for (const s of [-1, 1]) {
+    add.smooth.push(wing.surface(s, 26, 20));
+    add.smooth.push(tail.surface(s, 10, 10));
+
+    // Windscreen panes, stepping back and down from the nose, with a row of eyebrow windows over them.
+    for (const [z0, z1, a0, a1] of [[28.5, 27.3, 58, 74], [27.2, 26, 52, 70], [25.9, 24.7, 48, 66], [24.6, 23.5, 45, 60], [26.6, 25.6, 76, 84], [25.4, 24.4, 74, 83]]) {
+      add.smoothGlass.push(hullPatch(hull, s, [[z0, a0], [z1, a0], [z1, a1], [z0, a1]], 1.006, 2, 2));
+    }
+    // The small dark fairing on the nose's flank, and a line of tiny vents.
+    add.smoothDark.push(revolve([[33.4, 0.05], [32.2, 0.34], [29.4, 0.34], [27.8, 0.05]], s * 2.4, -1.15, 8, 0.65, 8));
+    for (const z of [14.5, 13.6, 12.7, -2, -2.9]) add.smoothDark.push(hullPatch(hull, s, [[z + 0.2, -8], [z - 0.2, -8], [z - 0.2, -5], [z + 0.2, -5]], 1.005, 1, 1));
+    // Seams round the hull, and long ones down the side.
+    for (let z = 22; z > -30; z -= 4) add.smoothDark.push(hullPatch(hull, s, [[z + 0.04, -90], [z - 0.04, -90], [z - 0.04, 90], [z + 0.04, 90]], 1.002, 1, 12));
+    for (const a of [-34, 26, 58]) add.smoothDark.push(hullPatch(hull, s, [[23, a], [-28, a], [-28, a + 0.5], [23, a + 0.5]], 1.002, 12, 1));
+
+    // Panel lines, flap line and spoilers on the wing, a darker front edge, and flap track fairings under it.
+    for (const side of [-1, 1]) {
+      add.smoothGrey.push(wing.patch(s, [[3, 0], [41, 0], [41, 0.05], [3, 0.05]], side, 0.015, 22, 2));
+      add.smoothDark.push(wing.patch(s, [[3, 0.74], [38, 0.74], [38, 0.755], [3, 0.755]], side, 0.015, 18, 1));
+    }
+    for (const c of [0.26, 0.48]) add.smoothDark.push(wing.patch(s, [[4, c], [39, c], [39, c + 0.01], [4, c + 0.01]], 1, 0.015, 18, 1));
+    for (let x = 6; x < 39; x += 4) add.smoothDark.push(wing.patch(s, [[x, 0.05], [x + 0.06, 0.05], [x + 0.06, 0.74], [x, 0.74]], 1, 0.015, 1, 3));
+    for (const x of [5, 9, 13, 17, 21, 25]) add.smoothGrey.push(wing.patch(s, [[x, 0.62], [x + 3.2, 0.62], [x + 3.2, 0.67], [x, 0.67]], 1, 0.02, 2, 1));
+    for (const x of [6, 11, 19, 23, 31]) {
+      const t = wing.trail(x), y = wing.midY(x) - wing.thick(x) * 0.24;
+      add.smooth.push(revolve([[t + 3.6, 0.04], [t + 2, 0.32], [t, 0.34], [t - 2.2, 0.04]], s * x, y, 8, 1, 6));
+    }
+    // The tailplane's edge, and its elevator line.
+    for (const side of [-1, 1]) add.smoothGrey.push(tail.patch(s, [[2, 0], [12, 0], [12, 0.08], [2, 0.08]], side, 0.015, 8, 1));
+    add.smoothDark.push(tail.patch(s, [[2, 0.68], [11.5, 0.68], [11.5, 0.7], [2, 0.7]], 1, 0.015, 8, 1));
+
+    // The big stores pylon between hull and engines, with two long missiles slung under it.
+    {
+      const y = 0.85, z = 0;
+      add.smoothDark.push(upright(softCorners([[wing.lead(9.6) - 1, 2.5], [wing.lead(9.6) - 9, 2.5], [-9.4, y], [3.4, y]], 0.4), 0.8, s * 9.6));
+      add.smoothDark.push(box(3.3, 0.35, 12, s * 9.6, y - 0.1, z - 3));
+      // A white glider on a grey booster.
+      const ax = s * 8.75, by = y - 0.95;
+      add.smoothWhite.push(revolve([[6.4, 0.06], [5.5, 0.26], [3, 0.58], [0.2, 0.62]], ax, by, 12, 0.7, 8));
+      add.smoothGrey.push(revolve([[0.3, 0.62], [-0.2, 0.74], [-6.4, 0.74], [-7.4, 0.5]], ax, by, 12, 1, 6));
+      for (const k of [0.785, 2.356]) add.smoothDark.push(box(2.3, 0.08, 1.4).rotateZ(k).translate(ax, by, -6.5));
+      // A dark one with red bands.
+      const cx = s * 10.45;
+      add.smoothDark.push(revolve([[5.2, 0.05], [3.8, 0.42], [1.8, 0.56], [-7.4, 0.56], [-8, 0.34]], cx, by, 12, 1, 8));
+      for (const zz of [1.6, -0.8, -6]) add.smoothRed.push(ringBand(cx, by, 0.585, zz, zz - 0.5));
+      for (const k of [0.785, 2.356]) add.smoothGrey.push(box(1.8, 0.07, 1.1).rotateZ(k).translate(cx, by, -7.3));
+    }
+
+    // Fixed fuel tank under each outer wing.
+    {
+      const x = 35.5, l = wing.lead(x) - 2, y = wing.midY(x) - wing.thick(x) * 0.4 - 1.05;
+      add.smooth.push(revolve([[l + 6, 0.05], [l + 3.6, 0.62], [l, 0.82], [l - 3.8, 0.62], [l - 6.2, 0.05]], s * x, y, 12, 1, 12));
+      add.smoothDark.push(upright([[l + 1.6, y + 1.2], [l - 2, y + 1.2], [l - 2, y + 0.6], [l + 1, y + 0.6]], 0.2, s * x));
+    }
+    // The outrigger: a long thin leg down from under the wing, a small pair of wheels at the bottom.
+    {
+      const x = 30, z = wing.lead(x) - 1.6, top = wing.midY(x) - wing.thick(x) * 0.3, wr = 0.62, wb = -spec.gearH + wr;
+      add.smooth.push(revolve([[z + 1.6, 0.05], [z + 0.6, 0.42], [z - 0.8, 0.42], [z - 2.2, 0.05]], s * x, top - 0.25, 10, 1, 6));
+      add.gearLeg.push(box(0.2, top - wb, 0.32, s * x, (top + wb) / 2, z));
+      for (const k of [-1, 1]) add.gearTyre.push(cyl(wr, wr, 0.3, 10).rotateY(Math.PI / 2).translate(s * x + k * 0.26, wb, z));
+    }
+
+    // The engines: four pods, two jets side by side in each, on swept-forward pylons out ahead of the wing.
+    for (const [px, er] of [[14.5, 1.35], [25.5, 1.3]]) {
+      const l = wing.lead(px), under = wing.midY(px) - wing.thick(px) * 0.42;
+      const y = under - er - 1.1, front = l + 7.5, back = l - 4.5;
+      // The pod's body between and around the two jets.
+      add.smooth.push(smoothLoft([[front - 1.3, er * 1.5, er * 0.9, y], [front - 3, er * 2.1, er * 1.6, y], [back + 3, er * 2.1, er * 1.5, y], [back + 0.8, er * 1.2, er * 0.6, y]], 12));
+      for (const k of [-1, 1]) {
+        const x = s * px + k * (er + 0.08);
+        add.smooth.push(revolve([[front, er * 0.82], [front - 0.5, er], [front - 3.4, er * 1.03], [front - 6.5, er * 0.96], [back + 1.4, er * 0.76]], x, y, 16, 1, 10));
+        add.smoothGrey.push(new THREE.TorusGeometry(er * 0.84, er * 0.07, 6, 18).toNonIndexed().translate(x, y, front));
+        add.smoothDark.push(new THREE.CircleGeometry(er * 0.84, 18).toNonIndexed().translate(x, y, front - 0.7));
+        add.smoothDark.push(ringBand(x, y, er * 1.038, front - 3.7, front - 3.84));
+        const fan = propeller(er * 0.78, 12, front - 0.4, x, y, 0x777a7e);
+        fan.userData.dir = s;
+        group.add(fan);
+        props.push(fan);
+        add.smoothGrey.push(revolve([[back + 1.5, er * 0.76], [back + 0.2, er * 0.62], [back - 0.8, er * 0.5]], x, y, 14, 1, 4));
+        add.smoothDark.push(new THREE.CircleGeometry(er * 0.5, 14).toNonIndexed().rotateY(Math.PI).translate(x, y, back - 0.78));
+      }
+      // The pylon sweeps forward and down from the wing's front edge.
+      add.smooth.push(upright(softCorners([[l - 3.6, under + 0.5], [l + 0.6, under + 0.5], [front - 2.2, y + er * 0.55], [back + 1.4, y + er * 0.55]], 0.25), 0.55, s * px));
+    }
+  }
+}
+
+// Everything on the helicopter apart from the plain hull.
+function heliParts(add, group, props, spec, sh, otherGun) {
+  const smoothLoft = (stations, sides = 12, perGap = 3) => toCreasedNormals(loft(smoothStations(stations, perGap), sides), 1);
+  // Two sets of stepped glass, one behind and above the other, framed in dark.
+  add.smoothGlass.push(smoothLoft([[5, 0.3, 0.2, 0.42], [4, 0.95, 0.75, 0.62], [3, 1.02, 0.86, 0.78], [2.3, 0.3, 0.2, 0.9]]));
+  add.smoothGlass.push(smoothLoft([[3, 0.3, 0.2, 1], [2, 1.02, 0.8, 1.05], [0.9, 1.06, 0.92, 1.18], [0.1, 0.3, 0.2, 1.22]]));
+  add.dark.push(box(0.06, 0.1, 2.6, 0, 1.32, 1.55), box(0.06, 0.08, 2.2, 0, 0.98, 3.7));
+  for (const z of [3.05, 2, 0.95]) add.dark.push(box(1.08, 0.05, 0.05, 0, z < 2.5 ? 1.5 : 1.1, z));
+  // The engine hump and its two black exhausts, the mast, and the rotor head.
+  add.smooth.push(smoothLoft([[0.9, 0.3, 0.2, 1.05], [-0.2, 1.1, 0.95, 1.2], [-2.1, 1.15, 0.9, 1.15], [-3.3, 0.4, 0.25, 0.85]]));
+  for (const s of [-1, 1]) add.dark.push(cyl(0.2, 0.15, 0.7, 8, s * 0.42, 1.08, -2.7));
+  add.dark.push(cyl(0.16, 0.2, 0.95, 10).rotateX(Math.PI / 2).translate(0, 1.95, -0.6));
+  // A sensor ball under the nose.
+  add.smoothDark.push(new THREE.SphereGeometry(0.42, 12, 8).toNonIndexed().translate(0, -0.92, 5.05));
+  // A swept tail fin, a smaller one under the boom, and a tailplane.
+  add.smooth.push(upright(softCorners([[-6.4, 0.8], [-7.7, 2.4], [-8.8, 2.4], [-8.6, 0.8]], 0.12), 0.14));
+  add.smooth.push(upright(softCorners([[-7.6, 0.75], [-8.5, -0.2], [-8.95, -0.2], [-8.6, 0.75]], 0.08), 0.1));
+  for (const g of both(panel(0.14, 1.5, 0.78, 0.84, -5.2, -5.9, -5.55, -5.95, 0.1, 0.05))) add.body.push(g);
+  // Stub wings, with a minigun under the end of each. One is the gunner's when there is a gunner.
+  for (const g of both(panel(0.55, 2.55, 0.12, -0.02, 1.1, -0.4, 0.7, -0.1, 0.2, 0.1))) add.body.push(g);
+  for (const s of [-1, 1]) add.dark.push(box(0.14, 0.2, 0.5, s * 2.3, -0.12, 0.35));
+  otherGun.position.set(2.3, -0.3, 0.35);
+  group.add(otherGun);
+  // Skids.
+  const fy = -spec.gearH + 0.08;
+  for (const s of [-1, 1]) {
+    add.dark.push(cyl(0.07, 0.07, 5.2, 8, s * 1.1, fy, 0.6));
+    add.dark.push(new THREE.ConeGeometry(0.07, 0.5, 8).rotateX(0.7).toNonIndexed().translate(s * 1.1, fy + 0.16, 3.4));
+    for (const z of [2.1, -0.9]) add.metal.push(box(0.08, 0.08, 0.1, s * 0.85, fy + 0.32, z), box(0.08, 0.5, 0.1, s * 1.05, fy + 0.2, z));
+  }
+  for (const z of [2.1, -0.9]) add.metal.push(box(1.8, 0.09, 0.1, 0, fy + 0.5, z));
+  // The main rotor, flat above the hump, and the tail rotor on the left of the fin.
+  const main = rotorDisc(6.6, 4, 0.34);
+  main.position.set(0, 2.5, -0.6);
+  main.rotation.x = -Math.PI / 2;
+  group.add(main);
+  props.push(main);
+  const tailR = rotorDisc(1.25, 3, 0.16);
+  tailR.position.set(0.24, 1.35, -8.3);
+  tailR.rotation.y = Math.PI / 2;
+  tailR.userData.dir = 1.4;
+  group.add(tailR);
+  props.push(tailR);
+}
+
+// A helicopter rotor: long thin blades, and the blur they turn into.
+function rotorDisc(r, blades, width) {
+  const g = new THREE.Group();
+  const parts = [new THREE.CylinderGeometry(r * 0.05, r * 0.07, 0.3, 8).rotateX(Math.PI / 2).toNonIndexed()];
+  for (let i = 0; i < blades; i++) parts.push(box(width, r, 0.05, 0, r / 2, 0).rotateZ((i / blades) * Math.PI * 2));
+  g.add(new THREE.Mesh(merged(parts), mat(0x1a1b1d)));
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: 0x15161a, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+  disc.visible = false;
+  g.add(disc);
+  g.userData.disc = disc;
+  return g;
 }
 
 // Afterburner: two nested cones behind the nozzle, shown only while it's lit.
@@ -620,25 +692,6 @@ function afterburner(z) {
 }
 
 const INSIGNIA = { blue: 0x2f5fa8, red: 0xa8382e };
-
-// A transport's propeller: many curved blades, dark with yellow tips.
-function scimitarProp(r, blades, z, x, y) {
-  const g = new THREE.Group();
-  g.position.set(x, y, z);
-  const dark = [new THREE.ConeGeometry(r * 0.2, r * 0.42, 10).rotateX(Math.PI / 2).toNonIndexed()], tips = [];
-  for (let i = 0; i < blades; i++) {
-    const a = (i / blades) * Math.PI * 2;
-    dark.push(box(r * 0.1, r * 0.5, 0.08, 0, r * 0.3, -0.04).rotateZ(a));
-    dark.push(box(r * 0.11, r * 0.34, 0.08, r * 0.03, r * 0.66, -0.04).rotateZ(a - 0.1));
-    tips.push(box(r * 0.1, r * 0.14, 0.09, r * 0.03, r * 0.89, -0.04).rotateZ(a - 0.1));
-  }
-  g.add(new THREE.Mesh(merged(dark), mat(0x16181b)), new THREE.Mesh(merged(tips), mat(0xe2b420)));
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 18), new THREE.MeshBasicMaterial({ color: 0x1a1a18, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }));
-  disc.visible = false;
-  g.add(disc);
-  g.userData.disc = disc;
-  return g;
-}
 
 function propeller(r, blades, z, x = 0, y = 0, hub = 0x2a2a26) {
   const g = new THREE.Group();
@@ -662,9 +715,9 @@ export function buildPlane(type, team = 'blue', paint = type) {
   const spec = PLANES[type];
   const sh = SHAPES[type];
   const group = new THREE.Group();
-  const add = { body: [], shade: [], dark: [], metal: [], nose: [], glass: [], belly: [], plate: [], rivet: [], door: [], stripe: [], amber: [], exhaust: [], white: [], wingStripe: [], silver: [], plume: [], smooth: [], smoothDark: [], smoothGold: [] };
+  const add = { body: [], shade: [], dark: [], metal: [], nose: [], glass: [], belly: [], plate: [], rivet: [], door: [], stripe: [], amber: [], exhaust: [], white: [], smooth: [], smoothDark: [], smoothRed: [], smoothGrey: [], smoothWhite: [], smoothGlass: [], gearTyre: [], gearLeg: [] };
 
-  if (sh.smooth) add.smooth.push(toCreasedNormals(loft(sh.fuse, sh.fuseSides ?? 8), 1));
+  if (sh.smooth) add.smooth.push(toCreasedNormals(loft(sh.fuse, sh.fuseSides ?? 8, sh.fuseSquare ?? 1), 1));
   else add.body.push(loft(sh.fuse, sh.fuseSides ?? 8));
   sh.wing(add);
   // Tailplane.
@@ -703,6 +756,11 @@ export function buildPlane(type, team = 'blue', paint = type) {
   }
 
   if (type === 'leviathan') leviathanParts(add, group, props, spec, sh);
+  let otherGun = null;
+  if (type === 'heli') {
+    otherGun = buildMinigun(1.5);
+    heliParts(add, group, props, spec, sh, otherGun.group);
+  }
   let flame = null;
   if (sh.jet) {
     // The nozzle, and the flame that comes out of it.
@@ -784,7 +842,7 @@ export function buildPlane(type, team = 'blue', paint = type) {
     add.metal.push(cyl(0.06, 0.06, 0.4, 6, g[0], g[1], g[2] - 0.4));
   }
   // Rockets on their rails, with noses and fins.
-  if (spec.rockets?.count) {
+  if (spec.rockets?.count && !sh.noRails) {
     for (const s of [-1, 1]) for (const k of [0, 1]) {
       const x = s * (gx * 0.75 + k * 0.75), y = sh.railY ?? gy2 - 0.34, z = sh.railZ ?? 0.2;
       add.metal.push(box(0.05, 0.14, 1.3, x, y + 0.14, z));
@@ -795,13 +853,13 @@ export function buildPlane(type, team = 'blue', paint = type) {
 
   const painted = paintMaterial(paint, team, 1);
   const shaded = paintMaterial(paint, team, 0.82);
-  const addMesh = (list, material, camo = false) => {
+  const addMesh = (list, material, camo = false, parent = group) => {
     if (!list.length) return null;
     const g = merged(list);
     if (camo) g.setAttribute('camoPos', g.attributes.position.clone());
     const m = new THREE.Mesh(g, material);
     m.castShadow = true;
-    group.add(m);
+    parent.add(m);
     return m;
   };
   addMesh(add.body, painted, true);
@@ -812,13 +870,21 @@ export function buildPlane(type, team = 'blue', paint = type) {
   addMesh(add.stripe, mat(0xd9a820));
   addMesh(add.white, mat(0xe8e4d4));
   addMesh(add.smooth, paintMaterial(paint, team, 1, true), true);
-  addMesh(add.smoothDark, mat(0x19191b, { flatShading: false, roughness: 0.5 }));
-  addMesh(add.smoothGold, mat(0xf2bb22, { flatShading: false, roughness: 0.4, emissive: 0x6a4608 }));
-  addMesh(add.wingStripe, mat(0x2a0e10));
-  addMesh(add.silver, mat(0xc4cad0, { roughness: 0.4, flatShading: false }));
-  if (add.plume.length) addMesh(add.plume, new THREE.MeshBasicMaterial({ color: 0x9a3dff, toneMapped: false })).castShadow = false;
+  addMesh(add.smoothDark, mat(0x141416, { flatShading: false, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  addMesh(add.smoothRed, mat(0xa81c1c, { flatShading: false, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  addMesh(add.smoothGrey, mat(0x3f4348, { flatShading: false, roughness: 0.45, metalness: 0.4, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  addMesh(add.smoothWhite, mat(0xe6e4dc, { flatShading: false, roughness: 0.5 }));
+  addMesh(add.smoothGlass, mat(0x0d1216, { flatShading: false, roughness: 0.12, metalness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  // Landing gear that folds away in the air.
+  let foldingGear = null;
+  if (add.gearTyre.length) {
+    foldingGear = new THREE.Group();
+    group.add(foldingGear);
+    addMesh(add.gearTyre, mat(0x141416, { flatShading: false, roughness: 0.8 }), false, foldingGear);
+    addMesh(add.gearLeg, METAL(), false, foldingGear);
+  }
   addMesh(add.amber, new THREE.MeshStandardMaterial({ color: 0xe8b23a, emissive: 0x7a4c0c, flatShading: true, roughness: 0.4 }));
-  if (add.exhaust.length) addMesh(add.exhaust, new THREE.MeshBasicMaterial({ color: 0xc98bff, toneMapped: false })).castShadow = false;
+  if (add.exhaust.length) addMesh(add.exhaust, new THREE.MeshBasicMaterial({ color: 0xffb070, toneMapped: false })).castShadow = false;
   addMesh(add.dark, DARK());
   addMesh(add.metal, METAL());
   addMesh(add.glass, GLASS());
@@ -826,7 +892,7 @@ export function buildPlane(type, team = 'blue', paint = type) {
   if (add.belly.length) addMesh(add.belly, mat(sh.belly));
 
   // Rear gun on its pivot.
-  let rear = null, rearSpin = null;
+  let rear = null, rearSpin = null, otherSpin = null;
   if (spec.rear) {
     const [dx, dy, dz] = spec.door;
     rear = new THREE.Group();
@@ -836,6 +902,7 @@ export function buildPlane(type, team = 'blue', paint = type) {
     const minigun = buildMinigun(dx ? 1.5 : 3.2); // a top turret is a far heavier gun
     rear.add(minigun.group);
     rearSpin = minigun.spin;
+    otherSpin = otherGun?.spin ?? null;
     group.add(rear);
     // The arm that holds the gun out of the door.
     if (dx) group.add(new THREE.Mesh(merged([box(Math.abs(dx), 0.07, 0.09, dx / 2, dy - 0.26, dz), box(0.07, 0.3, 0.07, dx, dy - 0.14, dz)]), METAL()));
@@ -849,20 +916,24 @@ export function buildPlane(type, team = 'blue', paint = type) {
   for (const side of [-1, 1]) {
     colors.forEach((c, i) => {
       const r = (sh.markR ?? 0.75) * (1 - i * 0.34);
-      const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, (sh.markT ?? 0.3) + i * 0.03, 12), mat(c));
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, (sh.markT ?? 0.3) + i * 0.03, sh.markSegs ?? 12), mat(c));
       disc.position.set(side * (sh.discX ?? mx), my, sh.markZ ?? 0.2);
+      disc.rotation.z = -side * (sh.markRoll ?? 0);
       group.add(disc);
     });
   }
   if (sh.finFlash) group.add(new THREE.Mesh(box(sh.finFlash[2] ?? 0.17, sh.finFlash[3] ?? 0.5, sh.finFlash[4] ?? 1.3, 0, sh.finFlash[0], sh.finFlash[1]), mat(mark)));
-  const bar = new THREE.Mesh(box(0.05, 0.5, 1.1, 0, (sh.fuse[3][3] ?? 0) + 0.1, sh.fuse[4][0] * 0.8), mat(mark));
-  bar.scale.x = (sh.fuse[4][1] ?? 1) / 0.05 * 1.02;
-  group.add(bar);
+  if (sh.teamMark) group.add(new THREE.Mesh(sh.teamMark(), mat(mark)));
+  if (!sh.noBar) {
+    const bar = new THREE.Mesh(box(0.05, 0.5, 1.1, 0, (sh.fuse[3][3] ?? 0) + 0.1, sh.fuse[4][0] * 0.8), mat(mark));
+    bar.scale.x = (sh.fuse[4][1] ?? 1) / 0.05 * 1.02;
+    group.add(bar);
+  }
 
   // Fog would fade it into the haze however large it is, so it stays out of the fog.
   if (spec.seeFar) group.traverse((o) => o.isMesh && (o.material = clearOfFog(o.material)));
 
-  return { group, props, rear, rearSpin, engineZ, engineX, cockpitY: sh.cockpitY, spec, type, turret: null, flame, shadowShape: type === 'leviathan' ? wingShadow(spec) : null };
+  return { group, props, rear, rearSpin, otherSpin, foldingGear, engineZ, engineX, cockpitY: sh.cockpitY, spec, type, turret: null, flame, shadowShape: type === 'leviathan' ? wingShadow(spec) : null };
 }
 
 const fogFree = new Map();
@@ -883,8 +954,8 @@ function clearOfFog(material) {
 // The Leviathan's outline as a flat dark shape to lay on the ground under it.
 function wingShadow(spec) {
   const w = spec.size.width / 2;
-  const half = [[8, 36], [14.5, 28], [14.5, 14], [28, 2], [w, -17], [w, -26], [24, -10], [31, -21], [31, -28], [8, -26], [1, -34]];
-  const outline = new THREE.Shape([[3, 26], ...half, [0, -35], ...half.map(([x, z]) => [-x, z]).reverse(), [-3, 26]].map(([x, z]) => new THREE.Vector2(x, z)));
+  const half = [[2.2, 34], [2.9, 20], [2.9, 5], [w, -24], [w, -28], [12, -9.5], [2.9, -9.5], [2, -21], [12, -30.5], [12, -34.5], [0.6, -35]];
+  const outline = new THREE.Shape([[0.5, 36], ...half, [0, -36], ...half.map(([x, z]) => [-x, z]).reverse(), [-0.5, 36]].map(([x, z]) => new THREE.Vector2(x, z)));
   const g = new THREE.ShapeGeometry(outline).rotateX(Math.PI / 2);
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
   m.rotation.order = 'YXZ';

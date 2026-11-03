@@ -261,6 +261,7 @@ export class Match {
     }
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
     if (import.meta.env?.DEV && msg.t === 'debugElite') return this.planes.spawnElites();
+    if (import.meta.env?.DEV && msg.t === 'debugAa') return void (t.aaClock = msg.clock);
     if (import.meta.env?.DEV && msg.t === 'debugWave' && this.fort) {
       if (this.fort.phase === 'break') this.fort.until = this.time;
       else for (const u of this.fort.alive) this.damage(u, 1e6, { owner: 0 });
@@ -710,7 +711,7 @@ export class Match {
     if (w.kind === 'autocannon') {
       if (t.mag === 0 && t.reload === 0) t.mag = w.magazine;
       if (t.trigger.main && t.reload === 0 && t.fireCd === 0 && t.mag > 0) {
-        this.fire(t, { kind: 'ac', damage: w.damage, speed: w.speed, splash: w.splash, splashDamage: w.damage * 0.3, spread: w.spread });
+        this.fire(t, { kind: 'ac', damage: w.damage, speed: w.speed, splash: w.splash, splashDamage: w.damage * 0.3, spread: w.spread, airMul: w.airMul, fuse: w.fuse });
         t.mag--;
         t.fireCd = w.fireInterval;
         if (t.mag === 0) t.reload = w.reload;
@@ -781,6 +782,7 @@ export class Match {
       vy: r2(proj.vy),
       vz: r2(proj.vz),
       ...(p.air ? { air: 1 } : {}),
+      ...(p.turret != null ? { tur: p.turret } : {}),
       ...(proj.b ? { coast: p.coast, b: proj.b } : {}),
     });
   }
@@ -847,6 +849,8 @@ export class Match {
         this.impact(p, hit);
         continue;
       }
+      // A flak shell bursts beside any aircraft it passes.
+      if (p.fuse && this.planes.flakFuse(p, x0, y0, z0, x1 - x0, y1 - y0, z1 - z0)) continue;
       p.x = x1;
       p.y = y1;
       p.z = z1;
@@ -861,7 +865,7 @@ export class Match {
     let best = null;
 
     for (const u of this.units) {
-      if (u.dead || u.id === p.owner) continue;
+      if (u.dead || u.id === p.owner || (p.turret != null && u.team === p.team)) continue;
       if (u.kind === 'plane' && p.kind !== 'bomb') {
         const ax = u.x - x0, ay = u.y - y0, az = u.z - z0;
         const ta = Math.max(0, Math.min(1, (ax * dx + ay * dy + az * dz) / (len * len)));
@@ -885,7 +889,7 @@ export class Match {
       if (h && (!best || h.t < best.t)) best = h;
     }
 
-    for (const pr of propsNear(x0 + dx / 2, z0 + dz / 2, len / 2 + 12)) {
+    if (p.turret == null) for (const pr of propsNear(x0 + dx / 2, z0 + dz / 2, len / 2 + 12)) {
       if (!pr.solid || this.propDead.has(pr.id)) continue;
       const t = segmentHitsProp(pr, x0, y0, z0, dx, dy, dz);
       if (t !== null && (!best || t < best.t)) best = { t, x: x0 + dx * t, y: y0 + dy * t, z: z0 + dz * t, prop: pr, surface: 'prop' };
@@ -963,7 +967,7 @@ export class Match {
       ev.u = u.id;
       if (u.kind === 'plane') {
         const smallArms = p.kind === 'mg' || p.kind === 'rifle' ? u.spec.smallArms ?? 1 : 1;
-        const dmg = p.damage * u.spec.armor.side * smallArms;
+        const dmg = p.damage * u.spec.armor.side * smallArms * (p.airMul ?? 1);
         ev.dmg = Math.round(dmg);
         u.lastHitBy = p.owner;
         this.planes.damageZone(u, hit.zone, dmg);
@@ -1176,7 +1180,7 @@ export class Match {
       ping: c.ping && { id: c.ping.id, x: r2(c.ping.x), z: r2(c.ping.z), age: r2(this.time - c.ping.t0) },
       pingCd: r2(Math.max(0, c.pingReadyAt - this.time)),
       crew: this.crewSnapshot(c),
-      ...(t.kind === 'plane' ? { pl: { y: r2(t.y), th: r2(t.throttle), fuel: r2(t.fuel), bombs: t.bombs, rockets: t.rockets, ammo: Math.round(t.ammo), rear: Math.round(t.rearAmmo), stall: t.stall, ground: t.grounded, edge: t.warnEdge, low: t.warnLow, six: t.six, vy: r2(t.vy), ab: t.ab } } : {}),
+      ...(t.kind === 'plane' ? { pl: { y: r2(t.y), th: r2(t.throttle), fuel: r2(t.fuel), bombs: t.bombs, rockets: t.rockets, ammo: Math.round(t.ammo), rear: Math.round(t.rearAmmo), stall: t.stall, ground: t.grounded, edge: t.warnEdge, low: t.warnLow, six: t.six, vy: r2(t.vy), ab: t.ab, aa: r2(t.aaWarn ?? 0) } } : {}),
     };
   }
 

@@ -1,3 +1,4 @@
+import { AaGuns } from './aaGuns.js';
 import * as THREE from 'three';
 import { TANKS, UNITS, FOOT } from '../../../shared/constants.js';
 import { PLANES } from '../../../shared/planes.js';
@@ -128,7 +129,7 @@ export class MatchClient {
     if (this.war) this.war.sound = this.sound;
     this.distantT = 3;
     this.lastReload = 0;
-    showTutorial(planeSpec ? (role === 'solo' ? 'planeSolo' : role === 'gunner' ? (planeSpec.operator ? 'planeOperator' : 'planeGunner') : 'pilot') : role, this.hud);
+    showTutorial(planeSpec ? (role === 'gunner' ? (planeSpec.operator ? 'planeOperator' : 'planeGunner') : planeSpec.heli ? (role === 'solo' ? 'heliSolo' : 'heliPilot') : role === 'solo' ? 'planeSolo' : 'pilot') : role, this.hud);
 
     // Tank destroyed: both crew members choose between waiting for a tank and bailing out.
     this.choiceEl = document.createElement('div');
@@ -194,6 +195,7 @@ export class MatchClient {
     this.units.paintFor = (u) => (this.solo && u.crew === this.crew.id && u.player ? this.info.paint : null);
     this.fx = new FX(this.world.scene);
     this.props = new PropsView(this.world.scene);
+    this.aaGuns = new AaGuns(this.world.scene);
     if (import.meta.env.DEV) checkStructures();
     this.tracks = new TrackMarks(this.world.scene, this.fx);
     this.ambient = new AmbientWar(this.world.scene);
@@ -430,6 +432,7 @@ export class MatchClient {
     this.units?.onEvent(ev, this.buffer.latest?.units ?? new Map());
     switch (ev.k) {
       case 'f': {
+        if (ev.tur != null) this.aaGuns?.onShot(ev);
         // Our own soldier's shots already played locally.
         // A dropped rocket is silent until its motor lights.
         if (!ev.coast && !(this.view.isFoot && ev.o === this.view.myId)) this.sound.shot(ev.kind, ev, ev.o === myId);
@@ -830,6 +833,7 @@ export class MatchClient {
       this.tracks.update(dt, states, cam);
       this.ambient.update(dt, cam);
       this.war.update(dt, cam);
+      this.aaGuns.update(dt);
     }
     this.keys.endFrame();
   }
@@ -859,6 +863,7 @@ export class MatchClient {
     this.fx?.dispose();
     this.ambient?.dispose();
     this.war?.dispose();
+    this.aaGuns?.dispose();
     this.sound.dispose();
     this.feed.remove();
     this.edgeEl.remove();

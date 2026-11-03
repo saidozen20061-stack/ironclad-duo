@@ -296,6 +296,54 @@ function buildTwin(c) {
   return { group, turret, gun, muzzle, stripe: [0.72, -0.96] };
 }
 
+// Anti-air tank: a low armoured turret, and two very long guns that end in a small T.
+function buildFlak(c) {
+  const group = new THREE.Group();
+  const L = 6.6, W = 3.3;
+  tracks(group, L, W, 0.6, 0.85, 6, c);
+  const hull = hullShape(L * 0.97, 0.95, 1.5, 0.6, W - 1.2, mat(c.hull));
+  hull.position.y = 0.58;
+  group.add(hull);
+  group.add(box(1.5, 0.22, 1, mat(c.dark), 0, 1.58, -2.3)); // engine deck
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.6, -0.3);
+  const ring = cyl(1.25, 1.42, 0.5, 8, mat(c.hull));
+  ring.position.y = 0.25;
+  turret.add(ring);
+  turret.add(box(1.3, 0.75, 1.1, mat(c.hull), 0, 0.82, -0.5)); // crew box
+  for (const s of [-1, 1]) turret.add(box(0.14, 1.05, 1.6, mat(c.hull), s * 1.02, 0.95, 0.15)); // the guns' side plates
+  const radar = cyl(0.42, 0.42, 0.05, 10, mat(c.dark)); // tracking radar on the back of the turret
+  radar.rotation.x = 1.15;
+  radar.position.set(0, 1.62, -0.95);
+  turret.add(radar);
+  turret.add(box(0.07, 0.42, 0.07, mat(c.dark), 0, 1.36, -0.95));
+  const gun = new THREE.Group();
+  gun.position.set(0, 0.6, 0.55);
+  gun.add(box(1.5, 0.5, 1.2, mat(c.dark), 0, 0, 0)); // the breeches, side by side
+  let muzzle = null;
+  for (const x of [-0.46, 0.46]) {
+    const tube = cyl(0.075, 0.1, 6.9, 10, mat(c.dark));
+    tube.rotation.x = Math.PI / 2;
+    tube.position.set(x, 0, 3.45);
+    gun.add(tube);
+    // Recoil sleeve, then the long barrel ending in the small crossbar of the T.
+    const sleeve = cyl(0.14, 0.16, 1.5, 10, mat(c.dark));
+    sleeve.rotation.x = Math.PI / 2;
+    sleeve.position.set(x, 0, 1.2);
+    gun.add(sleeve);
+    const cross = cyl(0.11, 0.11, 0.72, 10, mat(0x23241f));
+    cross.rotation.z = Math.PI / 2;
+    cross.position.set(x, 0, 6.9);
+    gun.add(cross);
+    muzzle ??= new THREE.Object3D();
+  }
+  muzzle.position.z = 6.9;
+  gun.add(muzzle);
+  turret.add(gun);
+  group.add(turret);
+  return { group, turret, gun, muzzle, stripe: [0.74, -1.06] };
+}
+
 // Assault howitzer: slab-sided box turret, very short fat barrel with a big brake.
 function buildAssault(c) {
   const group = new THREE.Group();
@@ -370,6 +418,7 @@ const BUILDERS = {
   aa: buildTwin,
   assault: buildAssault,
   superheavy: buildSuperheavy,
+  flak: buildFlak,
 };
 
 // Collapse each pivot's (hull / turret / gun) static parts into one mesh per material.

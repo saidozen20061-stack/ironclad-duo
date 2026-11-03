@@ -301,7 +301,7 @@ export class ArmyAI {
 
   spawnTank(team) {
     // Weighted mix of every tank class; the big ones are rarer.
-    const mix = [['light', 18], ['medium', 26], ['heavy', 12], ['scout', 10], ['wheeled', 10], ['destroyer', 9], ['aa', 8], ['assault', 5], ['superheavy', 2]];
+    const mix = [['light', 18], ['medium', 26], ['heavy', 12], ['scout', 10], ['wheeled', 10], ['destroyer', 9], ['aa', 8], ['flak', 5], ['assault', 5], ['superheavy', 2]];
     let r = Math.random() * mix.reduce((a, [, w]) => a + w, 0);
     let type = 'medium';
     for (const [id, w] of mix) if ((r -= w) <= 0) {
@@ -323,7 +323,7 @@ export class ArmyAI {
     for (const e of m.units) {
       if (e.dead || e.team === u.team) continue;
       // Only flak tanks go after planes; everyone else leaves the sky alone.
-      if (e.kind === 'plane' && !(u.type === 'aa' && !e.grounded)) continue;
+      if (e.kind === 'plane' && !((u.type === 'aa' || u.spec?.antiAir) && !e.grounded)) continue;
       const d = Math.hypot(e.x - ux, e.z - uz);
       const shotAtUs = this.alerted(u, e);
       if (d > range && !shotAtUs) continue;

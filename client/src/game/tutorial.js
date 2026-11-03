@@ -19,6 +19,16 @@ const hints = () => ({
     'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
     `About to go down? ${K('plane.bail')} bails both of you out with parachutes.`,
   ],
+  heliPilot: [
+    `You are the PILOT of a helicopter. ${K('plane.more')} lifts off and rises, ${K('plane.less')} sinks. Let go of everything and it hangs still in the air.`,
+    `${K('plane.up')}/${K('plane.down')} go forward and back, ${K('plane.left')}/${K('plane.right')} sideways, all at once and very sharply. The mouse turns the nose and aims, ${K('plane.fire')} fires your side minigun. Your gunner has the other one.`,
+    `Set it down on your own helipad or airfield to repair, refuel and rearm. ${K('plane.bail')} bails out. Stay out of the enemy half for long: after two minutes their AA turrets open up.`,
+  ],
+  heliSolo: [
+    `SOLO HELICOPTER: ${K('plane.more')} lifts off and rises, ${K('plane.less')} sinks. Let go of everything and it hangs still in the air.`,
+    `${K('plane.up')}/${K('plane.down')} go forward and back, ${K('plane.left')}/${K('plane.right')} sideways, all at once and very sharply. The mouse turns the nose and aims, ${K('plane.fire')} fires both side miniguns.`,
+    `Set it down on your own helipad or airfield to repair, refuel and rearm. ${K('plane.bail')} bails out. Stay out of the enemy half for long: after two minutes their AA turrets open up.`,
+  ],
   planeGunner: [
     `You are the SIDE GUNNER on the door minigun. Mouse turns the gun anywhere except straight up, ${K('door.fire')} fires. Call out enemies on your six!`,
     `On bombers, ${K('door.sight')} switches to the bomb sight looking straight down: ${K('door.fire')} drops, and tell the pilot to steer.`,

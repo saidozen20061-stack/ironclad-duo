@@ -14,6 +14,7 @@ export const PAINT = {
   aa: { name: 'Winter wash', colors: [0xd6d8d2, 0x5d6a45, 0x8d8f86], draw: winter },
   assault: { name: 'Urban splinter', colors: [0x9a9d9a, 0x60706a, 0xc4c5be, 0x3e4242], draw: splinter },
   superheavy: { name: 'Two-tone bands', colors: [0x3f4d2e, 0x5f6c3f, 0x2d3822], draw: bands },
+  flak: { name: 'Grey splinter', colors: [0x7c8078, 0x4c504a, 0x9a9c92, 0x35382f], draw: splinter },
   // Planes
   stuka: { name: 'Splinter', colors: [0x4a5540, 0x2f3a2c, 0x62705a, 0x3d4737], draw: splinter, plane: true },
   sturmovik: { name: 'Green and black', colors: [0x4c5d38, 0x1f2219, 0x3b4a2c], draw: blobs3, plane: true },
@@ -25,8 +26,9 @@ export const PAINT = {
   mustang: { name: 'Polished silver', colors: [0xbcc0c2, 0xa8acae, 0xcdd0d0], draw: plain, plane: true },
   spitfire: { name: 'Green and brown', colors: [0x56613e, 0x6e5a3a, 0x4c5636], draw: blobs3, plane: true },
   messer: { name: 'Luftwaffe grey', colors: [0x7f8a8c, 0x5f6a6c, 0x8e9698, 0x6e787a], draw: spots, plane: true },
-  leviathan: { name: 'Doomship crimson', colors: [0x7e1c1c, 0x701718, 0x8c2222], draw: plain, plane: true, for: 'leviathan' },
-  escort: { name: 'Doomship crimson', colors: [0xb02a22, 0x9c221e, 0xc03428], draw: plain, plane: true, for: 'escort' },
+  leviathan: { name: 'Strategic grey', colors: [0x6a7686, 0x647080, 0x707c8c], draw: plain, plane: true, for: 'leviathan' },
+  escort: { name: 'Strategic grey', colors: [0x6a7686, 0x647080, 0x707c8c], draw: plain, plane: true, for: 'escort' },
+  heli: { name: 'Army olive', colors: [0x5d6b4c, 0x566446, 0x647254], draw: plain, plane: true, for: 'heli' },
   f16: { name: 'Fighter grey', colors: [0x8b9198, 0x7a8087, 0x969ca3], draw: plain, plane: true, for: 'f16' },
   wraith: { name: 'Stealth black', colors: [0x1d1f23, 0x191b1e, 0x212327], draw: plain, plane: true, for: 'wraith' },
 };

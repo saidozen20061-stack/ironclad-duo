@@ -260,7 +260,9 @@ export class UnitsView {
       // The barrels whirl for a moment after every burst.
       m.gunSpin = Math.max(0, (m.gunSpin ?? 0) - dt * 1.5);
       m.handles.rearSpin.rotation.z += m.gunSpin * 40 * dt;
+      if (m.handles.otherSpin) m.handles.otherSpin.rotation.z += m.gunSpin * 40 * dt;
     }
+    if (m.handles.foldingGear) m.handles.foldingGear.visible = u.y - Math.max(groundAt(u.x, u.z), WATER_LEVEL) < PLANES[u.type].gearH + 12;
     if (m.handles.flame) {
       m.handles.flame.visible = u.ab && !u.dead;
       if (u.ab) m.handles.flame.scale.z = 0.8 + Math.random() * 0.5;

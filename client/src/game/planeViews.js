@@ -104,6 +104,15 @@ const COCKPITS = {
     k.add(k.box(0.26, 0.05, 0.04), k.flat(0xe2b420), 0, -0.58, -0.08);
     k.add(k.box(1.3, 0.8, 0.08), k.paint, 0, -0.4, 0.7);
   } },
+  heli: { modern: true, paint: 0x2f3530, floor: 0x262a26, tint: '#7dff9a', narrow: true, extra: (k) => {
+    // A narrow tandem cockpit: two green screens, a collective on the left and a cyclic between the knees.
+    for (const s of [-1, 1]) {
+      k.add(k.box(0.26, 0.22, 0.03), k.glow(0x123a24), s * 0.34, -0.2, -0.74);
+      for (const y of [-0.26, -0.2, -0.14]) k.add(k.box(0.2, 0.012, 0.005), k.glow(0x7dff9a), s * 0.34, y, -0.72);
+    }
+    k.add(new THREE.CylinderGeometry(0.02, 0.025, 0.42, 6), k.dark, 0, -0.56, -0.38, 0.15);
+    k.add(k.box(0.05, 0.04, 0.42), k.dark, -0.42, -0.62, -0.22, 0.3);
+  } },
   wraith: { modern: true, paint: 0x17181b, floor: 0x121316, wide: 1.5, seat2: 0x1f2024, narrow: true, tint: '#ffb23c', extra: (k) => {
     // Black, wide and windowless but for two small panes, with a wall of amber screens.
     for (const x of [-1.05, -0.62, 0.62, 1.05]) {
@@ -282,7 +291,8 @@ function heightAboveGround(self, pl, spec) {
   return Math.max(0, (pl.y ?? 0) - Math.max(groundAt(self.x, self.z), WATER_LEVEL) - spec.gearH);
 }
 
-function flightHint() {
+function flightHint(spec) {
+  if (spec?.heli) return `${keyName('plane.up')}/${keyName('plane.down')} forward/back · ${keyName('plane.left')}/${keyName('plane.right')} sideways · ${keyName('plane.more')} rise · ${keyName('plane.less')} sink · Mouse turns and aims · ${keyName('plane.fire')} miniguns`;
   return `${keyName('plane.up')} up · ${keyName('plane.down')} down · ${keyName('plane.left')}/${keyName('plane.right')} turn · ${keyName('plane.more')}/${keyName('plane.less')} throttle · Mouse aims guns · ${keyName('plane.fire')} guns · ${keyName('plane.bomb')} bombs · ${keyName('plane.rocket')} rockets`;
 }
 
@@ -438,6 +448,13 @@ class PlaneBase extends GunnerView {
   // The view turns along with the plane, and the mouse looks around from there. C looks ahead again.
   followPlane(self) {
     const a = this.aim;
+    // A helicopter's nose turns to the view, not the other way round.
+    if (this.plane.heli) {
+      if (!a.initialised) a.yaw = self.h;
+      if (!a.initialised || this.keys.hit('plane.ahead')) a.pitch = 0;
+      a.initialised = true;
+      return;
+    }
     if (!a.initialised || this.keys.hit('plane.ahead')) {
       a.yaw = self.h;
       a.pitch = self.gp;
@@ -479,6 +496,19 @@ class PlaneBase extends GunnerView {
     const look = this.camera.getWorldDirection(_v);
     const reach = this.raycast(this.camera.position, look, this.states, me.id) ?? AIM_FAR;
     const gun = _v2.copy(look).multiplyScalar(reach).add(this.camera.position).sub(_v3.set(self.x, self.y, self.z)).normalize();
+    if (this.plane.heli) {
+      this.sendFly({
+        t: 'fly',
+        th: (k.on('plane.more') ? 1 : 0) - (k.on('plane.less') ? 1 : 0),
+        pitch: (k.on('plane.up') ? 1 : 0) - (k.on('plane.down') ? 1 : 0),
+        roll: turn,
+        yaw: 0,
+        face: +this.aim.yaw.toFixed(3),
+        gun: [+gun.x.toFixed(3), +gun.y.toFixed(3), +gun.z.toFixed(3)],
+        fire: !!this.mouseBtn.left,
+      });
+      return;
+    }
     this.sendFly({
       t: 'fly',
       th: up,
@@ -609,7 +639,8 @@ class PlaneBase extends GunnerView {
       $('.p-mods').innerHTML = Object.entries(me.mods ?? {}).map(([k, v]) => `<i class="${v <= 0 ? 'dead' : v < 0.5 ? 'dmg' : ''}">${MODS[k] ?? k}</i>`).join('');
     }
     // Warnings, worst first.
-    const w = me.dead ? '' : pl.stall ? 'STALL!' : pl.low ? 'PULL UP!' : pl.edge ? 'RETURN TO BATTLE' : pl.six ? 'ENEMY ON OUR SIX!' : pl.y > FLIGHT.maxAlt - 30 ? 'TOO HIGH' : '';
+    const aa = pl.aa ?? 0;
+    const w = me.dead ? '' : pl.stall ? 'STALL!' : pl.low ? 'PULL UP!' : aa < 0 ? 'ENEMY AA TURRETS FIRING! GET OUT OF THEIR HALF' : pl.edge ? 'RETURN TO BATTLE' : pl.six ? 'ENEMY ON OUR SIX!' : aa > 0 ? `ENEMY AA TURRETS IN ${Math.ceil(aa)}s` : pl.y > FLIGHT.maxAlt - 30 ? 'TOO HIGH' : '';
     const warnEl = $('.p-warn');
     if (warnEl.textContent !== w) warnEl.textContent = w;
     warnEl.classList.toggle('show', !!w);
@@ -706,7 +737,7 @@ export class PilotView extends PlaneBase {
   }
 
   refreshHints() {
-    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('plane.view')} 1st/3rd person · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
+    this.$('.p-hint').textContent = `${flightHint(this.plane)} · ${keyName('plane.view')} 1st/3rd person · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
   }
 
   update(dt, states, me) {
@@ -921,7 +952,7 @@ export class PlaneSoloView extends PlaneBase {
   }
 
   refreshHints() {
-    this.$('.p-hint').textContent = `${flightHint()} · ${keyName('plane.view')} 1st/3rd person · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
+    this.$('.p-hint').textContent = `${flightHint(this.plane)} · ${keyName('plane.view')} 1st/3rd person · ${keyName('plane.ahead')} look ahead · ${keyName('plane.bail')} bail out`;
   }
 
   update(dt, states, me) {

@@ -86,16 +86,16 @@ export const PLANES = {
     stats: { speed: 5, armor: 2, firepower: 4, agility: 4 },
   },
   leviathan: {
-    id: 'leviathan', name: 'Leviathan', class: 'Flying Fortress', inspired: 'Bloons TD 6 Goliath Doomship', seats: 2, engines: 4,
-    blurb: 'A colossal crimson doomship with two wings joined by four long engines, slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
+    id: 'leviathan', name: 'Leviathan', class: 'Strategic Bomber', inspired: 'US B-52 Stratofortress', seats: 2, engines: 4,
+    blurb: 'A colossal grey bomber with eight jets in four pods, huge drooping wings and three small fighters at its side. Slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
     hp: 7000, maxSpeed: 42, minSpeed: 18, accel: 14, roll: 0.35, pitch: 0.2, yaw: 0.08, drag: 0.8,
-    armor: { front: 0.6, side: 0.6, rear: 0.6 }, size: { length: 72, width: 82, height: 14 }, gearH: 7.5,
+    armor: { front: 0.6, side: 0.6, rear: 0.6 }, size: { length: 72, width: 82, height: 14 }, gearH: 6,
     guns: gun('2× .50 cal MG', 15, 0.1, 0.024),
     rear: { damage: 46, interval: 0.16, spread: 0.007, speed: 420, ammo: 700, kind: 'ac', splash: 2, splashDamage: 16, up: 0.98, down: -0.3 },
-    bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 8, sightY: 9.5 },
+    bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 6.5, sightY: 7 },
     rockets: { x: 10 },
     engineSound: 'drone', seeFar: true, escorts: 3, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
-    hitBox: { hull: [14.5, 8.5], wing: [-31, 15, 3], wingY: 3.8 },
+    hitBox: { hull: [3.2, 4.4], wing: [-28, 7, 3.6], wingY: 0.2 },
     stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
   },
   f16: {
@@ -110,13 +110,28 @@ export const PLANES = {
   },
   // Flies with a Leviathan; nobody can pick it.
   escort: {
-    id: 'escort', name: 'Imp', class: 'Escort Fighter', inspired: 'Bloons TD 6 Goliath Doomship', seats: 1, engines: 1, npcOnly: true,
+    id: 'escort', name: 'Imp', class: 'Escort Fighter', seats: 1, engines: 1, npcOnly: true,
     blurb: 'A small fighter that guards a Leviathan.',
     hp: 260, maxSpeed: 92, minSpeed: 24, accel: 26, roll: 2.2, pitch: 1.05, yaw: 0.42, drag: 0.8,
-    armor: { front: 1, side: 1.05, rear: 1.1 }, size: { length: 9, width: 11, height: 3.2 }, gearH: 1.6,
+    armor: { front: 1, side: 1.05, rear: 1.1 }, size: { length: 10.2, width: 11, height: 3.2 }, gearH: 1.6,
     guns: gun('2× 20mm Cannon', 13, 0.12, 0.022, 'ac', 680, 900), rear: null,
     rockets: { count: 0 },
     engineSound: 'inline', stats: { speed: 4, armor: 1, firepower: 2, agility: 4 },
+  },
+  // No runway and no stalling: it goes where the keys say, at once, and hangs still when they're let go.
+  heli: {
+    id: 'heli', name: 'Kestrel', class: 'Attack Helicopter', inspired: 'US AH-1 Cobra', seats: 2, engines: 1,
+    blurb: 'Hovers, stops dead and darts sideways. A minigun on each side: both for one pilot, one each for a duo. Very little armour.',
+    hp: 440, maxSpeed: 110, minSpeed: 0, accel: 40, roll: 1, pitch: 1, yaw: 1, drag: 0.8,
+    armor: { front: 1, side: 1.05, rear: 1.1 }, size: { length: 15, width: 5.4, height: 4.2 }, gearH: 2.2,
+    heli: { accel: 58, climb: 26, climbAccel: 60, turn: 3.4, tilt: 0.42, lean: 0.55, side: 0.75, back: 0.6, downAfterEngine: 11 },
+    gunX: 2.3,
+    guns: gun('2× Side Miniguns', 13, 0.05, 0.012, 'mg', 620, 2400),
+    rear: { damage: 13, interval: 0.1, spread: 0.014, speed: 420, ammo: 1200, noAuto: true },
+    rockets: { count: 0 },
+    hitBox: { hull: [1.1, 1.6], wing: [-1, 1.5, 0.5], wingY: 0 },
+    engineSound: 'rotor',
+    stats: { speed: 3, armor: 1, firepower: 3, agility: 5 },
   },
   wraith: {
     id: 'wraith', name: 'Wraith', class: 'Stealth Bomber', inspired: 'US B-2 Spirit', seats: 2, engines: 2,
@@ -132,7 +147,7 @@ export const PLANES = {
   },
 };
 // Where the side gun is mounted: right side of the fuselage, behind the wing (x, y, z).
-const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 12.4, -6] };
+const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 5.6, -12], heli: [-2.3, -0.3, 0.35] };
 // Highest the side gun can point above the plane's own wings: it fires everywhere but up.
 export const SIDE_GUN_MAX_UP = 0.64; // sine of the angle
 
@@ -181,6 +196,18 @@ export const PLANE_IDS = ALL_PLANE_IDS.filter((id) => !PLANES[id].npcOnly); // t
 export const engineZones = (n) => Array.from({ length: n }, (_, i) => (i ? `engine${i + 1}` : 'engine'));
 export const COOP_PLANE_IDS = PLANE_IDS.filter((id) => PLANES[id].seats === 2);
 export const isPlane = (type) => !!PLANES[type];
+
+// The anti-air turrets that guard each side's half of the map. An enemy aircraft in the half long
+// enough brings them down on it, and they fire nonstop until it dies or leaves. Time spent away only
+// wipes the clock once it adds up to `forget` seconds in one go.
+export const AA_TURRETS = {
+  after: 120, // s inside the half before they open fire
+  forget: 10, // s away in one go before the clock starts again
+  warn: 20, // s of warning for the crew before they open fire
+  interval: 0.25, // s between shots
+  range: 1150, // m
+  shell: { kind: 'ac', damage: 20, speed: 640, splash: 0, splashDamage: 0, spread: 0.006, fuse: 7 },
+};
 
 export const FLIGHT = {
   maxAlt: 480, // m above the map's zero: the air gets too thin above this

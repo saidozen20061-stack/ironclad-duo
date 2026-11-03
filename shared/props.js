@@ -61,6 +61,8 @@ export const PROP_TYPES = {
   ctower: { solid: true, hp: Infinity, cover: true },
   windsock: { solid: false, hp: Infinity },
   aagun: { solid: true, hp: Infinity, cover: true },
+  aaturret: { solid: true, hp: Infinity, cover: true },
+  helipad: { solid: false, hp: Infinity },
   // Fortress Defence (only placed in that mode, see setFortress)
   fwall: { solid: true, hp: 2200, cover: true },
   fgate: { solid: true, hp: 1400, cover: true, navOpen: true },
@@ -204,6 +206,18 @@ for (const f of Object.values(AIRFIELDS)) {
   add('truck', x + 128, z + s * (width / 2 + 16), -0.3, 2.4, 6.5, 2.6, { team });
   add('fueltank', x + 150, z + s * (width / 2 + 24), Math.PI / 2, 4.6, 9, 4.6);
   for (const [dx, dz] of [[-len / 2 - 8, width / 2 + 14], [len / 2 + 6, width / 2 + 14], [130, -width / 2 - 14]]) add('aagun', x + dx, z + s * dz, 0, 4, 4, 2.6, { team });
+  // Two pads for helicopters, past the small hangars.
+  for (const k of [0, 1]) add('helipad', x - 174, z + s * (width / 2 + 26 + k * 28), 0, 20, 20, 0.1, { team });
+}
+
+// The heavy anti-air turrets guarding each side's half of the map (see AA_TURRETS).
+for (const team of ['blue', 'red']) {
+  const s = team === 'blue' ? -1 : 1;
+  for (const [x, z] of [[-150, 560], [150, 560], [560, 470], [-150, 310], [150, 300]]) {
+    // Red's half is blue's turned round, so each side's runway and base stay clear.
+    const q = team === 'blue' ? 1 : -1;
+    add('aaturret', q * x, s * z, 0, 7, 7, 3.4, { team });
+  }
 }
 
 // Flak around the bases and capture points (point guns belong to whoever holds the point).

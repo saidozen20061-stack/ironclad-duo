@@ -536,6 +536,26 @@ const builders = {
     for (const [x, z] of [[-1, -0.9], [-0.55, -1.15], [1, -0.85]]) parts.push(box(C.olive, x, 0, z, 0.42, 0.3, 0.26));
     return parts;
   },
+  aaturret(p) {
+    // A round concrete emplacement with a pedestal; the gun on top is in aaGuns.js, it has to turn.
+    const parts = [part(CYL8, C.concrete, { y: 0.55, sx: p.w, sy: 1.1, sz: p.w })];
+    parts.push(part(CYL8, 0x6e6e64, { y: 1.2, sx: p.w * 0.72, sy: 0.25, sz: p.w * 0.72 }), part(CYL8, C.metal, { y: 2.2, sx: 1.5, sy: 1.8, sz: 1.5 }));
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.6;
+      parts.push(box(C.olive, Math.cos(a) * p.w * 0.36, 1.2, Math.sin(a) * p.w * 0.36, 0.9, 0.5, 0.6));
+    }
+    return parts;
+  },
+  helipad(p) {
+    // A concrete circle with a white ring and a big H.
+    const parts = [part(CYL8, 0x5b5a52, { y: 0.03, sx: p.w, sy: 0.08, sz: p.w })];
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2, R = p.w * 0.42;
+      parts.push(part(BOX, C.white, { x: Math.cos(a) * R, y: 0.09, z: Math.sin(a) * R, sx: 2.2, sy: 0.02, sz: 0.4, ry: -a + Math.PI / 2 }));
+    }
+    parts.push(box(C.white, -2, 0.08, 0, 1, 0.02, 7), box(C.white, 2, 0.08, 0, 1, 0.02, 7), box(C.white, 0, 0.08, 0, 4, 0.02, 1));
+    return parts;
+  },
   // ---------- Fortress Defence ----------
   fwall(p) {
     const { w, d, h } = p;
