@@ -436,7 +436,7 @@ class PlaneBase extends GunnerView {
     $('.p-th').style.width = `${(pl.th ?? 0) * 100}%`;
     $('.p-fuel').style.width = `${(pl.fuel ?? 0) * 100}%`;
     const s = this.plane;
-    $('.p-arms').innerHTML = `<span>GUN <b>${pl.ammo ?? 0}</b></span>${s.bombs ? `<span>BOMB <b>${pl.bombs ?? 0}</b></span>` : ''}${s.rockets ? `<span>RKT <b>${pl.rockets ?? 0}</b></span>` : ''}${s.rear ? `<span>MINIGUN <b>${pl.rear ?? 0}</b></span>` : ''}`;
+    $('.p-arms').innerHTML = `${s.guns.ammo ? `<span>GUN <b>${pl.ammo ?? 0}</b></span>` : ''}${s.bombs ? `<span>BOMB <b>${s.bombs.infinite ? '∞' : pl.bombs ?? 0}</b></span>` : ''}${s.rockets?.count ? `<span>RKT <b>${pl.rockets ?? 0}</b></span>` : ''}${s.rear ? `<span>MINIGUN <b>${pl.rear ?? 0}</b></span>` : ''}`;
     const modKey = JSON.stringify(me.mods);
     if (modKey !== this.lastMods) {
       this.lastMods = modKey;
@@ -563,7 +563,7 @@ export class PlaneGunnerView extends PlaneBase {
   constructor(opts) {
     super(opts);
     this.el.classList.add('rearg');
-    this.bombSight = false;
+    this.bombSight = !!this.plane.bombardier; // no gun in this seat: it's all bomb sight
     this.drift = 0;
     this.spin = 0;
     this.lastSend = { key: '', at: 0 };
@@ -593,6 +593,10 @@ export class PlaneGunnerView extends PlaneBase {
 
   refreshHints() {
     this.$('.g-pingcd b').textContent = keyName('door.ping');
+    if (this.plane.bombardier) {
+      this.$('.p-hint').textContent = `Bomb sight · ${keyName('door.fire')} drops · ${keyName('door.thermal')} thermal · ${keyName('door.ping')} ping · ${keyName('door.bail')} bail out`;
+      return;
+    }
     if (this.plane.operator) {
       this.$('.p-hint').textContent = `Mouse turns the camera · ${keyName('door.fire')} fires 2 rockets along the nose · ${keyName('door.thermal')} thermal · ${keyName('door.ping')} ping · ${keyName('door.bail')} bail out`;
       return;
@@ -652,7 +656,7 @@ export class PlaneGunnerView extends PlaneBase {
     const self = states.get(me.id);
     if (!self) return;
     if (this.plane.operator) return this.updateOperator(dt, self, me);
-    const topTurret = !this.plane.door[0];
+    const topTurret = !this.plane.door?.[0];
     if (!this.aim.initialised) {
       this.aim.yaw = topTurret ? self.h : self.h - Math.PI / 2; // ahead, or out of the door
       this.aim.pitch = topTurret ? 0.05 : -0.1;
@@ -663,7 +667,7 @@ export class PlaneGunnerView extends PlaneBase {
     if (!this.paused) {
       if (k.hit('door.ping')) this.onPing?.();
       if (k.hit('door.bail')) net.send({ t: 'jump' });
-      if (this.plane.bombs && k.hit('door.sight')) this.bombSight = !this.bombSight;
+      if (this.plane.bombs && !this.plane.bombardier && k.hit('door.sight')) this.bombSight = !this.bombSight;
     }
     const cam = this.camera;
     const [dx, dy, dz] = sideGunPos(this.tank);

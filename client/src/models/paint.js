@@ -25,6 +25,9 @@ export const PAINT = {
   mustang: { name: 'Polished silver', colors: [0xbcc0c2, 0xa8acae, 0xcdd0d0], draw: plain, plane: true },
   spitfire: { name: 'Green and brown', colors: [0x56613e, 0x6e5a3a, 0x4c5636], draw: blobs3, plane: true },
   messer: { name: 'Luftwaffe grey', colors: [0x7f8a8c, 0x5f6a6c, 0x8e9698, 0x6e787a], draw: spots, plane: true },
+  leviathan: { name: 'Transport grey', colors: [0x7b8288, 0x737a80, 0x83898f], draw: plain, plane: true, for: 'leviathan' },
+  f16: { name: 'Fighter grey', colors: [0x8b9198, 0x7a8087, 0x969ca3], draw: plain, plane: true, for: 'f16' },
+  wraith: { name: 'Stealth black', colors: [0x1d1f23, 0x191b1e, 0x212327], draw: plain, plane: true, for: 'wraith' },
 };
 
 const S = 256; // texture size in px

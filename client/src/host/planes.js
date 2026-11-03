@@ -97,9 +97,10 @@ export class Plane {
 // Where a body-space hit lands (x left, z forward).
 function zoneAt(p, lx, lz) {
   const s = p.spec.size;
-  // Six engines along the wing: which one depends on how far out the hit is.
+  // Several engines along the wing: which one depends on how far out the hit is.
   if (p.spec.engines > 2 && Math.abs(lx) > s.width * 0.1 && Math.abs(lx) < s.width * 0.42) {
-    const pair = Math.min(2, Math.floor(((Math.abs(lx) - s.width * 0.1) / (s.width * 0.32)) * 3));
+    const pairs = p.spec.engines / 2;
+    const pair = Math.min(pairs - 1, Math.floor(((Math.abs(lx) - s.width * 0.1) / (s.width * 0.32)) * pairs));
     if (Math.random() < 0.5) return engineZones(p.spec.engines)[pair * 2 + (lx > 0 ? 0 : 1)];
     return lx > 0 ? 'wingL' : 'wingR';
   }
@@ -453,7 +454,7 @@ export class PlaneSystem {
     // One bomb, or a salvo spread out across the bomb bays.
     for (const [side, along] of b.pattern ?? [[0, -0.5]]) {
       if (p.bombs <= 0) break;
-      p.bombs--;
+      if (!b.infinite) p.bombs--;
       const pos = new Vector3(p.x + c * side + f.x * along, p.y - (b.drop ?? 1.4), p.z - sn * side + f.z * along);
       this.m.fire(p, { kind: 'bomb', damage: b.damage, speed: Math.max(15, p.v), splash: b.splash, splashDamage: b.splashDamage, spread: b.spread * (p.ai ? this.m.skill.aim * 0.5 : 1), life: 14 }, pos, f);
     }
@@ -551,7 +552,7 @@ export class PlaneSystem {
     };
     const hb = p.spec.hitBox;
     const fus = hb ? box([-hb.hull[0], -hb.hull[1], -s.length / 2], [hb.hull[0], hb.hull[1], s.length / 2]) : box([-1, -1.1, -s.length / 2], [1, 1.1, s.length / 2]);
-    const wing = hb ? box([-s.width / 2, -hb.wing[2], hb.wing[0]], [s.width / 2, hb.wing[2], hb.wing[1]]) : box([-s.width / 2, -0.7, -1.2], [s.width / 2, 0.7, 1.8]);
+    const wing = hb ? box([-s.width / 2, hb.wingY - hb.wing[2], hb.wing[0]], [s.width / 2, hb.wingY + hb.wing[2], hb.wing[1]]) : box([-s.width / 2, -0.7, -1.2], [s.width / 2, 0.7, 1.8]);
     const t = fus === null ? wing : wing === null ? fus : Math.min(fus, wing);
     if (t === null) return null;
     const lx = o[0] + d[0] * t, lz = o[2] + d[2] * t;

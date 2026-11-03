@@ -86,15 +86,16 @@ export const PLANES = {
     stats: { speed: 5, armor: 2, firepower: 4, agility: 4 },
   },
   leviathan: {
-    id: 'leviathan', name: 'Leviathan', class: 'Flying Fortress', inspired: 'idea of a flying fortress', seats: 2, engines: 6,
-    blurb: 'A six-engine flying wing, slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
+    id: 'leviathan', name: 'Leviathan', class: 'Flying Fortress', inspired: 'Airbus A400M', seats: 2, engines: 4,
+    blurb: 'A colossal four-engine transport refitted as a flying fortress, slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
     hp: 7000, maxSpeed: 42, minSpeed: 18, accel: 14, roll: 0.35, pitch: 0.2, yaw: 0.08, drag: 0.8,
-    armor: { front: 0.6, side: 0.6, rear: 0.6 }, size: { length: 40, width: 82, height: 9 }, gearH: 6.5,
-    guns: gun('4× .50 cal MG', 15, 0.1, 0.024),
+    armor: { front: 0.6, side: 0.6, rear: 0.6 }, size: { length: 72, width: 82, height: 14 }, gearH: 7.5,
+    guns: gun('2× .50 cal MG', 15, 0.1, 0.024),
     rear: { damage: 46, interval: 0.16, spread: 0.007, speed: 420, ammo: 700, kind: 'ac', splash: 2, splashDamage: 16, up: 0.98, down: -0.3 },
-    bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 3.4, sightY: 7.2 },
+    bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 8, sightY: 9.5 },
+    rockets: { x: 10 },
     engineSound: 'drone', seeFar: true, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
-    hitBox: { hull: [8, 3.6], wing: [-20, 14, 2.6] },
+    hitBox: { hull: [6.8, 6.8], wing: [-12, 12, 1.6], wingY: 6.9 },
     stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
   },
   f16: {
@@ -107,9 +108,21 @@ export const PLANES = {
     engineSound: 'jet', afterburner: 1.5, operator: true, turnK: 3, turnBleed: 0.25,
     stats: { speed: 5, armor: 1, firepower: 5, agility: 4 },
   },
+  wraith: {
+    id: 'wraith', name: 'Wraith', class: 'Stealth Bomber', inspired: 'US B-2 Spirit', seats: 2, engines: 2,
+    blurb: 'A black flying wing with no guns and no rockets, just a bomb bay that never runs out.',
+    hp: 640, maxSpeed: 80, minSpeed: 30, accel: 20, roll: 1, pitch: 0.6, yaw: 0.26, drag: 0.8,
+    armor: { front: 0.95, side: 1, rear: 1.05 }, size: { length: 16, width: 34, height: 3.2 }, gearH: 1.9,
+    guns: gun('Bombs only', 0, 1, 0, 'mg', 420, 0), rear: null,
+    bombs: { count: 1, infinite: true, damage: 380, splash: 13, splashDamage: 280, spread: 0.004, reload: 0.9 },
+    rockets: { count: 0 },
+    engineSound: 'jet', bombardier: true,
+    hitBox: { hull: [4, 1.2], wing: [-6, 8, 0.8], wingY: 0 },
+    stats: { speed: 3, armor: 2, firepower: 4, agility: 2 },
+  },
 };
 // Where the side gun is mounted: right side of the fuselage, behind the wing (x, y, z).
-const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 5.1, -3] };
+const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 8.5, -5] };
 // Highest the side gun can point above the plane's own wings: it fires everywhere but up.
 export const SIDE_GUN_MAX_UP = 0.64; // sine of the angle
 
