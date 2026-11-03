@@ -105,7 +105,7 @@ export const PLANES = {
     armor: { front: 1.05, side: 1.1, rear: 1.15 }, size: { length: 14.8, width: 12.6, height: 4.6 }, gearH: 1.9,
     guns: gun('20mm Rotary Cannon', 14, 0.05, 0.012, 'ac', 680, 900), rear: null,
     rockets: { count: 16, damage: 200, splash: 5, splashDamage: 90, pair: true, cooldown: 0.9, x: 2.9 },
-    engineSound: 'jet', afterburner: 1.5, operator: true, turnK: 3, turnBleed: 0.25,
+    engineSound: 'jet', afterburner: 1.5, takeoff: 0.42, operator: true, turnK: 3, turnBleed: 0.25,
     stats: { speed: 5, armor: 1, firepower: 5, agility: 4 },
   },
   wraith: {
