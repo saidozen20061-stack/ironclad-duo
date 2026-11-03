@@ -87,7 +87,7 @@ export const PLANES = {
   },
   leviathan: {
     id: 'leviathan', name: 'Leviathan', class: 'Flying Fortress', inspired: 'Bloons TD 6 Goliath Doomship', seats: 2, engines: 4,
-    blurb: 'A colossal twin-hulled crimson doomship, slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
+    blurb: 'A colossal crimson doomship with two wings joined by four long engines, slow and nearly unstoppable. One per team. Lose it and the crew fights on in tanks.',
     hp: 7000, maxSpeed: 42, minSpeed: 18, accel: 14, roll: 0.35, pitch: 0.2, yaw: 0.08, drag: 0.8,
     armor: { front: 0.6, side: 0.6, rear: 0.6 }, size: { length: 72, width: 82, height: 14 }, gearH: 7.5,
     guns: gun('2× .50 cal MG', 15, 0.1, 0.024),
@@ -95,7 +95,7 @@ export const PLANES = {
     bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 8, sightY: 9.5 },
     rockets: { x: 10 },
     engineSound: 'drone', seeFar: true, escorts: 3, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
-    hitBox: { hull: [19, 7.5], wing: [-20, 8, 2.5], wingY: 2 },
+    hitBox: { hull: [12, 7.5], wing: [-31, 17, 3.5], wingY: 6.5 },
     stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
   },
   f16: {
@@ -132,7 +132,7 @@ export const PLANES = {
   },
 };
 // Where the side gun is mounted: right side of the fuselage, behind the wing (x, y, z).
-const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 6.2, -3] };
+const DOORS = { stuka: [-0.8, 0.45, -1.6], sturmovik: [-0.8, 0.4, -1.7], dauntless: [-0.8, 0.45, -1.8], heavyfighter: [-0.75, 0.45, -1.6], mosquito: [-0.75, 0.4, -1.6], mitchell: [-1.05, 0.6, -2.2], leviathan: [0, 9.6, -6] };
 // Highest the side gun can point above the plane's own wings: it fires everywhere but up.
 export const SIDE_GUN_MAX_UP = 0.64; // sine of the angle
 

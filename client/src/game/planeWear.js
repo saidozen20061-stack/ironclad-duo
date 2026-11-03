@@ -13,7 +13,7 @@ const _e = new THREE.Euler();
 const _p = new THREE.Vector3();
 
 function engineSpots(spec) {
-  if (spec.id === 'leviathan') return [[-22, 0, 2], [22, 0, 2], [-33, 0.5, -4], [33, 0.5, -4]];
+  if (spec.id === 'leviathan') return [[-17, 6, -8], [17, 6, -8], [-28, 6.4, -14], [28, 6.4, -14]];
   if (spec.engines === 1) return [[0, 0, spec.size.length * (spec.afterburner ? -0.42 : 0.32)]];
   const x = spec.size.width * 0.16;
   return [[-x, 0, spec.size.length * 0.08], [x, 0, spec.size.length * 0.08]];
