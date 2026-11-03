@@ -3,7 +3,8 @@ import { settings } from '../settings.js';
 import { TANKS } from '../../../shared/constants.js';
 import { PLANES } from '../../../shared/planes.js';
 
-// Command on the radio, reacting when this crew destroys a tank or plane, or hits or kills a teammate.
+// Command on the radio: the start and end of the battle, flags won and lost, and when this crew
+// destroys a tank or plane or hits or kills a teammate.
 // Real recordings: "Radio Soldier" by VoiceBosch, CC BY-SA 4.0. They all live in one file; each line is
 // [start, length] in seconds. The first line of each list comes up most often.
 const CLIP_URL = `${import.meta.env.BASE_URL}audio/radio-soldier.mp3`;
@@ -16,25 +17,36 @@ const CLIPS = {
   'Watch your ammo!': [35.09, 0.96],
   "You're on your own. Good luck.": [86.65, 2.87],
   "We're losing ground!": [47.38, 1.12],
+  'Objective secured!': [53.6, 1.32],
+  'Objective lost!': [57.02, 1.27],
 };
 const LINES = {
   friendly: ['Hold your position!', 'Watch your ammo!'],
   teamkill: ["You're on your own. Good luck.", "We're losing ground!"],
   killTank: ['Good work, soldier!', 'Target neutralized!', 'Tango down!'],
   killPlane: ['Good work, soldier!', 'Enemy chopper down!', 'Target neutralized!'],
+  start: ["You're on your own. Good luck."],
+  end: ['Good work, soldier!'],
+  flagWon: ['Objective secured!'],
+  flagLost: ['Objective lost!'],
 };
 const FAVOURITE = 0.5; // chance of a list's first line
 const PAD = 0.06; // s kept either side of a line, so its edges aren't clipped
 
 // Most urgent first: a higher one cuts off whatever is being said. `wait`: seconds before it can repeat.
 const KINDS = {
+  end: { rank: 4, wait: 0 },
   teamkill: { rank: 3, wait: 2 },
+  flagWon: { rank: 2, wait: 0.5 },
+  flagLost: { rank: 2, wait: 0.5 },
   friendly: { rank: 2, wait: 3.5 },
+  start: { rank: 0, wait: 0 },
   killTank: { rank: 1, wait: 3 },
   killPlane: { rank: 1, wait: 3 },
 };
 
 const TEAMS = ['blue', 'red'];
+const JOINED_LATE = 15; // s into the match: someone rejoining doesn't get the opening line again
 
 export class RadioLines {
   constructor(hud, crewId) {
@@ -50,7 +62,7 @@ export class RadioLines {
     this.ctx = new AudioContext();
     this.ctx.resume();
     this.load();
-    this.off = net.on('s', (msg) => this.onSnapshot(msg));
+    this.offs = [net.on('s', (msg) => this.onSnapshot(msg)), net.on('matchEnd', () => this.say('end'))];
   }
 
   // If it can't load, the subtitles still show.
@@ -65,6 +77,11 @@ export class RadioLines {
 
   onSnapshot(msg) {
     for (const a of msg.u) this.units.set(a[0], { team: TEAMS[a[1]], crew: a[10] > 0 ? a[10] - 1 : null });
+    // Once the voices have loaded, so it can't be missed on a slow connection.
+    if (this.clips && !this.opened) {
+      this.opened = true;
+      if (msg.time < JOINED_LATE) this.say('start');
+    }
     for (const ev of msg.ev ?? []) this.onEvent(ev, msg.me?.team);
   }
 
@@ -73,7 +90,11 @@ export class RadioLines {
   }
 
   onEvent(ev, team) {
-    if (ev.k === 'i' && ev.u !== undefined && this.mine(ev.o) && !this.mine(ev.u)) {
+    if (ev.k === 'cap') {
+      // A flag is lost the moment the enemy takes it off us; one they take while neutral was never ours.
+      if (ev.team === team) this.say('flagWon');
+      else if (ev.team === null && ev.prev === team) this.say('flagLost');
+    } else if (ev.k === 'i' && ev.u !== undefined && this.mine(ev.o) && !this.mine(ev.u)) {
       if (this.units.get(ev.u)?.team === team) this.say('friendly');
     } else if (ev.k === 'k' && this.mine(ev.by) && !this.mine(ev.u)) {
       if (ev.team === team) this.say('teamkill');
@@ -123,7 +144,7 @@ export class RadioLines {
   }
 
   dispose() {
-    this.off();
+    for (const off of this.offs) off();
     clearTimeout(this.hideT);
     this.ctx.close();
     this.el.remove();
