@@ -193,13 +193,16 @@ for (const f of Object.values(AIRFIELDS)) {
   // Buildings stand on the side away from the map edge.
   const s = team === 'blue' ? 1 : -1;
   add('runway', x, z, 0, len, width, 0.1, { team });
-  add('hangar', x - 110, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 34, 24, 11, { team });
-  add('hangar', x - 60, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 34, 24, 11, { team });
-  add('ctower', x + 10, z + s * (width / 2 + 20), s > 0 ? Math.PI : 0, 8, 8, 13, { team });
-  add('windsock', x + 40, z + s * (width / 2 + 12), 0, 1, 1, 6, { team });
-  add('truck', x + 62, z + s * (width / 2 + 18), 0.4, 2.4, 6.5, 2.6, { team });
-  add('truck', x + 80, z + s * (width / 2 + 16), -0.3, 2.4, 6.5, 2.6, { team });
-  add('fueltank', x + 104, z + s * (width / 2 + 24), Math.PI / 2, 4.6, 9, 4.6);
+  // Small planes at the start of the runway, where they get the longest run.
+  add('hangar', x - 125, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 54, 24, 11, { team });
+  add('hangar', x - 69, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 54, 24, 11, { team });
+  add('ctower', x - 28, z + s * (width / 2 + 20), s > 0 ? Math.PI : 0, 8, 8, 13, { team });
+  // The Leviathan's own, big enough for it to roll in and out under its tail; it needs little runway.
+  add('hangar', x + 40, z + s * (width / 2 + 52), s > 0 ? Math.PI : 0, 96, 84, 46, { team, big: true });
+  add('windsock', x + 100, z + s * (width / 2 + 12), 0, 1, 1, 6, { team });
+  add('truck', x + 112, z + s * (width / 2 + 18), 0.4, 2.4, 6.5, 2.6, { team });
+  add('truck', x + 128, z + s * (width / 2 + 16), -0.3, 2.4, 6.5, 2.6, { team });
+  add('fueltank', x + 150, z + s * (width / 2 + 24), Math.PI / 2, 4.6, 9, 4.6);
   for (const [dx, dz] of [[-len / 2 - 8, width / 2 + 14], [len / 2 + 6, width / 2 + 14], [130, -width / 2 - 14]]) add('aagun', x + dx, z + s * dz, 0, 4, 4, 2.6, { team });
 }
 

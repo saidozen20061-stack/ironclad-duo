@@ -48,8 +48,101 @@ function planeQuaternion(u, out = new THREE.Quaternion()) {
   return out.setFromEuler(_e.set(-u.gp, u.h, u.ty));
 }
 
+// How each plane's cockpit differs: colours, what kind of flight deck, and `extra` for the
+// details that make it that plane. `tint` turns the instrument panel into a one-colour glass screen.
+const COCKPITS = {
+  stuka: { paint: 0x4f5546, floor: 0x5c6052, extra: (k) => {
+    // Dive angle lines painted on the side glass, and the bomb release handle.
+    for (const [y, c] of [[0.02, 0xc83a2a], [0.14, 0xd8d6c4], [0.26, 0xc83a2a]]) k.add(k.box(0.012, 0.012, 0.5), k.flat(c), -0.52, y, -0.45, 0, 0.5);
+    k.add(k.box(0.05, 0.16, 0.05), k.flat(0xc83a2a), 0.5, -0.5, -0.2);
+  } },
+  sturmovik: { paint: 0x5c6242, floor: 0x4a4e38, heavyFrame: true, extra: (k) => {
+    // Sits in an armoured bathtub, behind a thick block of glass.
+    for (const s of [-1, 1]) k.add(k.box(0.12, 0.34, 1.6), k.dark, s * 0.66, -0.22, -0.2);
+    k.add(k.box(0.34, 0.22, 0.06), k.glass, 0, 0.0, -0.8);
+  } },
+  dauntless: { paint: 0x55687a, floor: 0x46535f, extra: (k) => {
+    // A long telescopic gun sight through the windscreen.
+    k.add(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 8).rotateX(Math.PI / 2), k.dark, 0, -0.02, -0.75);
+  } },
+  heavyfighter: { paint: 0x6c716e, floor: 0x54585a, wide: 1.15, extra: (k) => {
+    // Breech blocks of the nose cannons either side of the legs.
+    for (const s of [-1, 1]) k.add(k.box(0.14, 0.2, 0.7), k.metal, s * 0.5, -0.78, -0.35);
+  } },
+  mosquito: { paint: 0x6a5234, floor: 0x7a6244, wide: 1.3, seat2: 0x4c3a24, extra: (k) => {
+    // Plywood: a wooden-walled cabin with a navigator beside you and a chart table.
+    k.add(k.box(0.5, 0.03, 0.34), k.flat(0xcfc6a8), 0.78, -0.42, -0.42, -0.4);
+  } },
+  mitchell: { paint: 0x5a5c3e, floor: 0x4c4e38, wide: 1.55, seat2: 0x4a4c34, pedestal: 2, yoke: true },
+  mustang: { paint: 0x7f9256, floor: 0x6e7f4a, extra: (k) => {
+    // Zinc-chromate green, a gyro gun sight, and a spade grip.
+    k.add(k.box(0.09, 0.11, 0.16), k.dark, 0, -0.04, -0.78);
+    k.add(k.box(0.08, 0.002, 0.07), k.glow(0xb8ffb0), 0, 0.06, -0.78, 0.5);
+  } },
+  spitfire: { paint: 0x4f5b3d, floor: 0x424c32, extra: (k) => {
+    // A ring-topped stick, and the little fold-down door on the left.
+    k.add(new THREE.TorusGeometry(0.06, 0.012, 6, 12), k.dark, 0, -0.4, -0.42, 0.3);
+    k.add(k.box(0.03, 0.28, 0.5), k.flat(0x5f6b4a), -0.72, -0.28, -0.1);
+  } },
+  messer: { paint: 0x68706f, floor: 0x54595a, heavyFrame: true, extra: (k) => {
+    // The squared-off canopy framing, and the cannon breech between the legs.
+    for (const y of [0.22, 0.42]) k.add(k.box(1.1, 0.04, 0.04), k.dark, 0, y, -0.72);
+    k.add(k.box(0.16, 0.2, 0.55), k.metal, 0, -0.85, -0.35);
+  } },
+  f16: { modern: true, paint: 0x2c3036, floor: 0x24272c, tint: '#46ff9a', extra: (k) => {
+    // A sloped glass panel, two glowing screens, a head-up display in the windscreen, and a side stick.
+    k.add(k.box(0.3, 0.26, 0.03), k.glow(0x123a24), -0.62, -0.42, -0.72);
+    k.add(k.box(0.3, 0.26, 0.03), k.glow(0x123a24), 0.62, -0.42, -0.72);
+    for (const s of [-1, 1]) for (const y of [-0.5, -0.42, -0.34]) k.add(k.box(0.22, 0.012, 0.005), k.glow(0x46ff9a), s * 0.62, y, -0.7);
+    k.add(k.box(0.28, 0.32, 0.01), k.hud, 0, 0.06, -0.72, 0.12);
+    k.add(k.box(0.16, 0.006, 0.002), k.glow(0x46ff9a), 0, 0.06, -0.71, 0.12);
+    k.add(k.box(0.006, 0.16, 0.002), k.glow(0x46ff9a), 0, 0.06, -0.71, 0.12);
+    k.add(k.box(0.3, 0.05, 0.14), k.dark, 0, -0.1, -0.72);
+    k.add(k.box(0.12, 0.08, 0.34), k.dark, 0.6, -0.62, -0.25);
+    k.add(new THREE.CylinderGeometry(0.018, 0.022, 0.2, 6), k.dark, 0.6, -0.48, -0.32, 0.2);
+    // The ejection seat's yellow-and-black firing handle, and the second seat's bulkhead behind.
+    k.add(k.box(0.26, 0.05, 0.04), k.flat(0xe2b420), 0, -0.58, -0.08);
+    k.add(k.box(1.3, 0.8, 0.08), k.paint, 0, -0.4, 0.7);
+  } },
+  wraith: { modern: true, paint: 0x17181b, floor: 0x121316, wide: 1.5, seat2: 0x1f2024, narrow: true, tint: '#ffb23c', extra: (k) => {
+    // Black, wide and windowless but for two small panes, with a wall of amber screens.
+    for (const x of [-1.05, -0.62, 0.62, 1.05]) {
+      k.add(k.box(0.36, 0.26, 0.03), k.glow(0x2c1c06), x, -0.42, -0.76);
+      for (const y of [-0.5, -0.42, -0.34]) k.add(k.box(0.28, 0.012, 0.005), k.glow(0xffb23c), x, y, -0.74);
+    }
+    k.add(k.box(2.9, 0.55, 0.05), k.dark, 0, 0.56, -0.74); // the low roof of the slit windows
+    for (const s of [-1, 1]) k.add(k.box(0.5, 1.1, 0.05), k.dark, s * 1.3, 0.05, -0.74);
+  } },
+  leviathan: { modern: false, deck: true, paint: 0x5a6066, floor: 0x3c4046, extra: (k) => {
+    // A flight deck you could walk around, with the pilot on its left: wide panel, overhead switches, copilot, big windows.
+    k.add(k.box(5.2, 0.6, 0.1), k.dark, 1, -0.55, -1.3);
+    k.add(k.box(5.2, 0.14, 0.7), k.paint, 1, -0.06, -1.72);
+    for (let x = -1.45; x < 3.3; x += 0.42) {
+      if (Math.abs(x) < 0.85) continue;
+      k.add(new THREE.CircleGeometry(0.15, 12), k.flat(0x101210), x, -0.55, -1.24);
+      k.add(k.box(0.012, 0.11, 0.004), k.glow(0xffb040), x, -0.55, -1.23, 0, 0.6);
+    }
+    // Windscreen frames, up to the overhead panel.
+    for (const x of [-1.6, 1, 2.7, 3.5]) k.add(k.box(0.12, 1.1, 0.12), k.dark, x, 0.35, -1.5, 0, x < 1 ? 0.12 : -0.12);
+    k.add(k.box(5.2, 0.16, 1.5), k.paint, 1, 0.92, -0.75);
+    for (let z = -1.3; z < -0.1; z += 0.28) for (let x = -0.6; x <= 2.6; x += 0.32) k.add(k.box(0.14, 0.02, 0.12), k.flat(z < -0.8 ? 0x2c2e30 : 0x505458), x, 0.83, z);
+    // Four throttles on a centre pedestal between the seats.
+    k.add(k.box(0.7, 0.55, 1.1), k.dark, 0.9, -0.82, -0.5);
+    // Copilot's seat and the wide floor, with side windows and walls.
+    k.add(k.box(0.72, 0.1, 0.6), k.paint, 1.85, -0.75, 0.2);
+    k.add(k.box(0.72, 0.8, 0.1), k.dark, 1.85, -0.42, 0.5);
+    k.add(k.box(5.6, 0.06, 4), k.floorM, 1, -1.1, 0.6);
+    for (const x of [-1.8, 3.8]) {
+      k.add(k.box(0.08, 0.95, 4), k.paint, x, -0.6, 0.6);
+      k.add(k.box(0.08, 1.1, 0.14), k.dark, x, 0.4, 0.3);
+    }
+    k.add(k.box(5.6, 2.2, 0.1), k.paint, 1, -0.1, 2.5); // the bulkhead behind the seats
+  } },
+};
+
 // Low-poly cockpit in its own little scene, drawn over the world so it never clips.
 function buildCockpit(spec) {
+  const cfg = COCKPITS[spec.id] ?? {};
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xdfe4e8, 0x4a4030, 1.25));
   const sun = new THREE.DirectionalLight(0xfff0d8, 1.3);
@@ -57,8 +150,10 @@ function buildCockpit(spec) {
   scene.add(sun);
   const root = new THREE.Group();
   scene.add(root);
-  const paint = new THREE.MeshStandardMaterial({ color: 0x4f5546, flatShading: true, roughness: 0.8 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x24261f, flatShading: true, roughness: 0.8 });
+  const flat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.8, ...opts });
+  const paint = flat(cfg.paint ?? 0x4f5546);
+  const dark = flat(cfg.modern ? 0x101114 : 0x24261f);
+  const floor = flat(cfg.floor ?? 0x5c6052, { roughness: 0.9 });
   const add = (g, m, x, y, z, rx = 0, rz = 0) => {
     const o = new THREE.Mesh(g, m);
     o.position.set(x, y, z);
@@ -66,51 +161,88 @@ function buildCockpit(spec) {
     root.add(o);
     return o;
   };
+  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const wide = cfg.wide ?? 1;
   // Instrument panel with a live canvas face.
   const canvas = document.createElement('canvas');
   canvas.width = 720;
   canvas.height = 240;
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  add(new THREE.BoxGeometry(1.0, 0.36, 0.08), dark, 0, -0.33, -0.76);
-  add(new THREE.PlaneGeometry(0.94, 0.313), new THREE.MeshBasicMaterial({ map: tex }), 0, -0.33, -0.715);
-  // Coaming over the panel, canopy frame around the view, side rails.
-  add(new THREE.BoxGeometry(1.25, 0.1, 0.32), paint, 0, -0.12, -0.82);
-  if (spec.engines === 1) add(new THREE.BoxGeometry(0.8, 0.14, 1.6), paint, 0, -0.18, -1.65, 0.08);
-  for (const s of [-1, 1]) {
-    add(new THREE.BoxGeometry(0.05, 0.75, 0.05), dark, s * 0.55, 0.13, -0.8, 0.12, s * -0.34);
-    add(new THREE.BoxGeometry(0.11, 0.4, 1.8), paint, s * 0.76, -0.4, 0.05);
-    add(new THREE.BoxGeometry(0.04, 0.04, 1.6), dark, s * 0.55, 0.4, 0.05);
+  // A flight deck's panel sits further out, in front of the pilot's seat.
+  const panelZ = cfg.deck ? -1.22 : -0.76;
+  add(box(cfg.deck ? 1.5 : 1.0, 0.36, 0.08), dark, 0, -0.33, panelZ);
+  add(new THREE.PlaneGeometry(cfg.deck ? 1.4 : 0.94, cfg.deck ? 0.467 : 0.313), new THREE.MeshBasicMaterial({ map: tex }), 0, -0.33, panelZ + 0.045);
+  if (!cfg.deck) {
+    // Coaming over the panel, side rails, and a canopy frame around the view, none on a bubble canopy.
+    add(box(1.25 * wide, 0.1, 0.32), paint, 0, -0.12, -0.82);
+    if (spec.engines === 1 && !cfg.modern) add(box(0.8, 0.14, 1.6), paint, 0, -0.18, -1.65, 0.08);
+    for (const s of [-1, 1]) {
+      add(box(0.11, 0.4, 1.8), paint, s * 0.76 * wide, -0.4, 0.05);
+      if (cfg.modern && !cfg.narrow) continue;
+      const bar = cfg.heavyFrame ? 0.1 : 0.05;
+      add(box(bar, 0.75, bar), dark, s * 0.55 * wide, 0.13, -0.8, 0.12, s * -0.34);
+      add(box(0.04, 0.04, 1.6), dark, s * 0.55 * wide, 0.4, 0.05);
+    }
+    if (!cfg.modern) {
+      add(box(1.2 * wide, 0.05, 0.05), dark, 0, 0.47, -0.7);
+      add(box(1.16 * wide, 0.05, 0.05), dark, 0, 0.5, 0.05);
+      add(box(0.03, 0.07, 0.03), dark, 0, -0.03, -0.78); // gun sight post
+    }
+    // The tub the pilot sits in: floor, footwell under the panel, side walls, seat and pedals.
+    // The plane itself is hidden from this seat, so without these you'd look straight through to the ground.
+    add(box(1.56 * wide, 0.06, 3.1), floor, 0, -1.02, 0.65);
+    add(box(1.56 * wide, 0.96, 0.06), floor, 0, -0.56, -0.82); // front wall, behind the panel
+    for (const s of [-1, 1]) {
+      add(box(0.06, 0.8, 3.1), paint, s * 0.78 * wide, -0.62, 0.65);
+      add(box(0.04, 0.3, 1.4), dark, s * 0.72 * wide, -0.72, 0.2); // floor ribs along the walls
+    }
   }
-  add(new THREE.BoxGeometry(1.2, 0.05, 0.05), dark, 0, 0.47, -0.7);
-  add(new THREE.BoxGeometry(1.16, 0.05, 0.05), dark, 0, 0.5, 0.05);
-  add(new THREE.BoxGeometry(0.03, 0.07, 0.03), dark, 0, -0.03, -0.78); // gun sight post
-  // The tub the pilot sits in: floor, footwell under the panel, side walls, seat and pedals.
-  // The plane itself is hidden from this seat, so without these you'd look straight through to the ground.
-  const floor = new THREE.MeshStandardMaterial({ color: 0x5c6052, flatShading: true, roughness: 0.9 });
-  add(new THREE.BoxGeometry(1.56, 0.06, 3.1), floor, 0, -1.02, 0.65);
-  add(new THREE.BoxGeometry(1.56, 0.96, 0.06), floor, 0, -0.56, -0.82); // front wall, behind the panel
-  for (const s of [-1, 1]) {
-    add(new THREE.BoxGeometry(0.06, 0.8, 3.1), paint, s * 0.78, -0.62, 0.65);
-    add(new THREE.BoxGeometry(0.24, 0.05, 0.1), dark, s * 0.2, -0.95, -0.6, -0.5); // rudder pedals
-    add(new THREE.BoxGeometry(0.04, 0.3, 1.4), dark, s * 0.72, -0.72, 0.2); // floor ribs along the walls
+  for (const s of [-1, 1]) add(box(0.24, 0.05, 0.1), dark, s * 0.2, cfg.deck ? -1.04 : -0.95, -0.6, -0.5); // rudder pedals
+  add(box(0.72, 0.1, 0.56), paint, 0, -0.72, 0.2); // seat cushion
+  add(box(0.6, 0.3, 0.46), dark, 0, -0.88, 0.2); // seat base
+  // A second seat beside you, on the wider planes.
+  if (cfg.seat2) {
+    const m = flat(cfg.seat2);
+    add(box(0.62, 0.1, 0.5), m, 0.98, -0.72, 0.2);
+    add(box(0.62, 0.62, 0.08), m, 0.98, -0.42, 0.48);
   }
-  add(new THREE.BoxGeometry(0.72, 0.1, 0.56), paint, 0, -0.72, 0.2); // seat cushion
-  add(new THREE.BoxGeometry(0.6, 0.3, 0.46), dark, 0, -0.88, 0.2); // seat base
-  // Stick and throttle.
-  add(new THREE.CylinderGeometry(0.02, 0.025, 0.62, 6), dark, 0, -0.72, -0.35, -0.2);
-  const lever = add(new THREE.BoxGeometry(0.035, 0.035, 0.2), new THREE.MeshStandardMaterial({ color: 0x8a3a2a, flatShading: true }), -0.62, -0.47, -0.25);
+  // Stick and throttle, or a wheel on the big ones.
+  if (cfg.yoke || cfg.deck) {
+    add(new THREE.CylinderGeometry(0.035, 0.04, 0.5, 6), dark, 0, -0.78, -0.5, -0.15);
+    add(new THREE.TorusGeometry(0.15, 0.022, 6, 14), dark, 0, -0.52, -0.55);
+  } else if (!cfg.modern) add(new THREE.CylinderGeometry(0.02, 0.025, 0.62, 6), dark, 0, -0.72, -0.35, -0.2);
+  const leverMat = flat(cfg.modern ? 0x202226 : 0x8a3a2a);
+  const levers = cfg.deck ? 4 : cfg.pedestal ?? 1;
+  const lever = new THREE.Group();
+  const baseX = cfg.deck ? 0.9 - 0.3 : levers > 1 ? 0.4 : -0.62;
+  for (let i = 0; i < levers; i++) {
+    const m = new THREE.Mesh(box(0.035, 0.035, 0.2), leverMat);
+    m.position.x = baseX + i * (cfg.deck ? 0.2 : 0.08);
+    lever.add(m);
+  }
+  lever.position.set(0, cfg.deck ? -0.5 : -0.47, -0.25);
+  root.add(lever);
+  if (cfg.pedestal) add(box(0.3, 0.5, 0.7), dark, 0.44, -0.74, -0.3);
   // Seat armour behind the head: the pilot can't see behind the plane.
-  add(new THREE.BoxGeometry(0.72, 0.62, 0.08), dark, 0, -0.42, 0.5);
-  add(new THREE.BoxGeometry(1.4, 0.75, 0.5), paint, 0, -0.62, 1.9); // turtle deck blocks the view aft
+  add(box(0.72, 0.62, 0.08), dark, 0, -0.42, 0.5);
+  if (!cfg.deck && !cfg.modern) add(box(1.4, 0.75, 0.5), paint, 0, -0.62, 1.9); // turtle deck blocks the view aft
   // The gunner's back and legs, behind the seat, for when the pilot looks round.
-  if (spec.seats === 2 && spec.rear) {
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x5a4c34, flatShading: true });
-    add(new THREE.BoxGeometry(0.44, 0.55, 0.26), cloth, 0.08, -0.2, 1.2);
-    add(new THREE.SphereGeometry(0.13, 7, 5), new THREE.MeshStandardMaterial({ color: 0x3a3c32, flatShading: true }), 0.08, 0.17, 1.2);
-    for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.14, 0.14, 0.45), cloth, 0.08 + s * 0.13, -0.5, 1.02);
+  if (spec.seats === 2 && spec.rear && !cfg.deck) {
+    const cloth = flat(0x5a4c34);
+    add(box(0.44, 0.55, 0.26), cloth, 0.08, -0.2, 1.2);
+    add(new THREE.SphereGeometry(0.13, 7, 5), flat(0x3a3c32), 0.08, 0.17, 1.2);
+    for (const s of [-1, 1]) add(box(0.14, 0.14, 0.45), cloth, 0.08 + s * 0.13, -0.5, 1.02);
   }
-  return { scene, root, canvas, ctx: canvas.getContext('2d'), tex, lever };
+  cfg.extra?.({
+    add, box, paint, dark, flat,
+    floorM: floor,
+    metal: flat(0x6e7270, { metalness: 0.5 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x9fb4b0, transparent: true, opacity: 0.25, roughness: 0.1 }),
+    hud: new THREE.MeshBasicMaterial({ color: 0x46ff9a, transparent: true, opacity: 0.1, depthWrite: false }),
+    glow: (color) => new THREE.MeshBasicMaterial({ color }),
+  });
+  return { scene, root, canvas, ctx: canvas.getContext('2d'), tex, lever, tint: cfg.tint };
 }
 
 function drawGauge(ctx, cx, cy, r, label, frac, value) {
@@ -238,6 +370,13 @@ function drawInstruments(cp, self, me, spec, pingBearing) {
     ctx.font = 'bold 10px sans-serif';
     ctx.fillText(MODS[k] ?? k, x + 15, y + 13);
   });
+  // A glass cockpit: the same readouts, as a one-colour screen.
+  if (cp.tint) {
+    ctx.globalCompositeOperation = 'color';
+    ctx.fillStyle = cp.tint;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+  }
   cp.tex.needsUpdate = true;
 }
 

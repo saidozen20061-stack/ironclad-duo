@@ -23,10 +23,20 @@
         <button class="btn" id="btn-join">Join Game</button>
         <button class="btn" id="btn-solo">Solo</button>
         <button class="btn" id="btn-controls">Controls</button>
+        <button class="btn" id="btn-achievements">Achievements</button>
         <button class="btn" id="btn-settings">Settings</button>
         <button class="btn ghost" id="btn-quit">Quit</button>
         <p class="status" id="menu-status"></p>
         <p class="hint" style="font-size:11px;margin:8px 0 0">Radio voice: <a style="color:inherit" href="https://voicebosch.itch.io/radio-soldier-announcer-audio-pack" target="_blank" rel="noopener">Radio Soldier by VoiceBosch</a>, <a style="color:inherit" href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
+      </div>
+    </section>
+
+    <section class="screen dim" id="screen-achievements">
+      <div class="menu-panel achievements-panel">
+        <h2>Achievements</h2>
+        <p class="hint" id="achievement-count"></p>
+        <div id="achievement-list" class="achievement-list"></div>
+        <button class="btn primary" id="btn-achievements-back">Back</button>
       </div>
     </section>
 
@@ -195,6 +205,7 @@
           <div><span>Points captured</span><b id="end-caps">0</b></div>
         </div>
         <div id="end-board" class="scoreboard static"></div>
+        <div id="end-achievements" class="achievement-list"></div>
         <button class="btn primary" id="btn-end-lobby">Return to Lobby</button>
       </div>
     </section>

@@ -59,6 +59,9 @@ function buildModeCards() {
   for (const b of $$('[data-diff]')) b.addEventListener('click', () => net.send({ t: 'mode', difficulty: b.dataset.diff }));
   $('#diff-pick').insertAdjacentHTML('beforeend', '<button class="btn small" id="air-start" title="Planes start in the air instead of on the runway">Air start</button>');
   $('#air-start').addEventListener('click', () => net.send({ t: 'mode', airStart: !lobby.state?.airStart }));
+  $('#diff-pick').insertAdjacentHTML('beforeend', '<button class="btn small" id="night-mode" title="Fight in the dark: thermal sights really help">Night</button><button class="btn small" id="rain-mode" title="Rain cuts how far everyone can see">Rain</button>');
+  $('#night-mode').addEventListener('click', () => net.send({ t: 'mode', night: !lobby.state?.night }));
+  $('#rain-mode').addEventListener('click', () => net.send({ t: 'mode', rain: !lobby.state?.rain }));
 }
 
 export function initLobbyScreen({ onLeave }) {
@@ -193,6 +196,8 @@ export function renderLobby() {
     b.disabled = !lobby.isHost;
   }
   $('#air-start').classList.toggle('on', !!s.airStart);
+  $('#night-mode').classList.toggle('on', !!s.night);
+  $('#rain-mode').classList.toggle('on', !!s.rain);
   $('#air-start').disabled = !lobby.isHost;
   for (const b of $$('[data-kills]')) {
     b.classList.toggle('on', Number(b.dataset.kills) === s.killLimit);

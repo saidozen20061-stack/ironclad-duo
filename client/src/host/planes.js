@@ -31,9 +31,7 @@ const ROTATE_TIME = 2; // s for the nose to start moving at its full rate
 const CLIMB_PITCH = 0.3; // radians
 const CLIMB_HOLD = 6; // s before a held key starts steepening the climb
 const CLIMB_STEEPEN = 0.15; // radians per second after that
-const HANGAR_DOOR = 21; // m: the widest plane that fits through
-const APRON_Z = 23; // m out from the runway's centre line
-const HANGAR_FRONT = 28; // m out to the hangar doors, less a little room
+const HANGAR_DOOR = 36; // m: the widest plane that fits through an ordinary hangar's door
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
 const ROCKET_BELOW = 0.85; // × gear height under the plane: clear of every wing and its underside
 const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
@@ -134,15 +132,11 @@ export class PlaneSystem {
   crewSpawn(team, slot, type) {
     const f = AIRFIELDS[team];
     if (this.airStart) return { x: f.startX + f.dir * 120, y: FLIGHT.airStartAlt, z: f.z + (slot ? 10 : -8), v: 45, grounded: false, h: f.heading };
-    const hangar = PROPS.filter((p) => p.type === 'hangar' && p.team === team)[slot ? 1 : 0];
-    const out = team === 'blue' ? -1 : 1; // the way the hangar door faces
+    // Inside a hangar, nose just short of the door, facing out. The widest plane has its own.
     const size = PLANES[type].size;
-    // Too wide for the door: parked on the apron in front of it, pointing down the runway.
-    if (size.width > HANGAR_DOOR) {
-      const z = f.z - out * Math.min(APRON_Z, HANGAR_FRONT - size.width / 2);
-      return { x: hangar.x, y: groundAt(hangar.x, z), z, v: 0, grounded: true, h: Math.PI / 2 };
-    }
-    // Inside the hangar, nose just short of the door, facing out.
+    const hangars = PROPS.filter((p) => p.type === 'hangar' && p.team === team);
+    const hangar = size.width > HANGAR_DOOR ? hangars.find((p) => p.big) : hangars.filter((p) => !p.big)[slot ? 1 : 0];
+    const out = team === 'blue' ? -1 : 1; // the way the hangar door faces
     const z = hangar.z + out * (hangar.d / 2 - size.length / 2 - 1.5);
     return { x: hangar.x, y: groundAt(hangar.x, z), z, v: 0, grounded: true, h: out < 0 ? Math.PI : 0 };
   }

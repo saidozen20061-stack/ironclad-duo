@@ -173,10 +173,10 @@ function buildSky() {
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: { sunDir: { value: new THREE.Vector3() }, fogCol: { value: new THREE.Color() } },
+    uniforms: { sunDir: { value: new THREE.Vector3() }, fogCol: { value: new THREE.Color() }, night: { value: 0 }, overcast: { value: 0 } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `
-      uniform vec3 sunDir; uniform vec3 fogCol; varying vec3 vDir;
+      uniform vec3 sunDir; uniform vec3 fogCol; uniform float night; uniform float overcast; varying vec3 vDir;
       void main(){
         float h = clamp(vDir.y, -0.2, 1.0);
         vec3 horizon = vec3(0.92, 0.72, 0.52);
@@ -184,6 +184,15 @@ function buildSky() {
         vec3 col = mix(horizon, zenith, pow(max(h, 0.0), 0.6));
         float s = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
         col += vec3(1.0, 0.75, 0.45) * pow(s, 8.0) * 0.35 + vec3(1.0, 0.9, 0.7) * pow(s, 600.0) * 2.0;
+        col = mix(col, vec3(0.42, 0.45, 0.48), overcast);
+        if (night > 0.5) {
+          col = mix(vec3(0.05, 0.07, 0.12), vec3(0.012, 0.016, 0.035), pow(max(h, 0.0), 0.5));
+          col += vec3(0.8, 0.85, 1.0) * pow(s, 1200.0) * 1.5 * (1.0 - overcast);
+          // A dusting of stars.
+          vec3 g = floor(normalize(vDir) * 170.0);
+          float star = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+          col += vec3(0.8, 0.85, 1.0) * step(0.9975, star) * smoothstep(0.03, 0.3, h) * (1.0 - overcast);
+        }
         // The horizon is exactly what fully fogged geometry looks like on screen, so far
         // terrain and tanks melt into the sky instead of standing out as silhouettes.
         vec3 fogged = fogCol;
@@ -265,23 +274,63 @@ const FLASH_COLOR = new THREE.Color(0xff9040);
 const _shadowFocus = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 
+// Night and rain for the next match's world, chosen when the match is set up.
+let mood = { night: false, rain: false };
+export function setWorldMood(next) {
+  mood = next;
+}
+
+const RAIN_BOX = 80; // m around the camera that it falls in
+const RAIN_DROPS = 2200; // at the highest graphics setting
+
+// Falling streaks moved by the graphics card alone, so the rain costs almost no game time.
+function buildRain(q) {
+  const n = Math.round(RAIN_DROPS * q.particles);
+  const pos = new Float32Array(n * 6);
+  for (let i = 0; i < n; i++) {
+    const x = Math.random() * RAIN_BOX, y = Math.random() * RAIN_BOX, z = Math.random() * RAIN_BOX;
+    pos.set([x, y, z, x + 0.03, y + 1.3, z + 0.02], i * 6);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    uniforms: { time: { value: 0 }, focus: { value: new THREE.Vector3() }, box: { value: RAIN_BOX } },
+    vertexShader: `uniform float time; uniform vec3 focus; uniform float box;
+      void main(){
+        vec3 p = position; p.y -= time * 34.0; p.x -= time * 2.5;
+        p = mod(p - focus, box) - box * 0.5 + focus;
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `void main(){ gl_FragColor = vec4(0.72, 0.78, 0.85, 0.32); }`,
+  });
+  const rain = new THREE.LineSegments(g, m);
+  rain.frustumCulled = false;
+  noHeat(rain);
+  return rain;
+}
+
 export class World {
   constructor() {
     const q = quality();
     this.scene = new THREE.Scene();
-    const fogColor = new THREE.Color(0xb4997c); // dusty orange-grey haze
+    // Dusty orange-grey haze by day; dark blue at night, wet grey in the rain.
+    const fogColor = new THREE.Color(mood.night ? (mood.rain ? 0x0c0f15 : 0x11151f) : mood.rain ? 0x7c8185 : 0xb4997c);
     this.fogBase = fogColor.clone();
     this.fogNear = 60;
-    this.fogFarGround = 400; // visibility down on the battlefield
+    this.fogFarGround = mood.rain ? 270 : mood.night ? 320 : 400; // visibility down on the battlefield
     this.fogFlashK = 0;
     this.scene.fog = new THREE.Fog(fogColor, this.fogNear, this.fogFarGround);
     this.scene.background = fogColor;
 
     // Late-afternoon sun, low in the west-south-west for long shadows.
     this.sunDir = new THREE.Vector3(0.75, 0.32, -0.45).normalize();
-    this.hemi = new THREE.HemisphereLight(0xffe4c0, 0x40402c, 0.85);
+    if (mood.night) this.sunDir.set(-0.4, 0.75, 0.5).normalize(); // the moon, high up
+    this.hemi = mood.night ? new THREE.HemisphereLight(0x8094c8, 0x1a1c26, 0.62) : mood.rain ? new THREE.HemisphereLight(0xc8ced2, 0x4a4c48, 0.8) : new THREE.HemisphereLight(0xffe4c0, 0x40402c, 0.85);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xffc690, 2.35);
+    this.sun = mood.night ? new THREE.DirectionalLight(0xa4b8ff, mood.rain ? 0.35 : 0.8) : new THREE.DirectionalLight(mood.rain ? 0xc8ccd0 : 0xffc690, mood.rain ? 0.7 : 2.35);
     this.sun.castShadow = q.shadows;
     this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     const S = 110;
@@ -296,6 +345,12 @@ export class World {
     this.sky = buildSky();
     this.sky.material.uniforms.sunDir.value.copy(this.sunDir);
     this.sky.material.uniforms.fogCol.value.copy(fogColor);
+    this.sky.material.uniforms.night.value = mood.night ? 1 : 0;
+    this.sky.material.uniforms.overcast.value = mood.rain ? 0.85 : 0;
+    if (mood.rain) {
+      this.rain = buildRain(q);
+      this.scene.add(this.rain);
+    }
     // Shadow map axes: the same ones the shadow camera ends up with when it looks at the sun.
     this.sunRight = new THREE.Vector3(0, 1, 0).cross(this.sunDir).normalize();
     this.sunUp = this.sunDir.clone().cross(this.sunRight);
@@ -347,6 +402,11 @@ export class World {
     }
 
     this.skyLife = new SkyLife(this.scene);
+    // Clouds light themselves by day; at night or in the rain they sit dark against the sky.
+    if (mood.night || mood.rain) {
+      this.skyLife.cloudMat.emissive.setHex(0);
+      this.skyLife.cloudMat.color.setHex(mood.night ? 0x55607a : 0x8a8f94);
+    }
     this.t = 0;
   }
 
@@ -364,6 +424,10 @@ export class World {
     this.sun.position.copy(c).addScaledVector(this.sunDir, 300);
     this.sun.target.position.copy(c);
     this.sky.position.copy(focus);
+    if (this.rain) {
+      this.rain.material.uniforms.time.value = performance.now() / 1000;
+      this.rain.material.uniforms.focus.value.copy(focus);
+    }
     // High up you look out over the haze; down in a valley it closes in.
     const alt = focus.y - Math.max(gridHeightAt(focus.x, focus.z), WATER_LEVEL);
     const up = smoothstep(25, 240, alt);

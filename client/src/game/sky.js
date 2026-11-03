@@ -115,6 +115,7 @@ export class SkyLife {
     const rand = mulberry32(2024);
     // Mostly self-lit so the undersides stay creamy instead of turning rock-brown.
     const cloudMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, fog: false, emissive: 0xd9c4a8, emissiveIntensity: 0.62, transparent: true, opacity: 0.93 });
+    this.cloudMat = cloudMat;
     this.clouds = [];
     this.cloudMeshes = [0, 1, 2].map(() => {
       const im = new THREE.InstancedMesh(cloudGeo(rand), cloudMat, 18);

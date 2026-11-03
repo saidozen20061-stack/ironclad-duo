@@ -26,7 +26,11 @@ export const AIRFIELDS = {
 };
 export const onRunway = (x, z) => Object.values(AIRFIELDS).some((f) => Math.abs(x - f.x) < f.len / 2 + 4 && Math.abs(z - f.z) < f.width / 2 + 4);
 // The whole field, with room for the apron and buildings beside the runway.
-export const inAirfield = (x, z, pad = 0) => Object.values(AIRFIELDS).some((f) => Math.abs(x - f.x) < f.len / 2 + 25 + pad && Math.abs(z - f.z) < f.width / 2 + 55 + pad);
+const HANGAR_SIDE = 62; // m further out on the side the hangars stand, for the Leviathan's
+export const inAirfield = (x, z, pad = 0) => Object.values(AIRFIELDS).some((f) => {
+  const out = (z - f.z) * (f.team === 'blue' ? 1 : -1) > 0 ? HANGAR_SIDE : 0;
+  return Math.abs(x - f.x) < f.len / 2 + 25 + pad && Math.abs(z - f.z) < f.width / 2 + 55 + out + pad;
+});
 
 export const POINTS = [
   { id: 'A', name: 'Ruined Village', x: -400, z: -175, r: 42 },
@@ -117,7 +121,8 @@ function computeHeight(x, z) {
     // On the side facing the base it stops short, so its slope doesn't reach the base's walls.
     const inner = (x - f.x) * f.dir > 0;
     const dx = Math.max(0, Math.abs(x - f.x) - (f.len / 2 + (inner ? 6 : 30)));
-    const dz = Math.max(0, Math.abs(z - f.z) - (f.width / 2 + 60));
+    const out = (z - f.z) * (f.team === 'blue' ? 1 : -1) > 0 ? HANGAR_SIDE : 0;
+    const dz = Math.max(0, Math.abs(z - f.z) - (f.width / 2 + 60 + out));
     const d = Math.hypot(dx, dz);
     const blend = inner ? 24 : 45;
     if (d < blend) h = lerp(f.h, h, smoothstep(0, blend, d));

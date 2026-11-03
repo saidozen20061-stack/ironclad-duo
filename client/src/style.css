@@ -249,6 +249,11 @@ input, select {
 .bar { height: 6px; background: #0c0e0a; border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 
+.achievements-panel { max-height: 90vh; display: flex; flex-direction: column; }
+.achievement-list { display: grid; gap: 6px; margin: 8px 0 12px; overflow-y: auto; }
+.achievement { display: grid; gap: 2px; padding: 7px 12px; background: rgba(0, 0, 0, 0.3); border-radius: 4px; opacity: 0.55; text-align: left; }
+.achievement.got { opacity: 1; border-left: 3px solid #d9a441; }
+.achievement span { color: var(--ink-dim); font-size: 13px; }
 .end-stats { display: grid; gap: 8px; margin: 10px 0 14px; }
 .end-stats div { display: flex; justify-content: space-between; padding: 8px 12px; background: rgba(0, 0, 0, 0.3); border-radius: 4px; }
 .end-stats span { color: var(--ink-dim); font-weight: 600; }

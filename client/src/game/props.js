@@ -476,16 +476,17 @@ const builders = {
       box(C.metal, w / 2 - 0.3, 0, 0, 0.6, h * 0.5, d - 1.2),
       vault(C.olive, 0, h * 0.5, 0, w + OVER, d + OVER, h * 0.5),
       box(0x262720, 0, 0.02, d * 0.08, w * 0.92, 0.04, d * 0.8),
-      box(C.olive, -w * 0.36, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
-      box(C.olive, w * 0.36, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
-      box(p.team === 'red' ? C.redTeam : C.blueTeam, 0, h * 0.52, d / 2 + 0.05, w * 0.3, 1.2, 0.1),
+      box(C.olive, -w * (p.big ? 0.47 : 0.36), 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
+      box(C.olive, w * (p.big ? 0.47 : 0.36), 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
+      box(p.team === 'red' ? C.redTeam : C.blueTeam, p.big ? w * 0.3 : 0, h * 0.52, d / 2 + 0.05, w * 0.3, p.big ? 3 : 1.2, 0.1),
       // The inside: a plane starts in here, and the arch above is only visible from outside.
       box(0x3a3d34, 0, h * 0.72, 0, w * 0.88, 0.25, d - 0.5),
-      ...[-0.3, -0.1, 0.1, 0.3].map((k) => box(0x8d9084, 0, h * 0.72 - 0.7, d * k, w * 0.88, 0.7, 0.45)),
+      ...[-0.3, -0.1, 0.1, 0.3].map((k) => box(0x8d9084, 0, h * 0.72 - (p.big ? 1.6 : 0.7), d * k, w * 0.88, p.big ? 1.6 : 0.7, p.big ? 1 : 0.45)),
       box(C.metal, -w * 0.44, h * 0.5, 0, 0.4, h * 0.22, d - 0.5),
       box(C.metal, w * 0.44, h * 0.5, 0, 0.4, h * 0.22, d - 0.5),
       box(C.metal, 0, h * 0.5, -d / 2 + 0.4, w * 0.88, h * 0.22, 0.4),
-      box(C.olive, 0, h * 0.5, d / 2 - 0.3, w * 0.88, h * 0.22, 0.3),
+      // Over the door; the big one's stays open in the middle for a tall tail.
+      ...(p.big ? [-1, 1].map((s) => box(C.olive, s * w * 0.3, h * 0.5, d / 2 - 0.3, w * 0.28, h * 0.22, 0.3)) : [box(C.olive, 0, h * 0.5, d / 2 - 0.3, w * 0.88, h * 0.22, 0.3)]),
     ];
     return parts;
   },

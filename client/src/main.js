@@ -9,6 +9,10 @@ import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } fr
 import { voice } from './voice.js';
 import { MatchClient } from './game/matchClient.js';
 import { RadioLines } from './game/radioLines.js';
+import { AchievementTracker, achievementList } from './game/achievements.js';
+import { PlaneWear } from './game/planeWear.js';
+import { RainSound } from './game/rainSound.js';
+import { setWorldMood } from './game/world.js';
 import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../shared/constants.js';
 import { PAINT } from './models/paint.js';
 import { PLANES, PLANE_IDS } from '../../shared/planes.js';
@@ -18,8 +22,11 @@ setActiveView(menuScene);
 
 let match = null; // MatchClient while a match is running
 let radio = null; // what command says over the radio during that match
+let tracker = null; // and what counts towards the achievements
+let wear = null;
+let rainSound = null;
 
-if (import.meta.env.DEV) window.__game = { net, voice, get match() { return match; }, get radio() { return radio; } };
+if (import.meta.env.DEV) window.__game = { net, voice, get match() { return match; }, get radio() { return radio; }, get tracker() { return tracker; } };
 
 // ---------- Main menu ----------
 const nameInput = $('#input-name');
@@ -63,9 +70,19 @@ $('#btn-join-back').addEventListener('click', () => backScreen());
 
 $('#btn-settings').addEventListener('click', () => showScreen('settings'));
 $('#btn-controls').addEventListener('click', () => showScreen('controls'));
+$('#btn-achievements').addEventListener('click', () => {
+  renderAchievements();
+  showScreen('achievements');
+});
+$('#btn-achievements-back').addEventListener('click', () => backScreen());
+function renderAchievements() {
+  const list = achievementList();
+  $('#achievement-count').textContent = `${list.filter((a) => a.unlockedAt).length} of ${list.length} unlocked`;
+  $('#achievement-list').innerHTML = list.map((a) => `<div class="achievement${a.unlockedAt ? ' got' : ''}"><b>${a.unlockedAt ? '🏆' : '🔒'} ${a.name}</b><span>${a.desc}</span></div>`).join('');
+}
 
 // ---------- Solo setup: tank, camo, mode; the match runs locally ----------
-const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy', airStart: false, team: 'blue' };
+const solo = { tank: 'medium', paint: 'medium', mode: 'flags', killLimit: 20, difficulty: 'easy', airStart: false, night: false, rain: false, team: 'blue' };
 const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
 function renderSolo() {
   const pick = (root, items, cur, key) => {
@@ -79,7 +96,7 @@ function renderSolo() {
   pick('#solo-modes', Object.entries(MODES).map(([id, m]) => [id, m.name]), solo.mode, 'mode');
   $('#solo-kills').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small${k === solo.killLimit ? ' on' : ''}" data-kills="${k}">${k}</button>`).join('')}`;
   $('#solo-kills').style.display = solo.mode === 'tdm' ? '' : 'none';
-  $('#solo-diff').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small${id === solo.difficulty ? ' on' : ''}" data-diff="${id}">${d.name}</button>`).join('')}${flying ? `<button class="btn small${solo.airStart ? ' on' : ''}" data-air="1">Air start</button>` : ''}`;
+  $('#solo-diff').innerHTML = `<label>NPC difficulty</label>${Object.entries(DIFFICULTY).map(([id, d]) => `<button class="btn small${id === solo.difficulty ? ' on' : ''}" data-diff="${id}">${d.name}</button>`).join('')}${flying ? `<button class="btn small${solo.airStart ? ' on' : ''}" data-air="1">Air start</button>` : ''}<button class="btn small${solo.night ? ' on' : ''}" data-night="1">Night</button><button class="btn small${solo.rain ? ' on' : ''}" data-rain="1">Rain</button>`;
   menuScene.setShowcase(solo.tank, solo.paint);
   previewCaption('#preview-solo', solo.tank, solo.paint);
 }
@@ -92,6 +109,8 @@ $('#screen-solo').addEventListener('click', (e) => {
   else if (b.dataset.kills) solo.killLimit = Number(b.dataset.kills);
   else if (b.dataset.diff) solo.difficulty = b.dataset.diff;
   else if (b.dataset.air) solo.airStart = !solo.airStart;
+  else if (b.dataset.night) solo.night = !solo.night;
+  else if (b.dataset.rain) solo.rain = !solo.rain;
   else return;
   renderSolo();
 });
@@ -230,6 +249,12 @@ function returnToLobbyView() {
 function endMatchClient() {
   radio?.dispose();
   radio = null;
+  tracker?.dispose();
+  tracker = null;
+  wear?.dispose();
+  wear = null;
+  rainSound?.dispose();
+  rainSound = null;
   match?.dispose();
   match = null;
 }
@@ -239,6 +264,7 @@ net.on('matchStart', (msg) => {
   const crew = msg.crews.find((c) => c.driver === net.id || c.gunner === net.id);
   const role = msg.solo || msg.style === 'solo' ? 'solo' : crew.driver === net.id ? 'driver' : 'gunner';
   if (!msg.solo) voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
+  setWorldMood({ night: !!msg.night, rain: !!msg.rain });
   match = new MatchClient({
     role,
     tank: crew.tank,
@@ -252,6 +278,9 @@ net.on('matchStart', (msg) => {
     },
   });
   radio = new RadioLines(match.hud, crew.id);
+  tracker = new AchievementTracker(crew.id, { night: !!msg.night, rain: !!msg.rain, vehicle: crew.tank });
+  wear = new PlaneWear(() => match);
+  if (msg.rain) rainSound = new RainSound();
   clearHistory();
   hideScreens();
   setActiveView(match);
@@ -276,6 +305,8 @@ net.on('matchEnd', (msg) => {
   $('#end-caps').textContent = mine[3];
   $('#end-caps').parentElement.style.display = msg.mode === 'fortress' ? 'none' : '';
   $('#end-board').innerHTML = match?.scoreboardHtml(msg.crews) ?? '';
+  const earned = tracker?.finish(victory && !draw, mine[2]) ?? [];
+  $('#end-achievements').innerHTML = earned.map((a) => `<div class="achievement got"><b>🏆 ${a.name}</b><span>${a.desc}</span></div>`).join('');
   match?.onMatchEnd?.(msg);
   $('#btn-end-lobby').textContent = net.mode === 'solo' ? 'Back to Menu' : lobby.isHost ? 'Return to Lobby' : 'Leave to Menu';
   showScreen('end', { remember: false });

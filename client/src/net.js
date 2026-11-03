@@ -308,13 +308,13 @@ export class Net {
 
   // Solo: the simulation worker runs right here, no PeerJS / room. One player drives and
   // shoots; their crew's gunner seat stays empty so only one soldier bails out.
-  startSolo({ tank, paint, mode, killLimit, difficulty, airStart, team = 'blue' }) {
+  startSolo({ tank, paint, mode, killLimit, difficulty, airStart, night, rain, team = 'blue' }) {
     this.leave();
     this.mode = 'solo';
     this.id = 1;
     const me = { id: 1, crew: 0, role: 'driver', send: (msg) => this.deliver(msg) };
     const crew = { id: 0, team: mode === 'fortress' ? 'blue' : team, tank, driver: 1, gunner: 1 };
-    const room = { players: [me], matchInfo: { style: 'solo', mode, killLimit, difficulty, airStart, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
+    const room = { players: [me], matchInfo: { style: 'solo', mode, killLimit, difficulty, airStart, night, rain, crews: [crew] }, broadcast: (msg) => this.deliver(msg) };
     this.solo = new SimProxy(room);
     this.deliver({ t: 'matchStart', solo: true, paint, ...room.matchInfo, names: { 1: this.name } });
   }

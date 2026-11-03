@@ -43,6 +43,8 @@ export class Room {
     this.killLimit = 20;
     this.difficulty = 'easy';
     this.airStart = false;
+    this.night = false;
+    this.rain = false;
     this.phase = 'lobby'; // 'lobby' | 'match'
     this.match = null;
   }
@@ -124,6 +126,8 @@ export class Room {
       killLimit: this.killLimit,
       difficulty: this.difficulty,
       airStart: this.airStart,
+      night: this.night,
+      rain: this.rain,
       crews: this.crews,
       players: this.players.map((p) => ({ id: p.id, name: p.name, crew: p.crew, role: p.role, ready: p.ready })),
     };
@@ -284,13 +288,15 @@ export class Room {
     this.sync();
   }
 
-  setMode(player, mode, killLimit, difficulty, airStart, style) {
+  setMode(player, mode, killLimit, difficulty, airStart, style, night, rain) {
     if (this.phase !== 'lobby' || !this.isHost(player)) return;
     if (Object.hasOwn(PLAY_STYLES, style ?? '')) this.setStyle(style);
     if (Object.hasOwn(MODES, mode ?? '')) this.mode = mode;
     if (KILL_LIMITS.includes(killLimit)) this.killLimit = killLimit;
     if (Object.hasOwn(DIFFICULTY, difficulty ?? '')) this.difficulty = difficulty;
     if (typeof airStart === 'boolean') this.airStart = airStart;
+    if (typeof night === 'boolean') this.night = night;
+    if (typeof rain === 'boolean') this.rain = rain;
     this.sync();
   }
 
@@ -319,7 +325,7 @@ export class Room {
     if (problem) return player.send({ t: 'error', msg: problem });
     const crews = this.occupied().map((c) => ({ ...c, team: this.mode === 'fortress' ? 'blue' : c.team }));
     this.phase = 'match';
-    this.matchInfo = { style: this.style, mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, airStart: this.airStart, crews };
+    this.matchInfo = { style: this.style, mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, airStart: this.airStart, night: this.night, rain: this.rain, crews };
     this.manager.onMatchStart?.(this);
     this.broadcast({
       t: 'matchStart',
@@ -421,7 +427,7 @@ export class RoomManager {
         room?.autoBalance(player);
         return true;
       case 'mode':
-        room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty, msg.airStart, msg.style);
+        room?.setMode(player, msg.mode, Number(msg.killLimit), msg.difficulty, msg.airStart, msg.style, msg.night, msg.rain);
         return true;
       case 'swapSeat':
         room?.swapSeat(player);
