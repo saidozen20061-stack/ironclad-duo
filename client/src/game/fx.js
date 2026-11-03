@@ -44,6 +44,7 @@ export class FX {
     this.projectiles = new Map();
     this.particles = [];
     this.flashes = [];
+    this.units = [];
     this.tracerGeo = new THREE.BoxGeometry(1, 1, 1);
     this.tracerMats = {};
     for (const [k, v] of Object.entries(TRACER)) {
@@ -102,7 +103,7 @@ export class FX {
     if (munition) mesh.scale.setScalar(ev.air || ev.kind === 'bomb' ? munition.size : FOOT_ROCKET_SIZE);
     else mesh.scale.set(style.width, style.width, style.len);
     this.scene.add(mesh);
-    this.projectiles.set(ev.id, { mesh, flame, o: ev.o, coast: ev.coast, b: ev.b, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && ev.kind !== 'rocket' ? 2.2 : ev.coast ? 4 + ROCKET.drop : 4, air: !!ev.air, style, munition: ev.air || ev.kind === 'bomb' ? munition : null, streak: ev.kind === 'mg' || ev.kind === 'ac' });
+    this.projectiles.set(ev.id, { mesh, flame, o: ev.o, coast: ev.coast, b: ev.b, team: ev.team, kind: ev.kind, x: ev.x, y: ev.y, z: ev.z, vx: ev.vx, vy: ev.vy, vz: ev.vz, life: ev.kind === 'bomb' ? 14 : ev.air && ev.kind !== 'rocket' ? 2.2 : ev.coast ? 4 + ROCKET.drop : 4, air: !!ev.air, style, munition: ev.air || ev.kind === 'bomb' ? munition : null, streak: ev.kind === 'mg' || ev.kind === 'ac' });
   }
 
   removeProjectile(id) {
@@ -249,13 +250,10 @@ export class FX {
   }
 
   particle({ geo, mat, pos, vel, size, grow = 0, life, gravity = 0, fade = 1, drag = 0, spin = false, ground = false }) {
-    // Hard cap so huge firefights can't tank the frame rate.
     if (this.particles.length > 700 * quality().particles) return;
     this.particles.push({ b: this.batch(geo, mat), x: pos.x, y: pos.y, z: pos.z, rx: Math.random() * 3, ry: Math.random() * 3, vel, size, grow, life, t: 0, gravity, fade, drag, spin, ground });
   }
 
-  // A plane's rocket: flame right behind it, then smoke that hangs for a couple of seconds.
-  // Spaced by distance, so the trail stays unbroken at any speed or frame rate.
   rocketTrail(p, dt) {
     const speed = Math.hypot(p.vx, p.vy, p.vz);
     const step = 4 / Math.max(0.5, quality().particles);
@@ -270,7 +268,6 @@ export class FX {
     }
   }
 
-  // A dropped rocket's motor lights: flame on, a burst of fire, and its sound.
   igniteRocket(p) {
     p.flame.visible = true;
     const dir = new THREE.Vector3(p.b[0], p.b[1], p.b[2]).normalize();
@@ -278,10 +275,53 @@ export class FX {
     this.onIgnite?.(p);
   }
 
+  // Unit list for client-side rocket homing (must match server steer).
+  setUnits(units) {
+    this.units = units ?? [];
+  }
+
+  unitAimY(u) {
+    if (u.kind === 'plane' || u.y != null) return u.y ?? u.pose?.y ?? groundAt(u.x, u.z);
+    return (u.pose?.y ?? groundAt(u.x, u.z)) + 1;
+  }
+
+  steerRocket(p, dt) {
+    if (p.coast > 0 || !this.units.length) return;
+    let best = null;
+    let bestScore = Infinity;
+    const maxDist = p.air ? 220 : 180;
+    const maxTurn = p.air ? 4.2 : 3.5;
+    for (const u of this.units) {
+      if (u.dead || u.team === p.team || u.id === p.o) continue;
+      const uy = this.unitAimY(u);
+      const dist = Math.hypot(u.x - p.x, uy - p.y, u.z - p.z);
+      if (dist >= maxDist) continue;
+      let score = dist;
+      if (u.kind === 'plane') score *= 0.7;
+      if (u.player) score *= 0.85;
+      if (score < bestScore) {
+        bestScore = score;
+        best = u;
+      }
+    }
+    if (!best) return;
+    const speed = Math.hypot(p.vx, p.vy, p.vz);
+    if (speed < 0.001) return;
+    const cur = new THREE.Vector3(p.vx / speed, p.vy / speed, p.vz / speed);
+    const desired = new THREE.Vector3(best.x - p.x, this.unitAimY(best) - p.y, best.z - p.z);
+    if (desired.lengthSq() < 1e-6) return;
+    desired.normalize();
+    const angle = Math.acos(Math.max(-1, Math.min(1, cur.dot(desired))));
+    if (angle < 1e-4) return;
+    const t = Math.min(1, (maxTurn * dt) / angle);
+    cur.lerp(desired, t).normalize();
+    p.vx = cur.x * speed;
+    p.vy = cur.y * speed;
+    p.vz = cur.z * speed;
+  }
+
   update(dt, cam) {
     for (const [id, p] of this.projectiles) {
-      // Fast bullets are drawn as a streak of what they cover in a frame, and don't get
-      // thinner than a line with distance, so a burst always reads as a stream of tracers.
       if (p.streak && cam) {
         const w = p.style.width * Math.max(1, Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z) / (p.air ? 30 : 40));
         p.mesh.scale.set(w, w, Math.min(20, Math.max(p.style.len, Math.hypot(p.vx, p.vy, p.vz) * dt * 1.5)));
@@ -292,26 +332,29 @@ export class FX {
       }
       if (p.flame) p.flame.scale.z = 0.8 + Math.random() * 0.5;
       if (p.b && rocketStep(p, dt)) this.igniteRocket(p);
-      if (p.kind === 'rocket' && p.air) {
-        if (!(p.coast > 0)) this.rocketTrail(p, dt);
-      }
-      else if (p.kind === 'rocket') {
-        // Smoke trail
-        p.trail = (p.trail ?? 0) - dt;
-        if (p.trail <= 0) {
-          p.trail = 0.03;
-          this.particle({ geo: this.puffGeo, mat: this.mats.smoke, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.25, grow: 3, life: 1.2, fade: 0.5 });
+      if (p.kind === 'rocket') {
+        this.steerRocket(p, dt);
+        if (p.air) {
+          if (!(p.coast > 0)) this.rocketTrail(p, dt);
+        } else {
+          p.trail = (p.trail ?? 0) - dt;
+          if (p.trail <= 0) {
+            p.trail = 0.03;
+            this.particle({ geo: this.puffGeo, mat: this.mats.smoke, pos: new THREE.Vector3(p.x, p.y, p.z), vel: new THREE.Vector3(0, 0.3, 0), size: 0.25, grow: 3, life: 1.2, fade: 0.5 });
+          }
         }
       } else p.vy -= GRAVITY * dt;
+
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
       p.life -= dt;
       p.mesh.position.set(p.x, p.y, p.z);
       p.mesh.lookAt(p.x + p.vx, p.y + p.vy, p.z + p.vz);
-      // Hide once it should have landed even if the server's impact event is late.
+
       if (p.life <= 0 || p.y < Math.max(groundAt(p.x, p.z), WATER_LEVEL) - 1) this.removeProjectile(id);
     }
+
 
     for (const b of this.batches.values()) b.n = 0;
     const keep = [];

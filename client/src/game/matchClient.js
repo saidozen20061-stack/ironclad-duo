@@ -738,7 +738,23 @@ export class MatchClient {
       this.world.seeFar = this.units.thermal ? 2 : 1;
       this.units.update(states, dt);
     }
-    this.fx?.update(dt, isWorldView(this.view) ? this.view.camera.position : null);
+    if (this.fx) {
+      // Feed unit positions so client rockets steer the same way as the server.
+      this.fx.setUnits(
+        [...states.values()].map((u) => ({
+          id: u.id,
+          team: u.team,
+          dead: u.dead,
+          kind: PLANES[u.type] ? 'plane' : TANKS[u.type] ? 'tank' : 'inf',
+          x: u.x,
+          z: u.z,
+          y: u.y,
+          pose: u.pose,
+          player: !!(u.player || u.crew != null),
+        })),
+      );
+      this.fx.update(dt, isWorldView(this.view) ? this.view.camera.position : null);
+    }
     const board = this.keys.on('all.board') && !this.paused;
     if (board !== this.boardEl.classList.contains('show')) {
       this.boardEl.classList.toggle('show', board);

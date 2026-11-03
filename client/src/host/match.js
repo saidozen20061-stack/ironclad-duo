@@ -18,7 +18,7 @@ export const TYPE_CODE = Object.fromEntries(TYPE_IDS.map((t, i) => [t, i]));
 
 const r2 = (v) => Math.round(v * 100) / 100;
 const r3 = (v) => Math.round(v * 1000) / 1000;
-const NO_RESPAWN = 1e7; // the crew is on foot: no new vehicle is on its way
+const NO_RESPAWN = 1e7;
 
 let nextId = 1;
 
@@ -35,23 +35,20 @@ class Tank {
     this.z = z;
     this.h = h;
     this.v = 0;
-    this.ty = 0; // turret yaw relative to hull
-    this.gp = 0; // gun elevation relative to hull
+    this.ty = 0;
+    this.gp = 0;
     this.hp = this.spec.hp;
     this.dead = false;
     this.respawnAt = 0;
     this.spawn = { x, z, h };
     this.pose = tankPose(this.spec, x, z, h);
     this.radius = Math.hypot(this.spec.size.length, this.spec.size.width) / 2;
-    // Inputs
     this.drive = { th: 0, st: 0, boost: false, brake: false };
     this.aim = { yaw: h, pitch: 0 };
     this.trigger = { main: false, coax: false };
-    // Driving resources
     this.boost = 1;
-    // Weapons
     const w = this.spec.weapon;
-    this.reload = 0; // seconds left until main gun ready
+    this.reload = 0;
     this.reloadTotal = w.reload;
     this.fireCd = 0;
     this.mag = w.magazine ?? 1;
@@ -60,10 +57,9 @@ class Tank {
     this.coaxReload = 0;
     this.coaxCd = 0;
     this.fireQueued = false;
-    // Damage zones: 1 = intact, 0 = destroyed.
     this.mods = { tracks: 1, engine: 1, turret: 1, gun: 1, radar: 1 };
-    this.burning = 0; // seconds of engine fire left
-    this.repair = null; // { mod, t, total }
+    this.burning = 0;
+    this.repair = null;
   }
 
   respawn() {
@@ -77,7 +73,6 @@ class Tank {
     this.mag = this.spec.weapon.magazine ?? 1;
     this.aim.yaw = this.h;
     this.aim.pitch = 0;
-    // A new tank: nothing carries over from the last one.
     this.boost = 1;
     this.fireQueued = false;
     this.fireCd = 0;
@@ -90,8 +85,6 @@ class Tank {
   }
 }
 
-// A crew member on foot. Movement is reported by the player's client (it predicts it
-// locally); the host checks it, runs the weapons and takes the damage.
 class CrewSoldier {
   constructor(role, x, z, h, crew) {
     this.id = nextId++;
@@ -104,9 +97,9 @@ class CrewSoldier {
     this.x = x;
     this.z = z;
     this.h = h;
-    this.ty = 0; // 1 = crouched
-    this.gp = 0; // aim pitch
-    this.jy = 0; // height above ground (jumping)
+    this.ty = 0;
+    this.gp = 0;
+    this.jy = 0;
     this.hp = this.spec.hp;
     this.dead = false;
     this.radius = 0.5;
@@ -121,16 +114,14 @@ class CrewSoldier {
   }
 }
 
-// One player crew: their tank, the bail-out / on-foot state, ping and scoreboard stats.
 class Crew {
   constructor(info, tank) {
     this.id = info.id;
     this.team = info.team;
     this.tankType = info.tank;
     this.tank = tank;
-    this.noPlanes = false; // lost a plane that can't be replaced: tanks only from now on
+    this.noPlanes = false;
     this.seats = { driver: true, gunner: true };
-    // 'tank' (in or waiting for a tank), 'choice' (just destroyed), 'foot' (bailed out).
     this.bail = { mode: 'tank', until: 0, picks: {}, foot: {} };
     this.ping = null;
     this.pingReadyAt = 0;
@@ -144,28 +135,25 @@ export class Match {
     this.mode = room.mode ?? 'flags';
     this.killLimit = room.killLimit ?? 20;
     this.skill = DIFFICULTY[room.difficulty] ?? DIFFICULTY.easy;
-    this.smokeZones = []; // drifting smoke that hides targets from NPCs
+    this.smokeZones = [];
     this.time = 0;
     this.tickNo = 0;
     this.units = [];
     this.projectiles = [];
     this.events = [];
     this.over = false;
-    // Per-match prop damage (the shared PROPS layout itself is never mutated).
     this.propHp = new Map();
     this.propDead = new Set();
     this.propsDirty = true;
     this.tickets = { blue: MATCH.tickets, red: MATCH.tickets };
-    this.score = { blue: 0, red: 0 }; // team deathmatch points
+    this.score = { blue: 0, red: 0 };
     this.bleedT = MATCH.bleedInterval;
     this.points = POINTS.map((p) => ({ id: p.id, owner: null, progress: 0, contested: false }));
 
-    // Fortress Defence adds walls etc. to the map; the nav grid has to know about them.
     setFortress(this.mode === 'fortress');
     if (this.mode === 'fortress') buildNav();
 
     this.planes = new PlaneSystem(this);
-    // Player crews, spread out side by side at their team's base.
     this.crews = new Map();
     const infos = room.crews ?? [{ id: 0, team: 'blue', tank: room.tank ?? 'medium' }];
     for (const team of ['blue', 'red']) {
@@ -175,7 +163,6 @@ export class Match {
       const fwd = team === 'blue' ? 1 : -1;
       mine.forEach((info, k) => {
         const x = b.x + (k - (mine.length - 1) / 2) * 16;
-        // Plane crews start on their airfield's runway instead.
         const t = this.addTank(PLANES[info.tank] ? this.planes.createPlayerPlane(team, info.tank, planeSlot++) : new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
         t.crewId = info.id;
         this.crews.set(info.id, new Crew(info, t));
@@ -188,7 +175,6 @@ export class Match {
     this.interval = setInterval(() => this.tick(), 1000 / TICK_RATE);
   }
 
-  // Player tanks per team (the AI fills the rest of the armour cap).
   playerTanks(team) {
     let n = 0;
     for (const c of this.crews.values()) if (c.team === team) n++;
@@ -212,7 +198,6 @@ export class Match {
     clearInterval(this.interval);
   }
 
-  // A guest left mid-match: their seat goes quiet, the crew's tank stays in the battle.
   playerLeft(crewId, role) {
     const c = this.crews.get(crewId);
     if (!c || !role) return;
@@ -225,7 +210,6 @@ export class Match {
     c.bail.picks[role] ??= 'tank';
   }
 
-  // Someone took the empty seat again during the match.
   playerJoined(crewId, role) {
     const c = this.crews.get(crewId);
     if (!c || !role) return;
@@ -233,7 +217,6 @@ export class Match {
     const b = c.bail;
     delete b.picks[role];
     if (b.mode !== 'foot' || b.foot[role]) return;
-    // The crew is on foot without them: they come in next to their crewmate.
     const mate = Object.values(b.foot).find((s) => !s.dead);
     if (!mate) return this.endFoot(c);
     const s = new CrewSoldier(role, mate.x + 1.5, mate.z, mate.h, c);
@@ -241,7 +224,6 @@ export class Match {
     this.units.push(s);
   }
 
-  // A player alone in their crew moves to the other seat.
   swapSeat(crewId, from, to) {
     const c = this.crews.get(crewId);
     if (!c || !from || !to) return;
@@ -267,23 +249,18 @@ export class Match {
     c.pingReadyAt = this.time + PING.cooldown;
   }
 
-  // ---------- Input ----------
   onMessage(player, msg) {
     const c = this.crews.get(player.crew);
     if (!c) return;
     const t = c.tank;
     if (msg.t === 'bail') return this.onBailPick(c, player.role, msg.pick);
     if (msg.t === 'bailSkip') return this.onBailSkip(c, player.role);
-    // Solo only: don't wait for the new vehicle. Nobody else's time is being skipped.
     if (msg.t === 'respawnSkip') {
       if (this.crews.size === 1 && !c.seats.gunner && t.dead && c.bail.mode === 'tank') t.respawnAt = this.time;
       return;
     }
-    // Dev-only test hook: destroy our own tank.
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
-    // Dev-only: don't wait five minutes for the Talon or Leviathan.
     if (import.meta.env?.DEV && msg.t === 'debugElite') return this.planes.spawnElites();
-    // Dev-only: finish the current Fortress wave (or skip the break).
     if (import.meta.env?.DEV && msg.t === 'debugWave' && this.fort) {
       if (this.fort.phase === 'break') this.fort.until = this.time;
       else for (const u of this.fort.alive) this.damage(u, 1e6, { owner: 0 });
@@ -310,14 +287,12 @@ export class Match {
       } else if (msg.t === 'shell' && (msg.shell === 'AP' || msg.shell === 'HE') && t.spec.weapon.shells) {
         if (t.shell !== msg.shell) {
           t.shell = msg.shell;
-          // Unloading a ready round costs half a reload.
           t.reload = Math.max(t.reload, t.reloadTotal * 0.5);
         }
       }
     }
   }
 
-  // ---------- Simulation ----------
   tick() {
     if (this.over) return this.broadcast();
     this.time += DT;
@@ -328,8 +303,7 @@ export class Match {
     this.planes.tick();
     this.modeTick?.();
     this.war.tick();
-    // Remove NPC corpses / wrecks after a while.
-    this.units = this.units.filter((u) => u.player || !u.dead || this.time - u.diedAt < (u.kind === 'tank' ? 30 : 30));
+    this.units = this.units.filter((u) => u.player || !u.dead || this.time - u.diedAt < 30);
     this.updateProjectiles();
     this.updateCapture();
     this.updateTickets();
@@ -355,7 +329,6 @@ export class Match {
       this.updateWeapons(t);
       this.modeCrewTick?.(c);
     }
-    // Ping expires after its lifetime or once the crew reaches it.
     if (c.ping) {
       const near = c.bail.mode === 'foot' ? Object.values(c.bail.foot).filter((s) => !s.dead) : [t];
       const reached = near.some((u) => Math.hypot(u.x - c.ping.x, u.z - c.ping.z) < PING.reachRadius);
@@ -363,7 +336,6 @@ export class Match {
     }
   }
 
-  // The crew's plane is gone for good: they take whichever tank the base has for them.
   assignRandomTank(c) {
     const b = BASES[c.team];
     const type = TANK_IDS[Math.floor(Math.random() * TANK_IDS.length)];
@@ -375,7 +347,6 @@ export class Match {
     return t;
   }
 
-  // Something parked on the spawn point: the new tank comes in beside it instead.
   clearSpawn(t) {
     const { x, z } = t.spawn;
     for (const r of [0, 12, 24, 36]) {
@@ -403,13 +374,11 @@ export class Match {
     return false;
   }
 
-  // ---------- Bail out / on foot ----------
   onBailPick(c, role, pick) {
     if (c.bail.mode !== 'choice' || (pick !== 'tank' && pick !== 'foot')) return;
     c.bail.picks[role] = pick;
   }
 
-  // Skip the countdown: everyone at the controls has to press it.
   onBailSkip(c, role) {
     const b = c.bail;
     if (b.mode !== 'choice') return;
@@ -417,24 +386,20 @@ export class Match {
     if (['driver', 'gunner'].every((r) => b.skip[r] || !c.seats[r])) b.until = this.time;
   }
 
-  // Both should agree; if they don't, the driver's pick wins (default: wait for a tank).
-  // With nobody in the driver's seat the gunner decides.
   resolveBail(c) {
     const b = c.bail;
     if ((b.picks[c.seats.driver ? 'driver' : 'gunner'] ?? 'tank') === 'foot') {
       const t = c.tank;
-      // Bail out on both sides of the wreck.
       const lx = Math.cos(t.h), lz = -Math.sin(t.h);
       const off = t.spec.size.width / 2 + 1.6;
       b.foot = {};
       for (const [role, side] of [['driver', 1], ['gunner', -1]]) {
-        if (!c.seats[role]) continue; // nobody in that seat (solo, or the player left)
+        if (!c.seats[role]) continue;
         let x = t.x + lx * off * side, z = t.z + lz * off * side;
         for (let k = 0; k < 8 && footBlocked(x, z, this.propDead); k++) {
           x = t.x + Math.cos(k) * (off + 2);
           z = t.z + Math.sin(k) * (off + 2);
         }
-        // A plane can come down past the map edge; the crew walks away from inside it.
         x = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, x));
         z = Math.max(-PLAY_LIMIT + 5, Math.min(PLAY_LIMIT - 5, z));
         const s = new CrewSoldier(role, x, z, t.h, c);
@@ -447,8 +412,6 @@ export class Match {
     b.picks = {};
   }
 
-  // Key X in a plane: both jump, the plane goes on without them. On the ground they just
-  // climb out and leave it where it stands, which also gets a crew out of a dry plane.
   bailFromPlane(c) {
     const t = c.tank;
     if (t.dead || t.kind !== 'plane') return;
@@ -464,7 +427,6 @@ export class Match {
         x += Math.cos(k) * 10;
         z += Math.sin(k) * 10;
       }
-      // Steer the parachute to the nearest bank rather than into deep water.
       for (let r = 12; r <= 120 && waterDepthAt(x, z) > 1; r += 12) {
         const a = [0, 1, 2, 3, 4, 5, 6, 7].find((k) => waterDepthAt(x + Math.cos(k * 0.785) * r, z + Math.sin(k * 0.785) * r) <= 1);
         if (a === undefined) continue;
@@ -491,7 +453,6 @@ export class Match {
     if (!s || s.dead) return;
     if (msg.t === 'foot') {
       if (Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
-        // Trust the client's own prediction unless it moves impossibly fast or into a wall.
         const d = Math.hypot(msg.x - s.x, msg.z - s.z);
         const reach = Math.min(4, (this.time - (s.movedAt ?? -1)) * FOOT.sprint * 1.6 + 0.6);
         if (d < reach && Math.abs(msg.x) <= PLAY_LIMIT + 5 && Math.abs(msg.z) <= PLAY_LIMIT + 5 && !footBlocked(msg.x, msg.z, this.propDead)) {
@@ -502,7 +463,6 @@ export class Match {
       }
       if (Number.isFinite(msg.h)) s.h = wrapAngle(msg.h);
       if (Number.isFinite(msg.p)) s.gp = Math.max(-1.5, Math.min(1.5, msg.p));
-      // Coming down under a parachute the host decides the height.
       s.jy = s.drop > 0 ? s.drop : Math.max(0, Math.min(2, Number(msg.jy) || 0));
       s.ty = msg.crouch ? 1 : 0;
       s.spec.size.height = msg.crouch ? 1.2 : 1.8;
@@ -515,13 +475,12 @@ export class Match {
         s.grenades--;
         s.grenadeCd = FOOT.grenade.cooldown;
         const g = FOOT.grenade;
-        const p = s.gp + 0.25; // lobbed a little above the crosshair
+        const p = s.gp + 0.25;
         const dir = new Vector3(Math.sin(s.h) * Math.cos(p), Math.sin(p), Math.cos(s.h) * Math.cos(p));
         const eye = new Vector3(s.x, s.pose.y + (s.ty ? FOOT.crouchEye : FOOT.eye), s.z).addScaledVector(dir, 0.6);
         this.fire(s, { kind: 'grenade', damage: g.damage, speed: g.speed, splash: g.splash, splashDamage: g.splashDamage, spread: 0 }, eye, dir);
       }
     } else if (msg.t === 'garage') {
-      // Everyone still standing has to be at their team's garage.
       const alive = Object.values(c.bail.foot).filter((u) => !u.dead);
       if (alive.every((u) => nearGarage(u.x, u.z, c.team))) this.endFoot(c);
     }
@@ -549,7 +508,6 @@ export class Match {
           s.reloading = 0;
         }
       }
-      // Ammo resupply at the base garages.
       if (nearGarage(s.x, s.z, c.team)) {
         s.reserve = r.reserve;
         s.grenades = FOOT.grenades;
@@ -565,7 +523,6 @@ export class Match {
         } else if (s.reserve > 0) s.reloading = r.reload;
       }
     }
-    // Both down (or nobody left at the controls): the crew waits for a fresh tank at base.
     if (crew.every((s) => s.dead || !c.seats[s.crew])) this.endFoot(c);
   }
 
@@ -579,7 +536,6 @@ export class Match {
     t.trigger = { main: false, coax: false };
   }
 
-  // Module effects that tick over time: engine fire, repairs, NPC field fixes.
   updateModules(t) {
     const m = t.mods;
     if (t.burning > 0) {
@@ -588,11 +544,9 @@ export class Match {
       m.engine = Math.max(0, m.engine - 0.03 * DT);
     }
     if (!t.player) {
-      // AI crews patch things up on their own, slowly.
       for (const k in m) m[k] = Math.min(1, m[k] + 0.04 * DT);
       return;
     }
-    // Driver repair: hold R while (nearly) stopped. Fixes the most damaged module.
     const wantRepair = t.drive.repair && Math.abs(t.v) < 0.5;
     if (!wantRepair) {
       t.repair = null;
@@ -616,7 +570,6 @@ export class Match {
     }
   }
 
-  // Which module a hit lands on, from the local hit point on the hull box.
   damageModules(u, hit, dmg) {
     if (u.kind !== 'tank' || !u.mods) return;
     const s = u.spec.size;
@@ -628,7 +581,7 @@ export class Match {
     else if (fz < -0.45) mod = 'engine';
     else if (fy > 0.62) mod = fz > 0.3 ? 'gun' : 'turret';
     else mod = fz > 0 ? 'radar' : 'engine';
-    if (Math.random() < 0.12) mod = 'radar'; // spalling wrecks the electronics
+    if (Math.random() < 0.12) mod = 'radar';
     const before = u.mods[mod];
     u.mods[mod] = Math.max(0, before - dmg / (u.spec.hp * 0.35));
     if (mod === 'engine' && Math.random() < 0.15 && u.burning <= 0) {
@@ -647,7 +600,6 @@ export class Match {
     this.updateModules(t);
     if (t.dead) return;
     const m = t.mods;
-    // Repairing locks the controls; dead tracks or engine stop the tank.
     if (t.repair) d.th = d.st = 0;
     if (m.tracks <= 0) {
       d.th = 0;
@@ -659,7 +611,6 @@ export class Match {
       d.boost = false;
     }
     const engineMul = 0.45 + 0.55 * Math.min(1, m.engine * 2);
-    // Boost meter: 4 s of boost, recharges in ~12 s.
     const boosting = d.boost && d.th > 0 && t.boost > 0;
     t.boost = Math.max(0, Math.min(1, t.boost + (boosting ? -DT / 4 : DT / 12)));
     const boostMul = boosting ? 1.4 : 1;
@@ -687,15 +638,12 @@ export class Match {
       t.v -= Math.sign(t.v) * Math.min(Math.abs(t.v), 3 * DT);
     }
 
-    // Tracks: steering slows at speed. Reversing steers like a car backing up: with D held
-    // the back swings right, so the hull turns the other way.
     const speedFrac = Math.min(1, Math.abs(t.v) / s.maxSpeed);
     const steer = d.th < 0 ? -d.st : d.st;
     t.h = wrapAngle(t.h + steer * s.turnRate * (1 - 0.35 * speedFrac) * DT * (d.brake ? 0.6 : 1));
 
     const nx = t.x + Math.sin(t.h) * t.v * DT;
     const nz = t.z + Math.cos(t.h) * t.v * DT;
-    // Tanks run over enemy infantry in their path.
     if (Math.abs(t.v) > 2) {
       for (const u of this.units) {
         if (u.kind !== 'inf' || u.dead || u.team === t.team) continue;
@@ -703,7 +651,7 @@ export class Match {
       }
     }
     if (this.blocked(t, nx, nz)) {
-      t.v *= -0.15; // thud
+      t.v *= -0.15;
     } else {
       t.x = nx;
       t.z = nz;
@@ -715,19 +663,16 @@ export class Match {
     if (Math.abs(nx) > PLAY_LIMIT || Math.abs(nz) > PLAY_LIMIT) return true;
     if (waterDepthAt(nx, nz) > 1.7) return true;
     if (crossesBridgeRail(t.x, t.z, nx, nz) && waterDepthAt(nx, nz) > 0) return true;
-    // Cliffs: too steep a step between current and next ground height.
     const step = groundAt(nx, nz) - groundAt(t.x, t.z);
     const dist = Math.hypot(nx - t.x, nz - t.z) || 1e-6;
     if (step / dist > 0.9) return true;
     const r = t.radius * 0.72;
     for (const p of propsNear(nx, nz, r + 2)) {
       if (!p.solid || this.propDead.has(p.id)) continue;
-      // Only block moving deeper in, so a tank that spawns touching a wall can back out.
       if (circleHitsProp(p, nx, nz, r) && !circleHitsProp(p, t.x, t.z, r)) return true;
     }
     for (const u of this.units) {
       if (u === t || u.kind === 'inf') continue;
-      // Only a plane on the ground (or its wreck) is in a tank's way.
       if (u.kind === 'plane' && !u.grounded && !u.wrecked) continue;
       const rr = (u.radius + t.radius) * 0.72;
       const dNew = Math.hypot(u.x - nx, u.z - nz);
@@ -738,15 +683,13 @@ export class Match {
 
   aimTurret(t) {
     const s = t.spec;
-    // A damaged turret ring traverses slowly; a destroyed one barely moves.
     const ring = t.mods ? (t.mods.turret <= 0 ? 0.08 : 0.35 + 0.65 * t.mods.turret) : 1;
     const npc = t.ai && !t.player && !t.crew ? this.skill.turret : 1;
     const maxStep = s.turretSpeed * ring * npc * DT;
     const want = wrapAngle(t.aim.yaw - t.h);
     const diff = wrapAngle(want - t.ty);
     t.ty = wrapAngle(t.ty + Math.max(-maxStep, Math.min(maxStep, diff)));
-    if (s.traverse) t.ty = Math.max(-s.traverse, Math.min(s.traverse, t.ty)); // casemate gun arc
-    // Elevation target is world pitch minus the hull's slope along the turret direction.
+    if (s.traverse) t.ty = Math.max(-s.traverse, Math.min(s.traverse, t.ty));
     const worldYaw = t.h + t.ty;
     const wantElev = t.aim.pitch - planePitchAlong(t.pose.up, worldYaw);
     const elev = Math.max(s.elevation.min, Math.min(s.elevation.max, wantElev));
@@ -759,7 +702,6 @@ export class Match {
     t.reload = Math.max(0, t.reload - DT);
     t.fireCd = Math.max(0, t.fireCd - DT);
     t.coaxCd = Math.max(0, t.coaxCd - DT);
-    // Destroyed gun: main gun can't fire (coax still works).
     if (t.mods?.gun <= 0) {
       t.fireQueued = false;
       t.trigger = { ...t.trigger, main: false };
@@ -798,13 +740,9 @@ export class Match {
     }
   }
 
-  // Tanks fire from their muzzle; other units pass an explicit origin + direction.
   fire(t, p, origin = null, direction = null) {
     const { pos, dir } = origin ? { pos: origin, dir: direction } : muzzlePose(t.spec, t.pose, t.x, t.z, t.ty, t.gp);
-    // NPC shots hit softer on the lower difficulties.
     if (t.ai && !t.player && !t.crew) p = { ...p, damage: p.damage * this.skill.damage, splashDamage: (p.splashDamage ?? 0) * this.skill.damage };
-    // Random cone spread, much worse with a damaged gun.
-    // Planes have no 'gun' module: they work out their own spread from 'guns'.
     const gunMul = t.mods?.gun !== undefined && p.kind !== 'mg' ? 1 + 4 * (1 - t.mods.gun) : 1;
     const sp = p.spread * gunMul * Math.sqrt(Math.random());
     const a = Math.random() * Math.PI * 2;
@@ -825,13 +763,68 @@ export class Match {
       vz: dir.z * p.speed,
       life: p.life ?? (p.kind === 'rocket' ? 2 : 4),
     };
-    // Dropped rockets: what's above is the speed under power; they start out just falling.
     if (p.coastV) {
       proj.b = [r2(proj.vx), r2(proj.vy), r2(proj.vz)];
       [proj.vx, proj.vy, proj.vz] = p.coastV;
     }
     this.projectiles.push(proj);
-    this.events.push({ k: 'f', id: proj.id, o: t.id, kind: p.kind, x: r2(pos.x), y: r2(pos.y), z: r2(pos.z), vx: r2(proj.vx), vy: r2(proj.vy), vz: r2(proj.vz), ...(p.air ? { air: 1 } : {}), ...(proj.b ? { coast: p.coast, b: proj.b } : {}) });
+    this.events.push({
+      k: 'f',
+      id: proj.id,
+      o: t.id,
+      kind: p.kind,
+      team: t.team,
+      x: r2(pos.x),
+      y: r2(pos.y),
+      z: r2(pos.z),
+      vx: r2(proj.vx),
+      vy: r2(proj.vy),
+      vz: r2(proj.vz),
+      ...(p.air ? { air: 1 } : {}),
+      ...(proj.b ? { coast: p.coast, b: proj.b } : {}),
+    });
+  }
+
+  unitAimY(u) {
+    if (u.kind === 'plane') return u.y;
+    return (u.pose?.y ?? groundAt(u.x, u.z)) + 1;
+  }
+
+  steerRocket(p, dt) {
+    // Coast phase: motor not lit yet — no homing.
+    if (p.coast > 0) return;
+    let best = null;
+    let bestScore = Infinity;
+    const maxDist = p.air ? 220 : 180;
+    const maxTurn = p.air ? 4.2 : 3.5;
+    for (const u of this.units) {
+      if (u.dead || u.team === p.team || u.id === p.owner) continue;
+      const uy = this.unitAimY(u);
+      const dist = Math.hypot(u.x - p.x, uy - p.y, u.z - p.z);
+      if (dist >= maxDist) continue;
+      // Prefer closer targets; slightly prefer planes and player vehicles.
+      let score = dist;
+      if (u.kind === 'plane') score *= 0.7;
+      if (u.player) score *= 0.85;
+      if (score < bestScore) {
+        bestScore = score;
+        best = u;
+      }
+    }
+    if (!best) return;
+    const speed = Math.hypot(p.vx, p.vy, p.vz);
+    if (speed < 0.001) return;
+    const cur = new Vector3(p.vx / speed, p.vy / speed, p.vz / speed);
+    const desired = new Vector3(best.x - p.x, this.unitAimY(best) - p.y, best.z - p.z);
+    if (desired.lengthSq() < 1e-6) return;
+    desired.normalize();
+    const angle = Math.acos(Math.max(-1, Math.min(1, cur.dot(desired))));
+    if (angle < 1e-4) return;
+    const t = Math.min(1, (maxTurn * dt) / angle);
+    cur.lerp(desired, t).normalize();
+    p.vx = cur.x * speed;
+    p.vy = cur.y * speed;
+    p.vz = cur.z * speed;
   }
 
   updateProjectiles() {
@@ -839,8 +832,15 @@ export class Match {
     for (const p of this.projectiles) {
       p.life -= DT;
       const x0 = p.x, y0 = p.y, z0 = p.z;
-      if (p.b) rocketStep(p, DT);
-      else if (p.kind !== 'rocket') p.vy -= GRAVITY * DT; // rockets fly flat under thrust
+
+      if (p.kind === 'rocket') {
+        // Preserve coast / motor ignition; home only after the motor is burning.
+        if (p.b) rocketStep(p, DT);
+        this.steerRocket(p, DT);
+      } else {
+        p.vy -= GRAVITY * DT;
+      }
+
       const x1 = x0 + p.vx * DT, y1 = y0 + p.vy * DT, z1 = z0 + p.vz * DT;
       const hit = this.traceSegment(p, x0, y0, z0, x1, y1, z1);
       if (hit) {
@@ -855,7 +855,6 @@ export class Match {
     this.projectiles = keep;
   }
 
-  // Returns the first thing the segment hits: a unit's hull box, the ground, or water.
   traceSegment(p, x0, y0, z0, x1, y1, z1) {
     const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
     const len = Math.hypot(dx, dy, dz);
@@ -873,12 +872,10 @@ export class Match {
         continue;
       }
       if (u.kind === 'plane') continue;
-      // Broad phase: distance from unit centre to segment.
       const cx = u.x - x0, cy = u.pose.y + 1 - y0, cz = u.z - z0;
       const t = Math.max(0, Math.min(1, (cx * dx + cy * dy + cz * dz) / (len * len)));
       const ex = cx - dx * t, ey = cy - dy * t, ez = cz - dz * t;
       const miss = ex * ex + ey * ey + ez * ez;
-      // A round cracking past is as good as a hit: the NPC now knows who is shooting at it.
       if (u.ai && p.owner > 0 && p.team !== u.team && miss < 36) {
         u.ai.alertBy = p.owner;
         u.ai.alertUntil = this.time + 6;
@@ -888,14 +885,12 @@ export class Match {
       if (h && (!best || h.t < best.t)) best = h;
     }
 
-    // Buildings and other solid props.
     for (const pr of propsNear(x0 + dx / 2, z0 + dz / 2, len / 2 + 12)) {
       if (!pr.solid || this.propDead.has(pr.id)) continue;
       const t = segmentHitsProp(pr, x0, y0, z0, dx, dy, dz);
       if (t !== null && (!best || t < best.t)) best = { t, x: x0 + dx * t, y: y0 + dy * t, z: z0 + dz * t, prop: pr, surface: 'prop' };
     }
 
-    // Terrain: march the segment in ~3 m steps.
     const steps = Math.max(1, Math.ceil(len / 3));
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
@@ -904,7 +899,6 @@ export class Match {
       const g = groundAt(x, z);
       const surface = Math.max(g, WATER_LEVEL);
       if (y <= surface) {
-        // Refine between previous step and this one.
         const tp = (i - 1) / steps;
         let lo = tp, hi = t;
         for (let k = 0; k < 6; k++) {
@@ -922,11 +916,9 @@ export class Match {
     return best;
   }
 
-  // Ray (segment) vs oriented hull box. Hull frame: X=left, Y=up, Z=forward (heading only).
   boxHit(u, x0, y0, z0, dx, dy, dz) {
     const s = u.spec.size;
     const c = Math.cos(u.h), sn = Math.sin(u.h);
-    // world -> local: left = (cos h, 0, -sin h), fwd = (sin h, 0, cos h)
     const ox = x0 - u.x, oy = y0 - u.pose.y, oz = z0 - u.z;
     const o = [ox * c - oz * sn, oy, ox * sn + oz * c];
     const d = [dx * c - dz * sn, dy, dx * sn + dz * c];
@@ -954,7 +946,7 @@ export class Match {
       tmax = Math.min(tmax, t2);
       if (tmin > tmax) return null;
     }
-    if (axis < 0) return null; // started inside
+    if (axis < 0) return null;
     const dl = Math.hypot(d[0], d[1], d[2]);
     const cosInc = Math.abs(d[axis]) / dl;
     let face;
@@ -980,14 +972,12 @@ export class Match {
         return;
       }
       const kinetic = p.kind !== 'he' && p.kind !== 'rocket';
-      // Glancing hits on angled armor can ricochet (infantry have no armor to bounce off).
       if (u.kind !== 'inf' && kinetic && p.kind !== 'mg' && p.kind !== 'rifle' && hit.face !== 'top' && hit.cosInc < 0.3 && Math.random() < 0.75) {
         ev.r = 'ric';
         this.damage(u, p.damage * 0.08, p);
       } else {
         const armor = u.spec.armor[hit.face === 'top' ? 'rear' : hit.face];
         const angleMul = kinetic && u.kind !== 'inf' ? 0.6 + 0.4 * hit.cosInc : 1;
-        // Small arms barely scratch armor; big guns obliterate infantry.
         const vsArmor = u.kind !== 'inf' && (p.kind === 'rifle' || p.kind === 'mg') ? 0.08 : 1;
         const dmg = p.damage * armor * angleMul * vsArmor;
         ev.dmg = Math.round(dmg);
@@ -1004,7 +994,6 @@ export class Match {
     }
     this.events.push(ev);
     if (p.splash > 1 && p.splashDamage > 0) this.splash(hit.x, hit.y, hit.z, p.splash, p.splashDamage, p.owner, hit.unit, hit.prop);
-    // Infantry near a big blast hit the dirt.
     if (p.splash >= 3) {
       for (const u of this.units) {
         if (u.kind !== 'inf' || u.dead || !u.ai) continue;
@@ -1018,7 +1007,6 @@ export class Match {
     for (const u of this.units) {
       if (u.dead || u === skipUnit) continue;
       const d = Math.hypot(u.x - x, u.pose.y + 1 - y, u.z - z) - u.radius * 0.5;
-      // Infantry are far more vulnerable to blast than armor; cover helps them.
       const mul = u.kind === 'inf' ? (u.ai?.inCover ? 0.8 : 1.6) : 0.6;
       if (d < radius) this.damage(u, amount * (1 - Math.max(0, d) / radius) * mul, { owner, blast: [x, z] });
     }
@@ -1045,18 +1033,16 @@ export class Match {
 
   damage(u, amount, p) {
     if (u.dead || amount <= 0 || this.over) return;
-    // Getting shot tells an NPC where you are for a few seconds, even from behind.
     if (u.ai && p.owner > 0) {
       u.ai.alertBy = p.owner;
       u.ai.alertUntil = this.time + 6;
     }
-    // Infantry dug in behind cover shrug off half of direct fire.
     if (u.kind === 'inf' && u.ai?.inCover && Math.random() < 0.5) return;
     u.hp -= amount;
     if (u.hp <= 0) {
       u.hp = 0;
       u.dead = true;
-      if (u.kind !== 'plane') u.v = 0; // a dead plane still falls out of the sky
+      if (u.kind !== 'plane') u.v = 0;
       u.diedAt = this.time;
       const victimCrew = this.crewOf(u);
       if (victimCrew) victimCrew.stats.deaths++;
@@ -1064,11 +1050,9 @@ export class Match {
       if (u.player && victimCrew) {
         u.respawnAt = this.time + 15;
         victimCrew.bail = { mode: 'choice', until: this.time + FOOT.choiceTime, picks: {}, foot: {} };
-        // Nobody at the controls: skip the vote.
         for (const r of ['driver', 'gunner']) if (!victimCrew.seats[r]) victimCrew.bail.picks[r] = 'tank';
       }
       const kill = { k: 'k', u: u.id, by: p.owner, team: u.team, type: u.type };
-      // Where it came from, for the death animation: blast centre or shot direction.
       if (p.blast) [kill.bx, kill.bz] = [r2(p.blast[0]), r2(p.blast[1])];
       else if (p.vx !== undefined) [kill.dx, kill.dz] = [r2(p.vx), r2(p.vz)];
       this.events.push(kill);
@@ -1081,9 +1065,8 @@ export class Match {
     }
   }
 
-  // ---------- Capture points ----------
   updateCapture() {
-    if (this.mode !== 'flags') return; // only Flag Capture has capture points
+    if (this.mode !== 'flags') return;
     for (const pt of this.points) {
       const def = POINTS.find((p) => p.id === pt.id);
       const weight = { blue: 0, red: 0 };
@@ -1102,7 +1085,6 @@ export class Match {
       const rate = Math.min(6, weight[team]) * MATCH.capRate * DT;
       const before = pt.progress;
       pt.progress = Math.max(-1, Math.min(1, pt.progress + dir * rate));
-      // Crossing zero neutralises; reaching ±1 captures.
       if (pt.owner && Math.sign(pt.progress) !== Math.sign(before) && Math.sign(before) !== 0) {
         this.events.push({ k: 'cap', id: pt.id, team: null, prev: pt.owner });
         pt.owner = null;
@@ -1134,7 +1116,6 @@ export class Match {
     }
   }
 
-  // Who is ahead when time runs out: tickets, then capture points. Dead level is a draw (null).
   leader() {
     const { blue, red } = this.tickets;
     if (blue !== red) return blue > red ? 'blue' : 'red';
@@ -1153,7 +1134,6 @@ export class Match {
     return [...this.crews.values()].map((c) => [c.id, c.stats.kills, c.stats.deaths, c.stats.caps]);
   }
 
-  // ---------- Networking ----------
   crewSnapshot(c) {
     const b = c.bail;
     const out = { mode: b.mode };
@@ -1200,7 +1180,6 @@ export class Match {
     };
   }
 
-  // Where a crew is "looking from" (for network level-of-detail on the host).
   crewFocus(c) {
     const alive = c.bail.mode === 'foot' ? Object.values(c.bail.foot).find((s) => !s.dead) : null;
     const u = alive ?? c.tank;
@@ -1208,8 +1187,6 @@ export class Match {
   }
 
   broadcast() {
-    // Compact, quantised unit rows: positions in dm, angles in mrad, hp in %.
-    // [id, team, type, x, z, h, ty, gp, hp, dead, crew+1, jumpCm]
     const u = this.units.map((u) => {
       const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], Math.round(u.x * 10), Math.round(u.z * 10), Math.round(u.h * 1000), Math.round(u.ty * 1000), Math.round(u.gp * 1000), Math.round((u.hp / u.spec.hp) * 100), u.dead ? 1 : 0, u.crewId != null ? u.crewId + 1 : 0];
       if (u.crew) a.push(Math.round(u.jy * 100));
@@ -1237,10 +1214,8 @@ export class Match {
       sc: [this.score.blue, this.score.red],
       left: Math.max(0, Math.round(MATCH.duration - this.time)),
     };
-    // Scoreboard once a second.
     if (this.tickNo % TICK_RATE === 0) snap.sb = this.scoreboard();
     this.modeSnapshot?.(snap);
-    // Full destroyed-prop list on change and periodically (covers late joins / lost events).
     if (this.propsDirty || this.tickNo % 40 === 0) {
       snap.pd = [...this.propDead];
       this.propsDirty = false;
