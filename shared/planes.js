@@ -95,7 +95,7 @@ export const PLANES = {
     bombs: { count: 24, damage: 420, splash: 16, splashDamage: 320, spread: 0.004, salvo: 4, reload: 3.5, pattern: [[-13, 3], [-4.5, -3], [4.5, -3], [13, 3]], drop: 8, sightY: 9.5 },
     rockets: { x: 10 },
     engineSound: 'drone', seeFar: true, escorts: 3, onePerTeam: true, noPlaneRespawn: true, smallArms: 0.12, turnK: 0.22, zoneK: 0.8,
-    hitBox: { hull: [12, 7.5], wing: [-31, 17, 3.5], wingY: 6.5 },
+    hitBox: { hull: [14.5, 7.5], wing: [-31, 17, 3.5], wingY: 6.5 },
     stats: { speed: 1, armor: 5, firepower: 5, agility: 1 },
   },
   f16: {
