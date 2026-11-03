@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PLANES, FLIGHT } from '../../../shared/planes.js';
 import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
+import { PROPS } from '../../../shared/props.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
 import { settings, saveSettings } from '../settings.js';
@@ -240,6 +241,9 @@ function drawInstruments(cp, self, me, spec, pingBearing) {
   cp.tex.needsUpdate = true;
 }
 
+const HANGARS = PROPS.filter((p) => p.type === 'hangar');
+const HANGAR_CAM_HEIGHT = 14; // m above the ground
+
 class PlaneBase extends GunnerView {
   constructor(opts) {
     super(opts);
@@ -387,8 +391,9 @@ class PlaneBase extends GunnerView {
       this.showOwn(true);
       const want = this.plane.size.length * 1.5 + 9;
       const up = this.plane.size.height * 0.9 + 1.5;
-      const px = self.x - dir.x * want, pz = self.z - dir.z * want;
-      let py = self.y - dir.y * want + up;
+      const reach = this.reachInHangar(dt, self, dir, want, up);
+      const px = self.x - dir.x * reach, pz = self.z - dir.z * reach;
+      let py = self.y - dir.y * reach + up * Math.min(1, reach / want);
       py = Math.max(py, Math.max(groundAt(px, pz), WATER_LEVEL) + 1.2);
       cam.position.set(px, py, pz);
       cam.rotation.order = 'YXZ';
@@ -402,6 +407,27 @@ class PlaneBase extends GunnerView {
     if (!this.paused) this.sendControls(self, me);
     this.placeNose(self);
     this.planeHud(self, me);
+  }
+
+  // How far back the chase camera can sit: rolling around a hangar, it stays in rather than ending up
+  // behind a wall. It closes in at once and eases back out.
+  reachInHangar(dt, self, dir, want, up) {
+    let limit = want;
+    if (self.y - groundAt(self.x, self.z) < HANGAR_CAM_HEIGHT) {
+      const inside = (x, y, z) => HANGARS.some((p) => Math.abs(x - p.x) < p.w / 2 - 1 && Math.abs(z - p.z) < p.d / 2 - 1 && y - p.y < p.h * 0.66);
+      let was = inside(self.x, self.y, self.z);
+      for (let r = 1; r <= want; r += 1) {
+        const k = r / want;
+        const now = inside(self.x - dir.x * r, self.y - dir.y * r + up * k, self.z - dir.z * r);
+        if (was && !now) {
+          limit = Math.max(1, r - 1);
+          break;
+        }
+        was = now;
+      }
+    }
+    this.camReach = limit < (this.camReach ?? want) ? limit : (this.camReach ?? want) + (limit - this.camReach) * Math.min(1, dt * 3);
+    return this.camReach;
   }
 
   // Send a control message at 20 Hz, or at once when it changes.

@@ -37,6 +37,7 @@ const KEY_DOWN = 0.2; // and after it
 const GAP = 0.3; // s of silence between one line and the next in the queue
 const FRIENDLY_REPEAT = 3.5; // s: a long burst into a teammate doesn't fill the queue
 const TAKEOFF_REPEAT = 20; // s: bouncing on the runway doesn't count as taking off twice
+const TAKEOFF_DELAY = 3; // s after the wheels leave the ground
 
 const TEAMS = ['blue', 'red'];
 const JOINED_LATE = 15; // s into the match: someone rejoining doesn't get the opening line again
@@ -77,7 +78,13 @@ export class RadioLines {
       this.opened = true;
       if (msg.time < JOINED_LATE && !ground) this.say('start');
     }
-    if (this.wasGround && ground === false && !msg.me.dead) this.say('takeoff');
+    this.dead = msg.me?.dead;
+    if (this.wasGround && ground === false && !this.dead && !this.takeoffT) {
+      this.takeoffT = setTimeout(() => {
+        this.takeoffT = null;
+        if (!this.dead) this.say('takeoff');
+      }, TAKEOFF_DELAY * 1000);
+    }
     this.wasGround = ground;
     for (const ev of msg.ev ?? []) this.onEvent(ev, msg.me?.team);
   }
@@ -200,6 +207,7 @@ export class RadioLines {
   dispose() {
     for (const off of this.offs) off();
     clearTimeout(this.current);
+    clearTimeout(this.takeoffT);
     this.ctx.close();
     this.el.remove();
   }

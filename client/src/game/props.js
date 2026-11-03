@@ -479,6 +479,13 @@ const builders = {
       box(C.olive, -w * 0.36, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
       box(C.olive, w * 0.36, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
       box(p.team === 'red' ? C.redTeam : C.blueTeam, 0, h * 0.52, d / 2 + 0.05, w * 0.3, 1.2, 0.1),
+      // The inside: a plane starts in here, and the arch above is only visible from outside.
+      box(0x3a3d34, 0, h * 0.72, 0, w * 0.88, 0.25, d - 0.5),
+      ...[-0.3, -0.1, 0.1, 0.3].map((k) => box(0x8d9084, 0, h * 0.72 - 0.7, d * k, w * 0.88, 0.7, 0.45)),
+      box(C.metal, -w * 0.44, h * 0.5, 0, 0.4, h * 0.22, d - 0.5),
+      box(C.metal, w * 0.44, h * 0.5, 0, 0.4, h * 0.22, d - 0.5),
+      box(C.metal, 0, h * 0.5, -d / 2 + 0.4, w * 0.88, h * 0.22, 0.4),
+      box(C.olive, 0, h * 0.5, d / 2 - 0.3, w * 0.88, h * 0.22, 0.3),
     ];
     return parts;
   },

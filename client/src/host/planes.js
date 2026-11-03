@@ -31,7 +31,7 @@ const ROTATE_TIME = 2; // s for the nose to start moving at its full rate
 const CLIMB_PITCH = 0.3; // radians
 const CLIMB_HOLD = 6; // s before a held key starts steepening the climb
 const CLIMB_STEEPEN = 0.15; // radians per second after that
-const HANGAR_X = [-110, -60]; // from the runway's middle, as placed in shared/props.js
+const HANGAR_DOOR = 21; // m: the widest plane that fits through
 const APRON_Z = 23; // m out from the runway's centre line
 const HANGAR_FRONT = 28; // m out to the hangar doors, less a little room
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
@@ -134,11 +134,17 @@ export class PlaneSystem {
   crewSpawn(team, slot, type) {
     const f = AIRFIELDS[team];
     if (this.airStart) return { x: f.startX + f.dir * 120, y: FLIGHT.airStartAlt, z: f.z + (slot ? 10 : -8), v: 45, grounded: false, h: f.heading };
-    // Parked at a hangar door, nose along the apron towards the far end of the runway. Wide planes
-    // sit further out so their wings clear the hangar.
-    const x = f.x + HANGAR_X[slot ? 1 : 0];
-    const z = f.z + (team === 'blue' ? 1 : -1) * Math.min(APRON_Z, HANGAR_FRONT - PLANES[type].size.width / 2);
-    return { x, y: groundAt(x, z), z, v: 0, grounded: true, h: Math.PI / 2 };
+    const hangar = PROPS.filter((p) => p.type === 'hangar' && p.team === team)[slot ? 1 : 0];
+    const out = team === 'blue' ? -1 : 1; // the way the hangar door faces
+    const size = PLANES[type].size;
+    // Too wide for the door: parked on the apron in front of it, pointing down the runway.
+    if (size.width > HANGAR_DOOR) {
+      const z = f.z - out * Math.min(APRON_Z, HANGAR_FRONT - size.width / 2);
+      return { x: hangar.x, y: groundAt(hangar.x, z), z, v: 0, grounded: true, h: Math.PI / 2 };
+    }
+    // Inside the hangar, nose just short of the door, facing out.
+    const z = hangar.z + out * (hangar.d / 2 - size.length / 2 - 1.5);
+    return { x: hangar.x, y: groundAt(hangar.x, z), z, v: 0, grounded: true, h: out < 0 ? Math.PI : 0 };
   }
 
   createPlayerPlane(team, type, slot) {
@@ -370,6 +376,8 @@ export class PlaneSystem {
     const reach = Math.max(4, p.v * DT + p.spec.size.length / 2);
     for (const pr of propsNear(p.x, p.z, reach + 6)) {
       if (!pr.solid || this.m.propDead.has(pr.id) || pr.type === 'runway') continue;
+      // Rolling out of the hangar it was parked in.
+      if (p.grounded && pr.type === 'hangar' && Math.abs(p.x - pr.x) < pr.w / 2 && Math.abs(p.z - pr.z) < pr.d / 2) continue;
       const t = segmentHitsProp(pr, p.x, p.y - p.spec.gearH * 0.4, p.z, f.x * reach, f.y * reach, f.z * reach);
       if (t !== null && !(p.grounded && p.v < 8)) return this.crash(p);
     }
