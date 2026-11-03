@@ -8,6 +8,7 @@ import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } from './ui/lobbyScreen.js';
 import { voice } from './voice.js';
 import { MatchClient } from './game/matchClient.js';
+import { RadioLines } from './game/radioLines.js';
 import { TANKS, TANK_IDS, MODES, KILL_LIMITS, DIFFICULTY } from '../../shared/constants.js';
 import { PAINT } from './models/paint.js';
 import { PLANES, PLANE_IDS } from '../../shared/planes.js';
@@ -16,8 +17,9 @@ const menuScene = new MenuScene();
 setActiveView(menuScene);
 
 let match = null; // MatchClient while a match is running
+let radio = null; // what command says over the radio during that match
 
-if (import.meta.env.DEV) window.__game = { net, voice, get match() { return match; } };
+if (import.meta.env.DEV) window.__game = { net, voice, get match() { return match; }, get radio() { return radio; } };
 
 // ---------- Main menu ----------
 const nameInput = $('#input-name');
@@ -226,6 +228,8 @@ function returnToLobbyView() {
 }
 
 function endMatchClient() {
+  radio?.dispose();
+  radio = null;
   match?.dispose();
   match = null;
 }
@@ -247,6 +251,7 @@ net.on('matchStart', (msg) => {
       $('#btn-pause-swap').style.display = lobby.state?.style === 'duo' && mine && (mine.driver == null || mine.gunner == null) ? '' : 'none';
     },
   });
+  radio = new RadioLines(match.hud, crew.id);
   clearHistory();
   hideScreens();
   setActiveView(match);
