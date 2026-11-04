@@ -79,6 +79,7 @@ export class MatchClient {
     this.boardEl.className = 'scoreboard';
     this.hud.appendChild(this.boardEl);
     this.stats = this.crewList.map((c) => [c.id, 0, 0, 0]);
+    this.npcStats = [];
     this.tagsEl = document.createElement('div');
     this.tagsEl.className = 'name-tags';
     this.hud.appendChild(this.tagsEl);
@@ -268,17 +269,23 @@ export class MatchClient {
     return `${this.crewLabel(c)}${n.length ? ` (${n.join(' & ')})` : ''}`;
   }
 
-  scoreboardHtml(stats = this.stats) {
+  scoreboardHtml(stats = this.stats, npcs = this.npcStats) {
     const caps = this.mode !== 'fortress'; // no capture points to count there
     const row = (c) => {
       const st = stats.find((q) => q[0] === c.id) ?? [c.id, 0, 0, 0];
       const n = this.crewPlayers(c).map(escapeHtml).join(' & ') || '—';
       return `<tr class="${c.id === this.crew.id ? 'mine' : ''}"><td>${this.crewLabel(c)}<small>${n}</small></td><td>${st[1]}</td><td>${st[2]}</td>${caps ? `<td>${st[3]}</td>` : ''}</tr>`;
     };
+    // NPC tanks and planes: busiest first. One line each, greyed out while waiting for their next vehicle.
+    const npcRow = ([, kind, no, type, kills, deaths, alive]) => {
+      const spec = kind ? PLANES[type] : TANKS[type];
+      return `<tr class="npc${alive ? '' : ' down'}"><td>NPC ${kind ? 'Plane' : 'Tank'} ${no}<small>${spec?.name ?? ''}</small></td><td>${kills}</td><td>${deaths}</td>${caps ? '<td></td>' : ''}</tr>`;
+    };
     return ['blue', 'red']
-      .map((team) => {
+      .map((team, t) => {
         const crews = this.crewList.filter((c) => c.team === team);
-        const body = crews.length ? crews.map(row).join('') : '<tr><td colspan="4">NPC army only</td></tr>';
+        const army = npcs.filter((n) => n[0] === t).sort((a, b) => b[4] - a[4] || a[5] - b[5] || a[1] - b[1] || a[2] - b[2]);
+        const body = crews.map(row).join('') + army.map(npcRow).join('');
         return `<div class="${team}"><h4>${team === 'blue' ? 'BLUE' : 'RED'}</h4><table><tr><th>Crew</th><th>Kills</th><th>Deaths</th>${caps ? '<th>Caps</th>' : ''}</tr>${body}</table></div>`;
       })
       .join('');
@@ -419,6 +426,7 @@ export class MatchClient {
     if (msg.fort) this.updateFort(msg.fort);
     if (msg.sb) {
       this.stats = msg.sb;
+      this.npcStats = msg.npcs ?? [];
       if (this.boardEl.classList.contains('show')) this.boardEl.innerHTML = this.scoreboardHtml();
     }
     // Pings from the other crews on our team.

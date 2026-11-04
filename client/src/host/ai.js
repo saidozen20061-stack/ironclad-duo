@@ -266,6 +266,7 @@ export class ArmyAI {
     const t = this.match.createTank(team, type, x, z, h);
     t.ai = { state: 'move', objective: objective ?? chooseObjective(this.match, t), think: rand(0, 0.5), target: null, stuckT: 0, reverseT: 0, lastPos: [x, z] };
     this.match.units.push(t);
+    this.match.npcJoin(t);
     return t;
   }
 

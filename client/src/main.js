@@ -305,7 +305,7 @@ net.on('matchEnd', (msg) => {
   $('#end-kills').textContent = mine[1];
   $('#end-caps').textContent = mine[3];
   $('#end-caps').parentElement.style.display = msg.mode === 'fortress' ? 'none' : '';
-  $('#end-board').innerHTML = match?.scoreboardHtml(msg.crews) ?? '';
+  $('#end-board').innerHTML = match?.scoreboardHtml(msg.crews, msg.npcs) ?? '';
   const earned = tracker?.finish(victory && !draw, mine[2]) ?? [];
   $('#end-achievements').innerHTML = earned.map((a) => `<div class="achievement got"><b>🏆 ${a.name}</b><span>${a.desc}</span></div>`).join('');
   match?.onMatchEnd?.(msg);

@@ -147,6 +147,7 @@ export class Match {
     this.propsDirty = true;
     this.tickets = { blue: MATCH.tickets, red: MATCH.tickets };
     this.score = { blue: 0, red: 0 };
+    this.npcSlots = []; // NPC tanks' and planes' places on the scoreboard
     this.bleedT = MATCH.bleedInterval;
     this.points = POINTS.map((p) => ({ id: p.id, owner: null, progress: 0, contested: false }));
 
@@ -1057,6 +1058,7 @@ export class Match {
       u.diedAt = this.time;
       const victimCrew = this.crewOf(u);
       if (victimCrew) victimCrew.stats.deaths++;
+      if (u.npcSlot) u.npcSlot.deaths++;
       if (victimCrew && u.spec.noPlaneRespawn) victimCrew.noPlanes = true;
       if (u.player && victimCrew) {
         u.respawnAt = this.time + 15;
@@ -1070,6 +1072,7 @@ export class Match {
       const shooter = this.units.find((x) => x.id === p.owner);
       const killerCrew = this.crewOf(shooter);
       if (killerCrew && u.team !== shooter.team) killerCrew.stats.kills++;
+      if (shooter?.npcSlot && u.team !== shooter.team) shooter.npcSlot.kills++;
       if (shooter && u.team !== shooter.team) this.onKill?.(u, shooter);
       const cost = u.player ? MATCH.deathCost.player : MATCH.deathCost[u.kind] ?? 1;
       this.tickets[u.team] = Math.max(0, this.tickets[u.team] - cost);
@@ -1139,7 +1142,25 @@ export class Match {
   endMatch(winner, reason = '') {
     if (this.over) return;
     this.over = true;
-    this.room.broadcast({ t: 'matchEnd', winner, reason, time: this.time, mode: this.mode, crews: this.scoreboard(), tickets: this.tickets, score: this.score });
+    this.room.broadcast({ t: 'matchEnd', winner, reason, time: this.time, mode: this.mode, crews: this.scoreboard(), npcs: this.npcBoard(), tickets: this.tickets, score: this.score });
+  }
+
+  // An NPC tank or plane takes the first place on the scoreboard that nobody's using. It lasts the whole
+  // match, so its kills and deaths add up however many vehicles have held it.
+  npcJoin(u) {
+    let slot = this.npcSlots.find((s) => s.team === u.team && s.kind === u.kind && (!s.unit || s.unit.dead));
+    if (!slot) {
+      const no = this.npcSlots.filter((s) => s.team === u.team && s.kind === u.kind).length + 1;
+      slot = { team: u.team, kind: u.kind, no, kills: 0, deaths: 0, unit: null };
+      this.npcSlots.push(slot);
+    }
+    slot.unit = u;
+    u.npcSlot = slot;
+  }
+
+  // [team, kind, number, vehicle type, kills, deaths, alive]
+  npcBoard() {
+    return this.npcSlots.map((s) => [s.team === 'blue' ? 0 : 1, s.kind === 'plane' ? 1 : 0, s.no, s.unit.type, s.kills, s.deaths, s.unit.dead ? 0 : 1]);
   }
 
   scoreboard() {
@@ -1226,7 +1247,10 @@ export class Match {
       sc: [this.score.blue, this.score.red],
       left: Math.max(0, Math.round(MATCH.duration - this.time)),
     };
-    if (this.tickNo % TICK_RATE === 0) snap.sb = this.scoreboard();
+    if (this.tickNo % TICK_RATE === 0) {
+      snap.sb = this.scoreboard();
+      snap.npcs = this.npcBoard();
+    }
     this.modeSnapshot?.(snap);
     if (this.propsDirty || this.tickNo % 40 === 0) {
       snap.pd = [...this.propDead];

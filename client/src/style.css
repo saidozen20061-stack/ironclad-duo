@@ -455,9 +455,9 @@ input, select {
 .lobby-foot #btn-start:disabled { opacity: 0.5; cursor: default; }
 
 /* ---------- Scoreboard (hold Tab) ---------- */
-.scoreboard { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); width: min(760px, 94vw); display: none; gap: 12px; padding: 14px; background: rgba(10, 12, 9, 0.88); border: 1px solid rgba(76, 85, 57, 0.9); border-radius: 6px; z-index: 6; font-family: var(--ui); }
+.scoreboard { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); width: min(760px, 94vw); max-height: 76vh; overflow-y: auto; display: none; gap: 12px; padding: 14px; background: rgba(10, 12, 9, 0.88); border: 1px solid rgba(76, 85, 57, 0.9); border-radius: 6px; z-index: 6; font-family: var(--ui); }
 .scoreboard.show, .scoreboard.static { display: grid; grid-template-columns: 1fr 1fr; }
-.scoreboard.static { position: static; transform: none; width: 100%; margin-top: 12px; }
+.scoreboard.static { position: static; transform: none; width: 100%; max-height: none; margin-top: 12px; }
 .scoreboard h4 { margin: 0 0 6px; font-family: var(--stencil); font-weight: 400; letter-spacing: 0.06em; font-size: 18px; }
 .scoreboard .blue h4 { color: #5fa0e0; }
 .scoreboard .red h4 { color: #e0645a; }
@@ -467,6 +467,9 @@ input, select {
 .scoreboard td { text-align: right; padding: 3px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .scoreboard tr.mine td { color: var(--accent); }
 .scoreboard td small { display: block; color: var(--ink-dim); font-size: 11px; }
+.scoreboard tr.npc td { padding-top: 2px; padding-bottom: 2px; font-size: 13px; color: var(--ink-dim); }
+.scoreboard tr.npc td small { display: inline; margin-left: 7px; }
+.scoreboard tr.npc.down td { opacity: 0.45; }
 
 /* ---------- Voice speakers + name tags ---------- */
 .voice-row .chan { font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 2px; margin-left: 4px; background: #24384c; color: #bcd8f5; }

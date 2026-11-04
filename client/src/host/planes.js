@@ -1003,6 +1003,7 @@ export class PlaneSystem {
     }
     p.ai = ai;
     this.m.units.push(p);
+    this.m.npcJoin(p);
     return p;
   }
 
