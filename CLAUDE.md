@@ -13,5 +13,5 @@ Never ask before publishing. After every finished change that works (builds and 
   simulation in a Web Worker (`client/src/host/simWorker.js` → `match.js`). Guests connect to the host.
 - The Vite dev server does not watch `shared/`; restart it after editing files there.
 - Windows app: `desktop/` (Electron). It runs the live site, so publishing updates it too. Only a change in
-  `desktop/` needs a new installer: `npm run app`, which puts it in `desktop/release/`.
+  `desktop/` needs a new installer: `npm run app`, then a new GitHub release with `desktop/release/Ironclad-Duo-Setup.exe`.
 - Dev-only test hooks: `window.__game` (net, voice, match) and `net.send({ t: 'debugKill' })`.

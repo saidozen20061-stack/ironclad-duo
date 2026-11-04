@@ -91,11 +91,13 @@ Voice chat uses the same connection settings. Browsers only allow the microphone
 
 ## Windows app
 
-`npm run app` builds the installer into `desktop/release/`. Run it, and the game gets its own full-screen window and a desktop shortcut. F11 or Alt+Enter switches between full screen and a window.
+[Download the installer](https://github.com/saidozen20061-stack/ironclad-duo/releases/latest/download/Ironclad-Duo-Setup.exe) and run it, and the game gets its own full-screen window and a desktop shortcut. F11 or Alt+Enter switches between full screen and a window.
 
 Windows may warn that the app is from an unknown publisher, because it isn't code-signed: choose **More info**, then **Run anyway**.
 
 Online, the app runs the published site, so it updates itself and always matches other players. Offline, it falls back to a built-in copy, so Solo still works.
+
+To build the installer yourself: `npm run app`. It ends up in `desktop/release/`.
 
 ## Run it locally
 
