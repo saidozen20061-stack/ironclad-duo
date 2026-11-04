@@ -2,12 +2,14 @@
 // Each time it starts it waits on a loading screen while it fetches whatever was published since last
 // time, so every player is on the same version (host and guest have to match). Offline, it plays what it has.
 const { app, BrowserWindow, Menu, net, powerSaveBlocker, protocol, session, shell } = require('electron');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const updater = require('./updater.cjs');
 
 const BASE = '/ironclad-duo/'; // where the site's own links expect the game to be
 const HOME = `app://game${BASE}index.html`;
+const SPLASH = 'splash.html';
 const RECHECK = 120000; // ms between looks for an update while the app stays open
 const FAILED_PAUSE = 2000; // ms to read that the update didn't work
 const ALLOWED = ['media', 'pointerLock', 'fullscreen', 'clipboard-sanitized-write']; // voice chat, mouse aim, Copy code
@@ -35,6 +37,10 @@ function serveGame() {
 
 const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
 
+// The waiting screen comes with the game, so it can be changed by publishing like everything else.
+// A version downloaded before it did has none: then it's the one built in.
+const showSplash = (win) => (fs.existsSync(path.join(game.dir, SPLASH)) ? win.loadURL(`app://game${BASE}${SPLASH}`) : win.loadFile(path.join(updater.BUILT_IN, SPLASH)));
+
 // The waiting screen: fetch what's new, if anything, then start the game. `found` skips the check when
 // a new version is already known about.
 async function updateAndPlay(win, found = null) {
@@ -42,7 +48,7 @@ async function updateAndPlay(win, found = null) {
   const web = win.webContents;
   const say = (text, share = null) => web.executeJavaScript(`show(${JSON.stringify(text)}, ${share})`).catch(() => {});
   try {
-    await win.loadFile(path.join(__dirname, 'splash.html'));
+    await showSplash(win);
     say('Checking for updates…');
     const list = found ?? (await updater.latest());
     if (list && list.version !== game.list?.version) {
@@ -54,7 +60,8 @@ async function updateAndPlay(win, found = null) {
         await new Promise((resolve) => setTimeout(resolve, FAILED_PAUSE));
       }
     }
-    say('Starting…');
+    // Stays on this screen until the player's ready to move on.
+    await web.executeJavaScript('readyToStart()').catch(() => {});
     await win.loadURL(HOME);
   } catch {
     // The window closed while it was busy.

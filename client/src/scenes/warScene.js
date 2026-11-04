@@ -13,6 +13,11 @@ const LANES = [-26, -15, -5, 6, 16, 27];
 const STOP_AT = 62; // m from the nearest enemy that a tank halts to fight
 const TANK_TYPES = ['medium', 'heavy', 'light', 'destroyer', 'medium', 'superheavy'];
 const SQUAD = 7;
+// Where each army has dug in: between its own tanks' lanes (x is towards the enemy from the middle).
+// Red's lanes sit 3 m over from Blue's, so its positions do too.
+const GAPS = [-20.5, -10, 0.5, 11, 21.5];
+const LINES = [52, 84, 118];
+const FLANK = [37, 46];
 const SHELL_SPEED = 300;
 const WRECK_TIME = 16; // s a destroyed tank burns before the next one comes up the lane
 const BODY_TIME = 7; // s a fallen soldier stays
@@ -169,17 +174,21 @@ export class WarScene {
     this.buildParticles(q.particles);
     this.buildGrade();
     this.buildDressing();
+    this.posts = [];
+    this.buildFortifications();
     this.buildLights();
 
     this.tanks = [];
     for (const team of ['blue', 'red']) LANES.forEach((z, i) => this.tanks.push(this.addTank(team, z + (team === 'red' ? 3 : 0), i)));
     this.soldiers = [];
     for (const team of ['blue', 'red']) for (let i = 0; i < SQUAD; i++) this.soldiers.push(this.addSoldier(team));
+    // And those holding the sandbags.
+    for (const post of this.posts) this.soldiers.push(this.addSoldier(post.team, post));
     this.buildPlanes();
     this.shells = [];
     this.fires = [];
     // Already under way when the menu first appears.
-    for (const u of [...this.tanks, ...this.soldiers]) u.x = (u.team === 'blue' ? -1 : 1) * rand(70, 130);
+    for (const u of [...this.tanks, ...this.soldiers]) if (!u.post) u.x = (u.team === 'blue' ? -1 : 1) * rand(70, 130);
     for (let i = 0; i < 10; i++) this.addFire(rand(-130, 130), pick([-42, -36, 36, 44]) + rand(-5, 5), rand(0.9, 1.8));
 
     this.shots = this.makeShots();
@@ -331,6 +340,183 @@ export class WarScene {
     }
   }
 
+  // Sandbag emplacements, trenches, wire, bunkers and what an army leaves lying around behind them.
+  buildFortifications() {
+    const h = this.heightAt;
+    const m = (color) => new THREE.MeshLambertMaterial({ color, flatShading: true });
+    const wood = m(0x4c3a26), darkWood = m(0x33271a), concrete = m(0x6d6a60), steel = m(0x23252a), canvas = m(0x5a5a3a), crateWood = m(0x6a5230), rust = m(0x4e3324), dirt = m(0x2c2219), rope = m(0x17161a);
+    const group = this.group;
+    const block = (w, ht, d, mat, x, y, z, ry = 0, rz = 0) => {
+      const o = new THREE.Mesh(new THREE.BoxGeometry(w, ht, d), mat);
+      o.position.set(x, y + ht / 2, z);
+      o.rotation.set(0, ry, rz);
+      o.castShadow = o.receiveShadow = true;
+      group.add(o);
+      return o;
+    };
+    // Every sandbag on the field is one mesh.
+    const bags = [];
+    const bag = (x, y, z, ry) => bags.push([x, y, z, ry + rand(-0.14, 0.14), rand(0.92, 1.08)]);
+    // A wall of bags, running along direction ry, staggered like brickwork.
+    const wall = (x, z, ry, count, rows = 3) => {
+      const dx = Math.cos(ry), dz = -Math.sin(ry);
+      for (let row = 0; row < rows; row++) for (let i = 0; i < count - (row === rows - 1 ? 1 : 0); i++) {
+        const k = (i - (count - 1) / 2 + (row % 2) * 0.5) * 0.98;
+        const bx = x + dx * k, bz = z + dz * k;
+        bag(bx, h(bx, bz) + 0.2 + row * 0.38, bz, ry);
+      }
+    };
+    // An arc of bags with its open side at the back.
+    const arc = (x, z, dir, radius, span, rows = 3) => {
+      const n = Math.round((span * radius) / 0.95);
+      for (let row = 0; row < rows; row++) for (let i = 0; i <= n; i++) {
+        const a = -span / 2 + (i + (row % 2) * 0.5) * (span / n);
+        const bx = x + dir * Math.cos(a) * radius, bz = z + Math.sin(a) * radius;
+        bag(bx, h(bx, bz) + 0.2 + row * 0.38, bz, a + Math.PI / 2);
+      }
+    };
+    const crate = (x, z, s = 1, ry = rand(0, 1)) => {
+      const y = h(x, z);
+      block(s, s * 0.7, s * 0.7, crateWood, x, y, z, ry);
+      block(s * 1.02, 0.05, s * 0.72, darkWood, x, y + s * 0.34, z, ry);
+    };
+    const drum = (x, z, mat = rust) => {
+      const o = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.1, 10), mat);
+      o.position.set(x, h(x, z) + 0.55, z);
+      o.castShadow = true;
+      group.add(o);
+    };
+    const machineGun = (x, z, dir) => {
+      const y = h(x, z) + 0.72;
+      block(0.09, 0.09, 1.3, steel, x, y + 0.42, z, dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      block(0.2, 0.2, 0.46, steel, x - dir * 0.3, y + 0.36, z, Math.PI / 2);
+      for (const a of [0, 2.1, 4.2]) block(0.05, 0.62, 0.05, steel, x - dir * 0.3 + Math.cos(a) * 0.14, y - 0.18, z + Math.sin(a) * 0.14, 0, Math.cos(a) * 0.3);
+    };
+    const post = (team, x, z) => this.posts.push({ team, x, z });
+
+    for (const [team, dir] of [['blue', -1], ['red', 1]]) {
+      const lane = (z) => (team === 'red' ? z + 3 : z);
+      for (const [k, lineX] of LINES.entries()) {
+        const x = dir * lineX;
+        // Staggered, so the line isn't a neat row.
+        for (const [i, gap] of GAPS.entries()) {
+          if ((i + k) % 2) continue;
+          const z = lane(gap) + rand(-0.4, 0.4), wx = x + dir * rand(-4, 4);
+          if ((i + k) % 4 === 0) {
+            // A machine-gun nest.
+            arc(wx, z, -dir, 2.1, 2.5, 3);
+            machineGun(wx - dir * 0.5, z, -dir);
+            post(team, wx + dir * 0.9, z + rand(-0.6, 0.6));
+          } else {
+            // A straight breastwork, with riflemen crouched behind it.
+            wall(wx, z, Math.PI / 2, 5, 3);
+            post(team, wx + dir * 1, z - 1.1);
+            post(team, wx + dir * 1, z + 1.1);
+            if (Math.random() < 0.5) crate(wx + dir * 2.2, z + rand(-1, 1), 0.9);
+          }
+        }
+      }
+      // Trenches along both edges of the field, sandbags on the parapet.
+      for (const side of [-1, 1]) for (const [k, start] of [58, 112].entries()) {
+        const len = 34, cx = dir * (start + len / 2), zz = side * (FLANK[0] + k * 3 + 1);
+        const y = h(cx, zz);
+        block(len, 0.1, 2.5, dirt, cx, y + 0.02, zz);
+        for (const e of [-1, 1]) block(len, 0.5, 0.14, darkWood, cx, y, zz + e * 1.25);
+        for (let i = 0; i < len; i += 2.4) for (const e of [-1, 1]) block(0.14, 0.7, 0.14, wood, cx - len / 2 + i, y, zz + e * 1.3);
+        wall(cx, zz - side * 1.9, 0, 34, 2);
+        for (let i = 0; i < 3; i++) post(team, cx + rand(-14, 14), zz);
+      }
+      // Wire in front of each line.
+      for (const side of [-1, 1]) {
+        const wx = dir * 40, zs = side * 34;
+        for (let i = 0; i < 9; i++) {
+          const x = wx + dir * i * 4.5, y = h(x, zs);
+          block(0.1, 1.4, 0.1, darkWood, x, y, zs, 0, 0.22 * (i % 2 ? 1 : -1));
+          if (i < 8) for (const t of [0.5, 0.95, 1.3]) {
+            const s = block(4.6, 0.025, 0.025, rope, x + dir * 2.25, y + t, zs);
+            s.castShadow = false;
+          }
+        }
+      }
+      // A concrete bunker on each flank, firing slit towards the enemy.
+      for (const side of [-1, 1]) {
+        const x = dir * 96, z = side * 52, y = h(x, z) - 0.2;
+        block(9, 3, 7, concrete, x, y, z);
+        block(9.8, 0.5, 7.8, concrete, x, y + 3, z);
+        block(0.1, 0.5, 4.8, steel, x - dir * 4.52, y + 1.7, z);
+        block(0.5, 2, 1.6, darkWood, x + dir * 4.52, y, z);
+        wall(x - dir * 6, z, Math.PI / 2, 9, 3);
+        for (let i = 0; i < 6; i++) bag(x + rand(-5, 5), y + 3.6, z + rand(-3.4, 3.4), rand(0, 3));
+        post(team, x - dir * 5, z + side * 0.4);
+        // A radio mast on the roof.
+        block(0.08, 6, 0.08, steel, x + dir * 2.5, y + 3.3, z + 1.4);
+      }
+      // Behind the lines: tents, stores, a field gun, poles.
+      for (const [x0, z0] of [[148, -38], [160, 34], [172, -6]]) {
+        const x = dir * x0, z = z0 + (team === 'red' ? 3 : 0), y = h(x, z);
+        const roof = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 6, 3), canvas);
+        roof.rotation.set(Math.PI / 2, 0, 0);
+        roof.scale.set(1, 1, 1);
+        roof.position.set(x, y + 1.25, z);
+        roof.castShadow = roof.receiveShadow = true;
+        group.add(roof);
+        crate(x + 4, z + 2, 1.1);
+        crate(x + 4.2, z - 1.2, 1.1);
+        crate(x + 5.4, z + 0.5, 0.9);
+        drum(x - 4, z + 1.5);
+        drum(x - 4.6, z + 2.6);
+        drum(x - 3.8, z + 3, steel);
+      }
+      for (const side of [-1, 1]) {
+        // A field gun behind its own little wall.
+        const x = dir * 135, z = side * 33, y = h(x, z);
+        arc(x - dir * 2, z, -dir, 3.6, 2.2, 3);
+        block(0.2, 0.2, 4.6, steel, x - dir * 1.2, y + 1.3, z, Math.PI / 2 + dir * -0.0, dir * -0.28);
+        block(0.9, 0.8, 1.1, steel, x + dir * 0.8, y + 0.6, z);
+        for (const e of [-1, 1]) {
+          const w = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.18, 12), steel);
+          w.rotation.x = Math.PI / 2;
+          w.position.set(x + dir * 0.8, y + 0.62, z + e * 0.8);
+          w.castShadow = true;
+          group.add(w);
+        }
+        post(team, x + dir * 2.6, z + 1);
+        // Telegraph poles going off behind the lines.
+        for (let i = 0; i < 4; i++) {
+          const px = dir * (70 + i * 34), pz = side * 62, py = h(px, pz);
+          block(0.2, 8, 0.2, darkWood, px, py, pz, 0, rand(-0.05, 0.05));
+          block(2, 0.14, 0.14, darkWood, px, py + 7.2, pz, Math.PI / 2);
+        }
+      }
+    }
+    // Broken walls left standing out in the middle.
+    for (const [x, z, w, ry] of [[-31, 40, 7, 0.3], [20, -43, 8, -0.4], [52, 39, 5, 1.2], [-58, -43, 6, 2.2]]) {
+      const y = h(x, z);
+      block(w, 2.6, 0.5, concrete, x, y, z, ry);
+      block(w * 0.5, 1.2, 0.5, concrete, x + Math.cos(ry) * w * 0.25, y + 2.6, z - Math.sin(ry) * w * 0.25, ry);
+    }
+    // Now all the bags.
+    // A box pulled into a stuffed pillow, tied off at the ends.
+    const bagGeo = new THREE.BoxGeometry(1.08, 0.42, 0.58, 6, 2, 3);
+    const v = bagGeo.attributes.position;
+    for (let i = 0; i < v.count; i++) {
+      const nx = v.getX(i) / 0.54, ny = v.getY(i) / 0.21, nz = v.getZ(i) / 0.29;
+      const ends = 1 - nx * nx * nx * nx * 0.5;
+      v.setXYZ(i, v.getX(i) * (1 - (ny * ny + nz * nz) * 0.05), v.getY(i) * ends * (1 - nz * nz * 0.3), v.getZ(i) * ends * (1 - ny * ny * 0.14));
+    }
+    bagGeo.computeVertexNormals();
+    const bagMesh = new THREE.InstancedMesh(bagGeo, m(0xffffff), bags.length);
+    const mx = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(), e = new THREE.Euler(), c = new THREE.Color();
+    bags.forEach(([x, y, z, ry, size], i) => {
+      e.set(rand(-0.05, 0.05), ry, rand(-0.05, 0.05));
+      mx.compose(p.set(x, y, z), q.setFromEuler(e), s.set(size, 1, size));
+      bagMesh.setMatrixAt(i, mx);
+      bagMesh.setColorAt(i, c.setHSL(rand(0.09, 0.12), rand(0.22, 0.34), rand(0.33, 0.46)));
+    });
+    bagMesh.castShadow = bagMesh.receiveShadow = true;
+    group.add(bagMesh);
+  }
+
   scorch(group, mat) {
     group.traverse((o) => {
       if (o.isMesh) o.material = mat;
@@ -390,9 +576,9 @@ export class WarScene {
     t.aim = t.h;
   }
 
-  addSoldier(team) {
+  addSoldier(team, post = null) {
     const dir = team === 'blue' ? 1 : -1;
-    const s = { kind: 'inf', team, dir, x: 0, z: rand(-32, 32), speed: rand(3.4, 4.8), shot: rand(0.5, 3), down: 0, h: dir > 0 ? Math.PI / 2 : -Math.PI / 2 };
+    const s = { kind: 'inf', team, dir, post, x: post?.x ?? 0, z: post?.z ?? rand(-32, 32), speed: rand(3.4, 4.8), shot: rand(0.5, 3), down: 0, h: dir > 0 ? Math.PI / 2 : -Math.PI / 2 };
     this.fitSoldier(s);
     return s;
   }
@@ -602,12 +788,12 @@ export class WarScene {
         s.rig.update({ dt, speed: 0, fwd: 0, side: 0, turn: 0, code: 0, aimPitch: 0, aiming: false, lod: 1, ground: null });
         if (s.down <= 0) {
           this.fitSoldier(s);
-          s.x = -s.dir * rand(FRONT - 40, FRONT);
-          s.z = rand(-32, 32);
+          s.x = s.post?.x ?? -s.dir * rand(FRONT - 40, FRONT);
+          s.z = s.post?.z ?? rand(-32, 32);
         } else continue;
       }
       const near = this.nearestEnemy(s)[1];
-      const runs = near > 28 && (s.dir > 0 ? s.x < -10 : s.x > 10);
+      const runs = !s.post && near > 28 && (s.dir > 0 ? s.x < -10 : s.x > 10);
       if (runs) s.x += s.dir * s.speed * dt;
       const speed = runs ? s.speed : 0;
       s.rig.group.position.set(s.x, h(s.x, s.z), s.z);
@@ -772,6 +958,12 @@ export class WarScene {
         const bob = Math.sin(this.time * 8) * 0.07;
         P.set(o.x - 3.6, h(o.x - 3.6, o.z - 1.6) + 1.45 + bob, o.z - 1.6);
         L.set(o.x + 26, h(o.x, o.z) + 2.6, o.z + 1);
+      } },
+      // Down behind the sandbags, with the men holding them.
+      { time: 8, fov: 40, start: (s) => (s.t = pick(this.soldiers.filter((o) => o.post && o.team === 'blue' && o.down <= 0 && Math.abs(o.x) < 125 && Math.abs(o.z) < 32)) ?? this.soldiers[0]), at: (u, P, L, s) => {
+        const o = s.t;
+        P.set(o.x - 8.5 + u * 1.5, h(o.x, o.z) + 1.7, o.z - 7 + u * 1);
+        L.set(o.x + 7, h(o.x, o.z) + 1.25, o.z + 0.4);
       } },
       // Chasing a fighter down on to the field.
       { time: 8, fov: 46, start: (s) => {

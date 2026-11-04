@@ -91,7 +91,6 @@ function buildForest(noise, rand) {
 function buildProps(noise, rand) {
   const g = new THREE.Group();
   const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a8578, flatShading: true });
-  const sandMat = new THREE.MeshStandardMaterial({ color: 0x9c8a62, flatShading: true });
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c4630, flatShading: true });
   // Ruined houses on the ring around the clearing
   for (let i = 0; i < 6; i++) {
@@ -121,19 +120,6 @@ function buildProps(noise, rand) {
     house.position.set(x, y - 0.3, z);
     house.rotation.y = rand() * Math.PI;
     g.add(house);
-  }
-  // Sandbag lines along the front.
-  const bagGeo = new THREE.BoxGeometry(1.1, 0.45, 0.6);
-  for (const sx of [-1, 1]) for (let k = 0; k < 5; k++) {
-    const wx = sx * (58 + k * 9), wz = -44 + k * 21;
-    for (let i = 0; i < 9; i++) for (let row = 0; row < 3; row++) {
-      const x = wx + (row % 2) * 0.5, z = wz + (i - 4) * 1.05;
-      const b = new THREE.Mesh(bagGeo, sandMat);
-      b.position.set(x, terrainHeight(noise, x, z) + 0.2 + row * 0.42, z);
-      b.rotation.y = Math.PI / 2 + (rand() - 0.5) * 0.25;
-      b.castShadow = b.receiveShadow = true;
-      g.add(b);
-    }
   }
   return g;
 }

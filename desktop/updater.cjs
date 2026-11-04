@@ -112,4 +112,4 @@ async function install(list, current, onProgress) {
   return { dir, list };
 }
 
-module.exports = { installed, latest, install };
+module.exports = { BUILT_IN, installed, latest, install };

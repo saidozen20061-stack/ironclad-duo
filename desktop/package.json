@@ -15,8 +15,7 @@
     "appId": "io.github.saidozen20061stack.ironcladduo",
     "productName": "Ironclad Duo",
     "directories": { "output": "release" },
-    "files": ["main.cjs", "updater.cjs", "splash.html",
-      "garage.jpg", "icon.png", "game/**"],
+    "files": ["main.cjs", "updater.cjs", "icon.png", "game/**"],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "icon.png",

@@ -15,7 +15,7 @@ const SETUP = 'Ironclad-Duo-Setup.exe';
 const run = (cmd, cwd, env = {}) => execSync(cmd, { cwd, stdio: 'inherit', env: { ...process.env, ...env } });
 
 mkdirSync(WORK, { recursive: true });
-for (const file of ['package.json', 'main.cjs', 'updater.cjs', 'splash.html', 'garage.jpg', 'icon.svg', 'render-icon.cjs']) copyFileSync(path.join(HERE, file), path.join(WORK, file));
+for (const file of ['package.json', 'main.cjs', 'updater.cjs', 'icon.svg', 'render-icon.cjs']) copyFileSync(path.join(HERE, file), path.join(WORK, file));
 
 run('npm install --no-audit --no-fund', WORK);
 run('node node_modules/electron/install.js', WORK);

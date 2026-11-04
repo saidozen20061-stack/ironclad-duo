@@ -15,6 +15,9 @@
       #bar { position: relative; width: min(560px, 70vw); height: 8px; overflow: hidden; background: rgba(43, 46, 34, 0.9); border-radius: 4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
       #fill { position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: #d9a441; border-radius: 4px; }
       #fill.waiting { animation: sweep 1.2s ease-in-out infinite alternate; }
+      body.ready { cursor: pointer; }
+      body.ready #status { font-size: 22px; font-weight: 600; color: #f3d48c; animation: beckon 1.4s ease-in-out infinite alternate; }
+      @keyframes beckon { from { opacity: 0.55; } to { opacity: 1; } }
       @keyframes sweep { from { left: 0; } to { left: 70%; } }
     </style>
   </head>
@@ -27,6 +30,24 @@
       <div id="bar"><div id="fill" class="waiting"></div></div>
     </div>
     <script>
+      // Everything's ready: stays here until the player clicks (or presses Enter or Space).
+      function readyToStart() {
+        show('Ready. Click anywhere to continue', 1);
+        document.body.classList.add('ready');
+        return new Promise((resolve) => {
+          const go = () => {
+            removeEventListener('pointerdown', go);
+            removeEventListener('keydown', key);
+            resolve(true);
+          };
+          const key = (e) => {
+            if (e.code === 'Enter' || e.code === 'Space') go();
+          };
+          addEventListener('pointerdown', go);
+          addEventListener('keydown', key);
+        });
+      }
+
       // The app calls this as it goes. No share of the work given: the bar just sweeps back and forth.
       function show(text, share = null) {
         document.getElementById('status').textContent = text;
