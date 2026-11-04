@@ -5,7 +5,7 @@
 import { Vector3 } from 'three';
 import { UNITS, MATCH, TANKS } from '../../../shared/constants.js';
 import { POINTS, BASES, BRIDGES, groundAt, heightAt, waterDepthAt } from '../../../shared/map.js';
-import { propsNear, circleHitsProp, segmentHitsProp, FORT } from '../../../shared/props.js';
+import { propsNear, circleHitsProp, segmentHitsProp, FORT, TANK_BAYS } from '../../../shared/props.js';
 import { wrapAngle, planePitchAlong, muzzlePose } from '../../../shared/tank.js';
 import { nextWaypoint, passable, distanceTo } from './nav.js';
 
@@ -134,6 +134,7 @@ export class ATGun {
 }
 
 // ---------- AI controller ----------
+const BAY_RETRY = 2; // s
 
 export class ArmyAI {
   constructor(match) {
@@ -183,8 +184,9 @@ export class ArmyAI {
         this.tankT[team] = MATCH.waveInterval * 1.6;
         // Blue's player tank counts towards the blue armour cap.
         const cap = MATCH.caps.tank - m.playerTanks(team);
-        if (tanks < cap) this.spawnTank(team);
-        if (tanks < cap - 2) this.spawnTank(team);
+        // Every hangar bay taken: tries again as soon as one might have cleared.
+        if (tanks < cap && !this.spawnTank(team)) this.tankT[team] = BAY_RETRY;
+        else if (tanks < cap - 2) this.spawnTank(team);
       }
     }
     // AT guns belong to whoever holds the point.
@@ -210,16 +212,12 @@ export class ArmyAI {
     }
   }
 
-  spawnPoint(team, spread = 40) {
+  // Soldiers form up in a tank hangar and walk out of it.
+  spawnPoint(team) {
     if (this.match.mode === 'fortress' && team === 'blue') return [FORT.center.x + rand(-50, 50), FORT.center.z + rand(-20, 20)];
-    const b = BASES[team];
-    const s = team === 'blue' ? 1 : -1;
-    for (let k = 0; k < 10; k++) {
-      const x = b.x + rand(-spread, spread);
-      const z = b.z + s * rand(10, 40);
-      if (passable('tank', x, z)) return [x, z];
-    }
-    return [b.x, b.z + s * 20];
+    const bays = TANK_BAYS[team];
+    const i = Math.floor(rand(0, bays.length / 2)) * 2; // a hangar's bays come in pairs: between the two
+    return [(bays[i].x + bays[i + 1].x) / 2, bays[i].z];
   }
 
   spawnSquad(team, n) {
@@ -308,10 +306,17 @@ export class ArmyAI {
       type = id;
       break;
     }
-    const [x, z] = this.spawnPoint(team, 60);
-    const t = this.match.createTank(team, type, x, z, BASES[team].heading);
-    t.ai = { state: 'move', objective: chooseObjective(this.match, t), think: rand(0, 0.5), target: null, stuckT: 0, reverseT: 0, lastPos: [x, z] };
-    this.match.units.push(t);
+    // Out of a free hangar bay, or not yet.
+    const bays = TANK_BAYS[team];
+    const from = Math.floor(rand(0, bays.length));
+    const probe = this.match.createTank(team, type, bays[0].x, bays[0].z, bays[0].h);
+    for (let k = 0; k < bays.length; k++) {
+      const { x, z, h } = bays[(from + k) % bays.length];
+      if (this.match.spawnBlocked(probe, x, z)) continue;
+      this.spawnTankAt(team, type, x, z, h);
+      return true;
+    }
+    return false;
   }
 
   // ---------- Shared targeting ----------

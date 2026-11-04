@@ -13,7 +13,7 @@ const hints = () => ({
     `Talk to your gunner: hold ${K('all.talk')} (or use open mic in Settings).`,
   ],
   pilot: [
-    `You are the PILOT. On the runway hold ${K('plane.up')}: it builds up speed and lifts off on its own.`,
+    `You are the PILOT. Roll out of the hangar, turn on to the runway with ${K('plane.left')}/${K('plane.right')}, then hold ${K('plane.up')}: it builds up speed and lifts off on its own. You can only take off from a runway.`,
     `In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle. Too slow and you stall! On a jet, keep holding ${K('plane.more')} at full throttle for the afterburner.`,
     `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} drops bombs, ${K('plane.rocket')} fires rockets along the nose. ${K('plane.view')} switches 1st/3rd person, ${K('plane.ahead')} looks ahead again.`,
     'Land on your own runway and stop: the ground crew repairs, refuels and rearms you.',
@@ -39,7 +39,7 @@ const hints = () => ({
     `${K('door.thermal')} switches thermal. ${K('door.ping')} pings a spot on the pilot's compass. ${K('door.bail')} bails out.`,
   ],
   planeSolo: [
-    `SOLO PLANE: on the runway hold ${K('plane.up')}: it builds up speed and lifts off on its own. In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle.`,
+    `SOLO PLANE: roll out of the hangar and turn on to the runway with ${K('plane.left')}/${K('plane.right')}, then hold ${K('plane.up')}: it builds up speed and lifts off on its own. You can only take off from a runway. In the air ${K('plane.up')} climbs, ${K('plane.down')} descends, ${K('plane.left')}/${K('plane.right')} turn, ${K('plane.more')}/${K('plane.less')} change throttle.`,
     `The mouse aims the guns wherever you look, ${K('plane.fire')} fires. ${K('plane.bomb')} bombs, ${K('plane.rocket')} rockets along the nose. ${K('plane.view')} switches 1st/3rd person, ${K('plane.ahead')} looks ahead again. The side gun fires by itself.`,
     `Land on your own runway and stop to repair, refuel and rearm. ${K('plane.bail')} bails out.`,
   ],

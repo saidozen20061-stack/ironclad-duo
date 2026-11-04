@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PLANES, FLIGHT } from '../../../shared/planes.js';
-import { groundAt, WATER_LEVEL } from '../../../shared/map.js';
+import { groundAt, onRunway, WATER_LEVEL } from '../../../shared/map.js';
 import { PROPS } from '../../../shared/props.js';
 import { wrapAngle } from '../../../shared/tank.js';
 import { net } from '../net.js';
@@ -640,7 +640,7 @@ class PlaneBase extends GunnerView {
     }
     // Warnings, worst first.
     const aa = pl.aa ?? 0;
-    const w = me.dead ? '' : pl.stall ? 'STALL!' : pl.low ? 'PULL UP!' : aa < 0 ? 'ENEMY AA TURRETS FIRING! GET OUT OF THEIR HALF' : pl.edge ? 'RETURN TO BATTLE' : pl.six ? 'ENEMY ON OUR SIX!' : aa > 0 ? `ENEMY AA TURRETS IN ${Math.ceil(aa)}s` : pl.y > FLIGHT.maxAlt - 30 ? 'TOO HIGH' : '';
+    const w = me.dead ? '' : pl.stall ? 'STALL!' : pl.low ? 'PULL UP!' : aa < 0 ? 'ENEMY AA TURRETS FIRING! GET OUT OF THEIR HALF' : pl.edge ? 'RETURN TO BATTLE' : pl.six ? 'ENEMY ON OUR SIX!' : aa > 0 ? `ENEMY AA TURRETS IN ${Math.ceil(aa)}s` : pl.y > FLIGHT.maxAlt - 30 ? 'TOO HIGH' : pl.ground && !this.plane.heli && !onRunway(self.x, self.z) ? 'TAXI ON TO THE RUNWAY TO TAKE OFF' : '';
     const warnEl = $('.p-warn');
     if (warnEl.textContent !== w) warnEl.textContent = w;
     warnEl.classList.toggle('show', !!w);

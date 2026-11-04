@@ -467,8 +467,17 @@ const builders = {
     for (const s of [-1, 1]) for (let i = -3; i <= 3; i++) if (i) parts.push(box(C.white, s * (w / 2 - 12), 0.08, i * 3.6, 16, 0.02, 1.6));
     return parts;
   },
+  // Same building as a plane's, with a door as wide as its two bays.
+  tankhangar(p) {
+    return builders.hangar({ ...p, wideDoor: true });
+  },
+  // Its walls for collisions: already drawn as part of the building.
+  hwall() {
+    return [];
+  },
   hangar(p) {
     const { w, d, h } = p;
+    const post = p.big || p.wideDoor ? 0.47 : 0.36;
     const parts = [
       // Corrugated arch on low walls, big open door facing the runway.
       box(C.metal, 0, 0, -d / 2 + 0.3, w, h * 0.5, 0.6),
@@ -476,8 +485,8 @@ const builders = {
       box(C.metal, w / 2 - 0.3, 0, 0, 0.6, h * 0.5, d - 1.2),
       vault(C.olive, 0, h * 0.5, 0, w + OVER, d + OVER, h * 0.5),
       box(0x262720, 0, 0.02, d * 0.08, w * 0.92, 0.04, d * 0.8),
-      box(C.olive, -w * (p.big ? 0.47 : 0.36), 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
-      box(C.olive, w * (p.big ? 0.47 : 0.36), 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
+      box(C.olive, -w * post, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
+      box(C.olive, w * post, 0, d / 2 - 0.2, 2.4, h * 0.5, 0.4),
       box(p.team === 'red' ? C.redTeam : C.blueTeam, p.big ? w * 0.3 : 0, h * 0.52, d / 2 + 0.05, w * 0.3, p.big ? 3 : 1.2, 0.1),
       // The inside: a plane starts in here, and the arch above is only visible from outside.
       box(0x3a3d34, 0, h * 0.72, 0, w * 0.88, 0.25, d - 0.5),
@@ -703,6 +712,7 @@ export class PropsView {
       const parts = builders[p.type](p, r);
       const base = foundation(p, y);
       if (base) parts.push(base);
+      if (!parts.length) continue; // nothing to draw: a hangar's walls come with the hangar
       const geo = mergeGeometries(parts);
       this.baseYs.set(p.id, y);
       xf.compose(new THREE.Vector3(p.x, y, p.z), new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, p.rot), new THREE.Vector3(1, 1, 1));

@@ -7,7 +7,7 @@ import { PLANES, rocketStep } from '../../../shared/planes.js';
 import { ArmyAI } from './ai.js';
 import { BASES, POINTS, PLAY_LIMIT, HALF, groundAt, heightAt, waterDepthAt, crossesBridgeRail, WATER_LEVEL } from '../../../shared/map.js';
 import { tankPose, muzzlePose, planePitchAlong, wrapAngle } from '../../../shared/tank.js';
-import { PROPS, PROP_TYPES, propsNear, circleHitsProp, segmentHitsProp, setFortress } from '../../../shared/props.js';
+import { PROPS, PROP_TYPES, propsNear, circleHitsProp, segmentHitsProp, setFortress, TANK_BAYS } from '../../../shared/props.js';
 import { buildNav } from './nav.js';
 import { installMode } from './modes.js';
 
@@ -158,12 +158,10 @@ export class Match {
     const infos = room.crews ?? [{ id: 0, team: 'blue', tank: room.tank ?? 'medium' }];
     for (const team of ['blue', 'red']) {
       const mine = infos.filter((c) => c.team === team);
-      let planeSlot = 0;
-      const b = BASES[team];
-      const fwd = team === 'blue' ? 1 : -1;
-      mine.forEach((info, k) => {
-        const x = b.x + (k - (mine.length - 1) / 2) * 16;
-        const t = this.addTank(PLANES[info.tank] ? this.planes.createPlayerPlane(team, info.tank, planeSlot++) : new Tank(team, info.tank, x, b.z + 45 * fwd, b.heading, { player: true }));
+      let planeSlot = 0, bay = 0;
+      mine.forEach((info) => {
+        const at = TANK_BAYS[team][bay % TANK_BAYS[team].length];
+        const t = this.addTank(PLANES[info.tank] ? this.planes.createPlayerPlane(team, info.tank, planeSlot++) : (bay++, new Tank(team, info.tank, at.x, at.z, at.h, { player: true })));
         t.crewId = info.id;
         this.crews.set(info.id, new Crew(info, t));
       });
@@ -260,7 +258,7 @@ export class Match {
       return;
     }
     if (import.meta.env?.DEV && msg.t === 'debugKill') return this.damage(t, 1e6, { owner: 0 });
-    if (import.meta.env?.DEV && msg.t === 'debugElite') return this.planes.spawnElites();
+    if (import.meta.env?.DEV && msg.t === 'debugElite') return this.planes.queueElites();
     if (import.meta.env?.DEV && msg.t === 'debugAa') return void (t.aaClock = msg.clock);
     if (import.meta.env?.DEV && msg.t === 'debugEnd') return this.endMatch(msg.winner, 'Test');
     if (import.meta.env?.DEV && msg.t === 'debugWave' && this.fort) {
@@ -339,9 +337,9 @@ export class Match {
   }
 
   assignRandomTank(c) {
-    const b = BASES[c.team];
+    const at = TANK_BAYS[c.team][0];
     const type = TANK_IDS[Math.floor(Math.random() * TANK_IDS.length)];
-    const t = this.addTank(new Tank(c.team, type, b.x, b.z + 45 * (c.team === 'blue' ? 1 : -1), b.heading, { player: true }));
+    const t = this.addTank(new Tank(c.team, type, at.x, at.z, at.h, { player: true }));
     t.crewId = c.id;
     this.units = this.units.filter((u) => u !== c.tank);
     c.tank = t;
@@ -351,6 +349,14 @@ export class Match {
 
   clearSpawn(t) {
     const { x, z } = t.spawn;
+    // Its own hangar bay, or the next one free.
+    for (const bay of [t.spawn, ...TANK_BAYS[t.team]]) {
+      if (this.spawnBlocked(t, bay.x, bay.z)) continue;
+      Object.assign(t, { x: bay.x, z: bay.z, h: bay.h });
+      t.aim.yaw = bay.h;
+      tankPose(t.spec, bay.x, bay.z, bay.h, t.pose);
+      return;
+    }
     for (const r of [0, 12, 24, 36]) {
       for (let k = 0; k < (r ? 8 : 1); k++) {
         const a = (k * Math.PI) / 4;

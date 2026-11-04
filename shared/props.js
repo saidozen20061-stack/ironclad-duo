@@ -58,6 +58,9 @@ export const PROP_TYPES = {
   // Airfields
   runway: { solid: false, hp: Infinity },
   hangar: { solid: true, hp: Infinity, cover: true },
+  // Tanks start inside these, so the building itself doesn't block: its walls do (see hwall).
+  tankhangar: { solid: false, hp: Infinity },
+  hwall: { solid: true, hp: Infinity, cover: true },
   ctower: { solid: true, hp: Infinity, cover: true },
   windsock: { solid: false, hp: Infinity },
   aagun: { solid: true, hp: Infinity, cover: true },
@@ -180,6 +183,8 @@ function add(type, x, z, rot, w, d, h, extra = {}) {
 }
 
 // ---------- Bases ----------
+const TANK_HANGAR = { w: 32, d: 20, h: 11, row: 30, xs: [17, -17, 52, -52], bay: 8 };
+export const TANK_BAYS = {};
 for (const [team, b] of Object.entries(BASES)) {
   const s = team === 'blue' ? 1 : -1;
   for (let i = 0; i < 4; i++) add('tent', b.x - 45 + i * 12, b.z - s * 35, 0, 6, 8, 3.5, { team });
@@ -187,27 +192,45 @@ for (const [team, b] of Object.entries(BASES)) {
   add('garage', b.x - 60, b.z + s * 5, Math.PI / 2, 14, 10, 5.5, { team });
   for (let i = 0; i < 6; i++) add('sandbags', b.x - 50 + i * 20, b.z + s * 62, 0, 8, 0.9, 1.1);
   for (let k = 0; k < 4; k++) add('crates', b.x + rr(-30, 30), b.z - s * rr(10, 30), rr(0, 3), 2.4, 2.4, 1.6);
+  // Tank hangars facing the front, each with room for two side by side. Middle ones fill up first.
+  const { w, d, h, row, xs, bay } = TANK_HANGAR;
+  TANK_BAYS[team] = [];
+  for (const dx of xs) {
+    const x = b.x + dx, z = b.z + s * row;
+    add('tankhangar', x, z, s > 0 ? 0 : Math.PI, w, d, h, { team });
+    add('hwall', x, z - s * (d / 2 - 0.4), 0, w, 0.8, h * 0.72);
+    for (const side of [-1, 1]) {
+      add('hwall', x + side * (w / 2 - 0.4), z, 0, 0.8, d, h * 0.72);
+      TANK_BAYS[team].push({ x: x + side * bay, z: z + s * 2, h: b.heading });
+    }
+  }
 }
 
 // ---------- Airfields ----------
 for (const f of Object.values(AIRFIELDS)) {
   const { team, x, z, len, width } = f;
-  // Buildings stand on the side away from the map edge.
+  // Buildings stand on the side away from the map edge. Red's field is blue's mirrored: each side's
+  // take-off run goes the same way along its own runway.
   const s = team === 'blue' ? 1 : -1;
+  const q = f.dir;
   add('runway', x, z, 0, len, width, 0.1, { team });
-  // Small planes at the start of the runway, where they get the longest run.
-  add('hangar', x - 125, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 54, 24, 11, { team });
-  add('hangar', x - 69, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 54, 24, 11, { team });
-  add('ctower', x - 28, z + s * (width / 2 + 20), s > 0 ? Math.PI : 0, 8, 8, 13, { team });
+  // Small planes at the start of the runway, where they get the longest run. The players' hangars
+  // first, and across the runway two more for the NPCs, set between them so that rolling straight
+  // across doesn't end in one.
+  add('hangar', x - q * 125, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 54, 24, 11, { team });
+  add('hangar', x - q * 69, z + s * (width / 2 + 24), s > 0 ? Math.PI : 0, 54, 24, 11, { team });
+  add('hangar', x - q * 97, z - s * (width / 2 + 24), s > 0 ? 0 : Math.PI, 50, 24, 11, { team, npc: true });
+  add('hangar', x - q * 41, z - s * (width / 2 + 24), s > 0 ? 0 : Math.PI, 50, 24, 11, { team, npc: true });
+  add('ctower', x - q * 28, z + s * (width / 2 + 20), s > 0 ? Math.PI : 0, 8, 8, 13, { team });
   // The Leviathan's own, big enough for it to roll in and out under its tail; it needs little runway.
-  add('hangar', x + 40, z + s * (width / 2 + 52), s > 0 ? Math.PI : 0, 96, 84, 46, { team, big: true });
-  add('windsock', x + 100, z + s * (width / 2 + 12), 0, 1, 1, 6, { team });
-  add('truck', x + 112, z + s * (width / 2 + 18), 0.4, 2.4, 6.5, 2.6, { team });
-  add('truck', x + 128, z + s * (width / 2 + 16), -0.3, 2.4, 6.5, 2.6, { team });
-  add('fueltank', x + 150, z + s * (width / 2 + 24), Math.PI / 2, 4.6, 9, 4.6);
-  for (const [dx, dz] of [[-len / 2 - 8, width / 2 + 14], [len / 2 + 6, width / 2 + 14], [130, -width / 2 - 14]]) add('aagun', x + dx, z + s * dz, 0, 4, 4, 2.6, { team });
+  add('hangar', x + q * 40, z + s * (width / 2 + 52), s > 0 ? Math.PI : 0, 96, 84, 46, { team, big: true });
+  add('windsock', x + q * 100, z + s * (width / 2 + 12), 0, 1, 1, 6, { team });
+  add('truck', x + q * 112, z + s * (width / 2 + 18), 0.4, 2.4, 6.5, 2.6, { team });
+  add('truck', x + q * 128, z + s * (width / 2 + 16), -0.3, 2.4, 6.5, 2.6, { team });
+  add('fueltank', x + q * 150, z + s * (width / 2 + 24), Math.PI / 2, 4.6, 9, 4.6);
+  for (const [dx, dz] of [[-len / 2 - 8, width / 2 + 14], [len / 2 + 6, width / 2 + 14], [130, -width / 2 - 14]]) add('aagun', x + q * dx, z + s * dz, 0, 4, 4, 2.6, { team });
   // Two pads for helicopters, past the small hangars.
-  for (const k of [0, 1]) add('helipad', x - 174, z + s * (width / 2 + 26 + k * 28), 0, 20, 20, 0.1, { team });
+  for (const k of [0, 1]) add('helipad', x - q * 174, z + s * (width / 2 + 26 + k * 28), 0, 20, 20, 0.1, { team });
 }
 
 // The heavy anti-air turrets guarding each side's half of the map (see AA_TURRETS).

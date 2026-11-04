@@ -1,7 +1,7 @@
 import { Vector3, Euler, Quaternion } from 'three';
 import { PLANES, FLIGHT, NPC_PLANES, SIDE_GUN_MAX_UP, ROCKET, MAX_SIDE_PLANES, AA_TURRETS, engineZones } from '../../../shared/planes.js';
 import { TICK_RATE } from '../../../shared/constants.js';
-import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES } from '../../../shared/map.js';
+import { groundAt, WATER_LEVEL, AIRFIELDS, onRunway, BASES, HALF } from '../../../shared/map.js';
 import { PROPS, propsNear, segmentHitsProp, FORT } from '../../../shared/props.js';
 import { wrapAngle } from '../../../shared/tank.js';
 
@@ -36,6 +36,16 @@ const CLIMB_PITCH = 0.3; // radians
 const CLIMB_HOLD = 6; // s before a held key starts steepening the climb
 const CLIMB_STEEPEN = 0.15; // radians per second after that
 const HANGAR_DOOR = 36; // m: the widest plane that fits through an ordinary hangar's door
+// Steering on the ground: tight at taxiing speed, gentler once it's rolling fast.
+const TAXI_TURN = 1.1, ROLL_TURN = 0.65; // radians per second
+const TAXI_SPEED = 15, ROLL_SPEED = 30; // m/s
+// An NPC plane's way from its hangar to the sky.
+const NPC_TAXI_SPEED = 10; // m/s
+const NPC_CLIMB = { pitch: 0.22, height: 45 }; // radians, m above the ground before it goes about its business
+const NPC_STUCK = 75; // s: longer than this on the ground and something's badly wrong with it
+const SPAWN_RETRY = 2; // s
+const GROUND_IDLE = 1.2; // throttle lost per second on the ground with the key let go
+const GROUND_EDGE = 10; // m from the edge of the map that a rolling plane stops going any further
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
 const ROCKET_BELOW = 0.85; // × gear height under the plane: clear of every wing and its underside
 const ROCKET_CONVERGE = 150; // m ahead, where both sides' rockets cross the nose line
@@ -141,6 +151,7 @@ export class PlaneSystem {
     this.planes = [];
     this.nextRole = { blue: 'fighter', red: 'attack' };
     this.nextElite = NPC_PLANES.eliteEvery;
+    this.elitesDue = []; // waiting for a free hangar
     this.airStart = !!match.room.airStart;
     // Fortress Defence: bomber and fighter waves are added by modes.js through spawnNpc.
   }
@@ -156,7 +167,7 @@ export class PlaneSystem {
     // Inside a hangar, nose just short of the door, facing out. The widest plane has its own.
     const size = PLANES[type].size;
     const hangars = PROPS.filter((p) => p.type === 'hangar' && p.team === team);
-    const hangar = size.width > HANGAR_DOOR ? hangars.find((p) => p.big) : hangars.filter((p) => !p.big)[slot ? 1 : 0];
+    const hangar = size.width > HANGAR_DOOR ? hangars.find((p) => p.big) : hangars.filter((p) => !p.big && !p.npc)[slot ? 1 : 0];
     const out = team === 'blue' ? -1 : 1; // the way the hangar door faces
     const z = hangar.z + out * (hangar.d / 2 - size.length / 2 - 1.5);
     return { x: hangar.x, y: groundAt(hangar.x, z), z, v: 0, grounded: true, h: out < 0 ? Math.PI : 0 };
@@ -220,6 +231,8 @@ export class PlaneSystem {
     const engines = zones.filter((z) => mods[z] > 0).length / zones.length;
     const health = 0.5 + (0.5 * zones.reduce((sum, z) => sum + mods[z], 0)) / zones.length;
     p.throttle = clamp(p.throttle + k.th * DT * 0.55, 0, 1);
+    // Taxiing: the engine only pulls while the key is held, so a pilot can slow down for a turn.
+    if (p.player && p.grounded && k.th <= 0) p.throttle = Math.max(0, p.throttle - DT * GROUND_IDLE);
     if (p.fuel <= 0) p.throttle = 0;
     // Afterburner: keep asking for more throttle once it's already full. It drinks fuel.
     p.ab = !!s.afterburner && k.th > 0 && p.throttle >= 0.99 && engines > 0 && !p.grounded;
@@ -436,10 +449,14 @@ export class PlaneSystem {
     p.v = Math.max(0, p.v + (thrust - friction - 0.002 * p.v * p.v) * DT);
     // Steer with rudder or stick while rolling.
     const steer = clamp(stickY - stickR);
-    p.h = wrapAngle(p.h + steer * clamp(p.v / 12, 0, 1) * 0.65 * DT);
+    const rate = TAXI_TURN + (ROLL_TURN - TAXI_TURN) * clamp((p.v - TAXI_SPEED) / (ROLL_SPEED - TAXI_SPEED), 0, 1);
+    p.h = wrapAngle(p.h + steer * clamp(p.v / 12, 0, 1) * rate * DT);
     const f = fwd(p.h, 0, _f);
     p.x += f.x * p.v * DT;
     p.z += f.z * p.v * DT;
+    // Can't roll off the edge of the world: it runs along it instead, and can still turn back.
+    p.x = clamp(p.x, -HALF + GROUND_EDGE, HALF - GROUND_EDGE);
+    p.z = clamp(p.z, -HALF + GROUND_EDGE, HALF - GROUND_EDGE);
     const ground = groundAt(p.x, p.z);
     p.y = Math.max(ground, WATER_LEVEL) + s.gearH;
     p.vy = 0;
@@ -448,8 +465,8 @@ export class PlaneSystem {
     if (ground < WATER_LEVEL) return this.crash(p);
     this.hitProps(p);
     if (p.dead) return;
-    // Rotate and lift off once fast enough.
-    if (p.v > s.maxSpeed * (s.takeoff ?? TAKEOFF_SPEED) && stickP > 0.08 && gear) {
+    // Rotate and lift off once fast enough, and only from a runway.
+    if (p.v > s.maxSpeed * (s.takeoff ?? TAKEOFF_SPEED) && stickP > 0.08 && gear && onRunway(p.x, p.z)) {
       p.grounded = false;
       p.climbOut = 0;
       p.gp = 0.01;
@@ -848,17 +865,17 @@ export class PlaneSystem {
     this.nextElite -= DT;
     if (this.nextElite <= 0) {
       this.nextElite = NPC_PLANES.eliteEvery;
-      this.spawnElites();
+      this.queueElites();
     }
+    this.elitesDue = this.elitesDue.filter((e) => !this.spawnElite(e));
     for (const team of ['blue', 'red']) {
       if (m.mode === 'fortress') continue;
       this.nextNpc[team] -= DT;
       if (this.nextNpc[team] > 0) continue;
       this.nextNpc[team] = NPC_PLANES.every;
-      if (!this.sideFull(team)) {
-        this.spawnNpc(team, this.nextRole[team]);
-        this.nextRole[team] = this.nextRole[team] === 'fighter' ? 'attack' : 'fighter';
-      }
+      if (this.sideFull(team)) continue;
+      if (this.spawnNpc(team, this.nextRole[team])) this.nextRole[team] = this.nextRole[team] === 'fighter' ? 'attack' : 'fighter';
+      else this.nextNpc[team] = SPAWN_RETRY;
     }
   }
 
@@ -886,14 +903,13 @@ export class PlaneSystem {
     return out.set(l.x + c * side + sn * ahead, l.y + up, l.z - sn * side + c * ahead);
   }
 
+  // Takes off like everyone else, then catches up. Null while there's no free hangar.
   spawnEscort(l, slot) {
-    const at = this.escortSlot(l, slot);
-    const p = new Plane(l.team, 'escort', at.x, at.y, at.z, l.h, Math.max(l.v, PLANES.escort.minSpeed * 1.2));
-    p.ai = { role: 'fighter', think: rand(0, 0.5), target: null, climbT: 0, reactTo: null, reactT: 0, ground: null, pass: rand(0.8, 1.2) };
+    const p = this.spawnNpc(l.team, 'fighter', 'escort');
+    if (!p) return null;
     p.elite = true;
     p.escortOf = l;
     p.escortSlot = slot;
-    this.m.units.push(p);
     return p;
   }
 
@@ -939,18 +955,23 @@ export class PlaneSystem {
   }
 
   // Every team facing players sends one, on top of its usual planes. One Leviathan per team at a time.
-  spawnElites() {
+  queueElites() {
     const m = this.m;
     const humans = new Set([...m.crews.values()].map((c) => c.team));
     for (const team of ['blue', 'red']) {
-      if (!humans.has(team === 'blue' ? 'red' : 'blue')) continue;
+      if (!humans.has(team === 'blue' ? 'red' : 'blue') || this.elitesDue.some((e) => e.team === team)) continue;
       const hasLeviathan = m.units.some((u) => u.type === 'leviathan' && u.team === team && !u.dead);
-      const type = !hasLeviathan && Math.random() < 0.5 ? 'leviathan' : 'f16';
-      const p = this.spawnNpc(team, type === 'f16' ? 'fighter' : 'attack', type);
-      p.elite = true;
-      if (type === 'leviathan') p.y = rand(190, 230);
-      m.events.push({ k: 'elite', team, type });
+      this.elitesDue.push({ team, type: !hasLeviathan && Math.random() < 0.5 ? 'leviathan' : 'f16' });
     }
+  }
+
+  // True once it's on its way.
+  spawnElite({ team, type }) {
+    const p = this.spawnNpc(team, type === 'f16' ? 'fighter' : 'attack', type);
+    if (!p) return false;
+    p.elite = true;
+    this.m.events.push({ k: 'elite', team, type });
+    return true;
   }
 
   // A player crew's plane holds its slot even while it waits to respawn.
@@ -961,15 +982,66 @@ export class PlaneSystem {
   spawnNpc(team, role, forced = null) {
     const list = NPC_PLANES[team][role];
     const type = forced ?? list[Math.floor(Math.random() * list.length)];
-    const b = BASES[team];
-    const s = team === 'blue' ? -1 : 1;
-    const p = new Plane(team, type, b.x + rand(-300, 300), rand(150, 230), b.z + s * 80, b.heading, PLANES[type].maxSpeed * 0.75);
-    p.ai = { role, think: rand(0, 0.5), target: null, climbT: 0, reactTo: null, reactT: 0, ground: null, pass: rand(0.8, 1.2) };
+    const ai = { role, think: rand(0, 0.5), target: null, climbT: 0, reactTo: null, reactT: 0, ground: null, pass: rand(0.8, 1.2) };
+    let p;
+    if (this.airStart) {
+      const b = BASES[team];
+      const s = team === 'blue' ? -1 : 1;
+      p = new Plane(team, type, b.x + rand(-300, 300), rand(150, 230), b.z + s * 80, b.heading, PLANES[type].maxSpeed * 0.75);
+    } else {
+      const hangar = this.freeHangar(team, type);
+      if (!hangar) return null;
+      const size = PLANES[type].size;
+      const out = Math.sign(AIRFIELDS[team].z - hangar.z); // the way its door faces
+      const z = hangar.z + out * (hangar.d / 2 - size.length / 2 - 1.5);
+      p = new Plane(team, type, hangar.x, groundAt(hangar.x, z) + PLANES[type].gearH, z, out < 0 ? Math.PI : 0, 0, { grounded: true });
+      ai.taxi = { phase: 'out', t: 0, out, door: hangar.z + out * (hangar.d / 2) };
+    }
+    p.ai = ai;
     this.m.units.push(p);
     return p;
   }
 
+  // A hangar this plane fits and nothing's parked in. The NPCs' own come first.
+  freeHangar(team, type) {
+    const big = PLANES[type].size.width > HANGAR_DOOR;
+    const hangars = PROPS.filter((h) => h.type === 'hangar' && h.team === team && !!h.big === big).sort((a, b) => !!b.npc - !!a.npc);
+    return hangars.find((h) => !this.m.units.some((u) => u.kind === 'plane' && !u.dead && u.grounded && Math.abs(u.x - h.x) < h.w / 2 && Math.abs(u.z - h.z) < h.d / 2)) ?? null;
+  }
+
+  // Out of the hangar, on to the centre line, along the runway and up, the way a player has to.
+  taxi(p) {
+    const ai = p.ai, t = ai.taxi, s = p.spec, k = p.ctl, f = AIRFIELDS[p.team];
+    t.t += DT;
+    if (t.t > NPC_STUCK && p.grounded) return this.m.damage(p, 1e7, { owner: -1 });
+    k.th = k.pitch = k.roll = k.yaw = 0;
+    k.fire = k.bomb = k.rocket = false;
+    k.gunDir = null;
+    k.aim = null;
+    if (!p.grounded) {
+      // Off the ground: straight ahead and up, until there's room to turn. No easing into the climb:
+      // the ground can rise right past the end of the runway.
+      k.aim = { yaw: f.heading, pitch: NPC_CLIMB.pitch };
+      p.climbOut = null;
+      p.throttle = 1;
+      if (p.y - Math.max(groundAt(p.x, p.z), WATER_LEVEL) > NPC_CLIMB.height) ai.taxi = null;
+      return;
+    }
+    const line = wrapAngle(Math.atan2(f.dir * (s.size.length / 2 + 20), f.z - p.z) - p.h);
+    if (t.phase === 'out') {
+      if ((p.z - t.door) * t.out > s.size.length * 0.3) t.phase = 'turn';
+    } else {
+      k.yaw = clamp(line * 2.5, -1, 1);
+      if (t.phase === 'turn' && Math.abs(line) < 0.15 && Math.abs(p.z - f.z) < 5) t.phase = 'roll';
+    }
+    if (t.phase === 'roll') {
+      p.throttle = 1;
+      if (p.v > s.maxSpeed * (s.takeoff ?? TAKEOFF_SPEED) * 1.03) k.pitch = 1;
+    } else p.throttle = p.v < NPC_TAXI_SPEED ? 1 : 0.12;
+  }
+
   npc(p) {
+    if (p.ai.taxi) return this.taxi(p);
     if (p.escortOf && this.flyEscort(p)) return;
     const m = this.m, ai = p.ai, s = p.spec;
     const fortress = m.mode === 'fortress';
