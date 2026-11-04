@@ -4,22 +4,28 @@
     <meta charset="utf-8" />
     <title>Ironclad Duo</title>
     <style>
-      html, body { height: 100%; margin: 0; background: #14160f; color: #e8e4d4; font-family: 'Segoe UI', sans-serif; cursor: default; user-select: none; }
-      body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-      img { width: 168px; height: 168px; }
-      h1 { margin: 0; font: 900 34px Impact, 'Arial Black', sans-serif; letter-spacing: 5px; color: #d9a441; }
-      #status { min-height: 22px; font-size: 16px; color: #b9b5a6; }
-      #bar { position: relative; width: min(420px, 70vw); height: 8px; overflow: hidden; background: #2b2e22; border-radius: 4px; }
+      html, body { height: 100%; margin: 0; overflow: hidden; background: #0d0c0a; color: #e8e4d4; font-family: 'Segoe UI', sans-serif; cursor: default; user-select: none; }
+      /* The workshop, drifting slowly closer while it waits. */
+      #picture { position: fixed; inset: 0; background: url(garage.jpg) center / cover no-repeat; transform-origin: 34% 45%; animation: drift 60s ease-out forwards; }
+      @keyframes drift { from { transform: scale(1); } to { transform: scale(1.09); } }
+      #shade { position: fixed; inset: 0; background: linear-gradient(to top, rgba(8, 7, 5, 0.94) 0, rgba(8, 7, 5, 0.72) 19vh, rgba(8, 7, 5, 0) 44vh); }
+      #panel { position: fixed; left: 0; right: 0; bottom: 6vh; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      h1 { margin: 0; font: 900 clamp(30px, 4.4vw, 56px) Impact, 'Arial Black', sans-serif; letter-spacing: 6px; color: #d9a441; text-shadow: 0 3px 12px rgba(0, 0, 0, 0.8); }
+      #status { min-height: 22px; font-size: 16px; color: #d6d0bf; text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9); }
+      #bar { position: relative; width: min(560px, 70vw); height: 8px; overflow: hidden; background: rgba(43, 46, 34, 0.9); border-radius: 4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
       #fill { position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: #d9a441; border-radius: 4px; }
       #fill.waiting { animation: sweep 1.2s ease-in-out infinite alternate; }
       @keyframes sweep { from { left: 0; } to { left: 70%; } }
     </style>
   </head>
   <body>
-    <img src="icon.png" alt="" />
-    <h1>IRONCLAD DUO</h1>
-    <div id="status">Starting…</div>
-    <div id="bar"><div id="fill" class="waiting"></div></div>
+    <div id="picture"></div>
+    <div id="shade"></div>
+    <div id="panel">
+      <h1>IRONCLAD DUO</h1>
+      <div id="status">Starting…</div>
+      <div id="bar"><div id="fill" class="waiting"></div></div>
+    </div>
     <script>
       // The app calls this as it goes. No share of the work given: the bar just sweeps back and forth.
       function show(text, share = null) {
