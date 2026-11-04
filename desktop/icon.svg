@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6bd5a"/>
+      <stop offset="0.62" stop-color="#d9692b"/>
+      <stop offset="1" stop-color="#8a3019"/>
+    </linearGradient>
+    <clipPath id="badge"><rect x="16" y="16" width="480" height="480" rx="96"/></clipPath>
+  </defs>
+  <g clip-path="url(#badge)">
+    <rect x="16" y="16" width="480" height="480" fill="url(#sky)"/>
+    <!-- The low sun behind the tank. -->
+    <circle cx="232" cy="214" r="132" fill="#ffe6a3"/>
+    <!-- The ground. -->
+    <path d="M16 396 C 120 372 208 384 288 392 S 440 388 496 372 V 496 H 16 Z" fill="#17190f"/>
+  </g>
+  <!-- Long barrel with a muzzle brake. -->
+  <g transform="rotate(-9 300 214)">
+    <rect x="290" y="200" width="172" height="26" fill="#17190f"/>
+    <rect x="440" y="190" width="40" height="46" rx="5" fill="#17190f"/>
+  </g>
+  <!-- Commander's hatch and turret. -->
+  <rect x="176" y="146" width="66" height="32" rx="8" fill="#17190f"/>
+  <path d="M132 262 L158 176 Q161 166 172 166 L292 166 Q304 166 310 175 L352 262 Z" fill="#17190f"/>
+  <!-- Hull. -->
+  <path d="M60 322 L92 256 Q95 250 102 250 L402 250 Q409 250 414 255 L462 322 Z" fill="#23261a"/>
+  <!-- Tracks and road wheels. -->
+  <rect x="44" y="314" width="424" height="96" rx="48" fill="#17190f"/>
+  <g fill="#d9a441">
+    <circle cx="94" cy="362" r="29"/>
+    <circle cx="175" cy="362" r="29"/>
+    <circle cx="256" cy="362" r="29"/>
+    <circle cx="337" cy="362" r="29"/>
+    <circle cx="418" cy="362" r="29"/>
+  </g>
+  <g fill="#17190f">
+    <circle cx="94" cy="362" r="10"/>
+    <circle cx="175" cy="362" r="10"/>
+    <circle cx="256" cy="362" r="10"/>
+    <circle cx="337" cy="362" r="10"/>
+    <circle cx="418" cy="362" r="10"/>
+  </g>
+  <!-- Star on the turret. -->
+  <path d="M232 186 L241 212 L269 212 L247 229 L255 256 L232 240 L209 256 L217 229 L195 212 L223 212 Z" fill="#d9a441"/>
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#17190f" stroke-width="12"/>
+</svg>
