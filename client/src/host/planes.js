@@ -582,7 +582,9 @@ export class PlaneSystem {
     if (k.bomb) this.dropBomb(p);
     if ((k.rocket || p.opRocket) && p.rocketCd <= 0 && p.rockets > 0 && !p.grounded) {
       p.rocketCd = s.rockets.cooldown ?? 0.28;
-      for (let i = s.rockets.pair ? 2 : 1; i > 0 && p.rockets > 0; i--) this.fireRocket(p, f);
+      // A helicopter hovers level: along the nose, its rockets could never hit the ground.
+      const line = s.heli && k.gunDir ? k.gunDir : f;
+      for (let i = s.rockets.pair ? 2 : 1; i > 0 && p.rockets > 0; i--) this.fireRocket(p, line);
     }
     this.rearGun(p);
     this.sixCheck(p);
@@ -595,7 +597,7 @@ export class PlaneSystem {
     // will light to a point on the nose line ahead, so both sides' rockets meet where the plane aimed.
     const off = (r.x ?? Math.min(ROCKET_OFFSET, s.size.width * 0.12)) * (p.rockets % 2 ? 1 : -1);
     _e.set(-p.gp, p.h, p.ty, 'YXZ');
-    const pos = new Vector3(off, -s.gearH * ROCKET_BELOW, 0).applyEuler(_e);
+    const pos = new Vector3(off, -(r.y ?? s.gearH * ROCKET_BELOW), 0).applyEuler(_e);
     pos.x += p.x;
     pos.y += p.y;
     pos.z += p.z;

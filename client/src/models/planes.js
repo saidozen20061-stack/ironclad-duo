@@ -652,9 +652,16 @@ function heliParts(add, group, props, spec, sh, otherGun) {
   for (const s of [-1, 1]) {
     add.dark.push(cyl(0.08, 0.08, 5.2, 5, s * 1.1, fy, 0.6));
     add.dark.push(new THREE.ConeGeometry(0.08, 0.5, 5).rotateX(0.7).toNonIndexed().translate(s * 1.1, fy + 0.16, 3.4));
-    for (const z of [2.1, -0.9]) add.metal.push(box(0.08, 0.08, 0.1, s * 0.85, fy + 0.32, z), box(0.08, 0.5, 0.1, s * 1.05, fy + 0.2, z));
+    // Struts from the skid up into the belly, ending inside the body so no gap can show.
+    for (const z of [2.1, -0.9]) {
+      const top = fuselageBottom(sh.fuse, z) + 0.6;
+      const lean = Math.atan2(0.65, top - fy);
+      add.metal.push(new THREE.BoxGeometry(0.12, Math.hypot(0.65, top - fy), 0.14).toNonIndexed().rotateZ(s * lean).translate(s * 0.775, (fy + top) / 2, z));
+    }
+    // A rocket pod under each stub wing, inboard of the minigun.
+    add.dark.push(cyl(0.2, 0.2, 1.5, 6, s * 1.6, -0.3, 0.35));
+    add.metal.push(box(0.1, 0.22, 0.5, s * 1.6, -0.03, 0.35));
   }
-  for (const z of [2.1, -0.9]) add.metal.push(box(1.8, 0.09, 0.1, 0, fy + 0.5, z));
   // The main rotor, flat above the hump, and the tail rotor on the left of the fin.
   const main = rotorDisc(6.6, 4, 0.34);
   main.position.set(0, 2.5, -0.6);

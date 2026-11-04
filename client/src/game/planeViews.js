@@ -292,7 +292,7 @@ function heightAboveGround(self, pl, spec) {
 }
 
 function flightHint(spec) {
-  if (spec?.heli) return `${keyName('plane.up')}/${keyName('plane.down')} forward/back · ${keyName('plane.left')}/${keyName('plane.right')} sideways · ${keyName('plane.more')} rise · ${keyName('plane.less')} sink · Mouse turns and aims · ${keyName('plane.fire')} miniguns`;
+  if (spec?.heli) return `${keyName('plane.up')}/${keyName('plane.down')} forward/back · ${keyName('plane.left')}/${keyName('plane.right')} sideways · ${keyName('plane.more')} rise · ${keyName('plane.less')} sink · Mouse turns and aims · ${keyName('plane.fire')} miniguns · ${keyName('plane.rocket')} rockets`;
   return `${keyName('plane.up')} up · ${keyName('plane.down')} down · ${keyName('plane.left')}/${keyName('plane.right')} turn · ${keyName('plane.more')}/${keyName('plane.less')} throttle · Mouse aims guns · ${keyName('plane.fire')} guns · ${keyName('plane.bomb')} bombs · ${keyName('plane.rocket')} rockets`;
 }
 
@@ -506,6 +506,7 @@ class PlaneBase extends GunnerView {
         face: +this.aim.yaw.toFixed(3),
         gun: [+gun.x.toFixed(3), +gun.y.toFixed(3), +gun.z.toFixed(3)],
         fire: !!this.mouseBtn.left,
+        rocket: k.on('plane.rocket'),
       });
       return;
     }
