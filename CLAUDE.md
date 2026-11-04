@@ -15,6 +15,7 @@ Never ask before publishing. After every finished change that works (builds and 
 - Windows app: `desktop/` (Electron). It runs the game from files on disk and updates them from the published site:
   each deploy writes `update.json` (made in `vite.config.js`), and the app downloads the files that changed on a waiting
   screen (`desktop/updater.cjs`, `client/public/splash.html`). So publishing updates it too. Only a change in `desktop/` needs a new
-  installer: `npm run app`, then a new GitHub release with `desktop/release/Ironclad-Duo-Setup.exe`. The update screen's
+  installer: `npm run app`, then a new GitHub release with `desktop/release/Ironclad-Duo-Setup.exe`. 
+- The game opens on a garage screen and waits for a click (`client/src/intro.js`), so tests have to get past it. Its
   picture is `client/public/garage.jpg`, rendered by opening `/garage.html` on the dev server (`window.__picture()` returns it).
 - Dev-only test hooks: `window.__game` (net, voice, match) and `net.send({ t: 'debugKill' })`.

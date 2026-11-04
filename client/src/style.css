@@ -499,3 +499,20 @@ input, select {
 #btn-solo-go { margin-top: 14px; }
 /* Solo third person: a small crosshair instead of the full gun-sight reticle. */
 .hud.solo.third .g-sight { width: 110px; height: 110px; opacity: 0.85; }
+
+/* Opening screen */
+#intro { position: fixed; inset: 0; z-index: 1000; overflow: hidden; background: #0d0c0a; color: #e8e4d4; transition: opacity 0.5s; user-select: none; }
+#intro.ready { cursor: pointer; }
+#intro.gone { opacity: 0; pointer-events: none; }
+#intro-picture { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: 34% 45%; animation: intro-drift 60s ease-out forwards; }
+@keyframes intro-drift { from { transform: scale(1); } to { transform: scale(1.09); } }
+#intro-shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(8, 7, 5, 0.94) 0, rgba(8, 7, 5, 0.72) 19vh, rgba(8, 7, 5, 0) 44vh); }
+#intro-panel { position: absolute; left: 0; right: 0; bottom: 6vh; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+#intro-panel h1 { margin: 0; font: 900 clamp(30px, 4.4vw, 56px) Impact, 'Arial Black', sans-serif; letter-spacing: 6px; color: #d9a441; text-shadow: 0 3px 12px rgba(0, 0, 0, 0.8); }
+#intro-status { min-height: 22px; font: 500 17px 'Segoe UI', sans-serif; color: #d6d0bf; text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9); }
+#intro.ready #intro-status { font-size: 22px; font-weight: 600; color: #f3d48c; animation: intro-beckon 1.4s ease-in-out infinite alternate; }
+@keyframes intro-beckon { from { opacity: 0.55; } to { opacity: 1; } }
+#intro-bar { position: relative; width: min(560px, 70vw); height: 8px; overflow: hidden; background: rgba(43, 46, 34, 0.9); border-radius: 4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+#intro-bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: #d9a441; border-radius: 4px; animation: intro-sweep 1.2s ease-in-out infinite alternate; }
+#intro.ready #intro-bar i { width: 100%; animation: none; }
+@keyframes intro-sweep { from { left: 0; } to { left: 70%; } }

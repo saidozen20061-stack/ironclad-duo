@@ -60,8 +60,7 @@ async function updateAndPlay(win, found = null) {
         await new Promise((resolve) => setTimeout(resolve, FAILED_PAUSE));
       }
     }
-    // Stays on this screen until the player's ready to move on.
-    await web.executeJavaScript('readyToStart()').catch(() => {});
+    say('Starting…');
     await win.loadURL(HOME);
   } catch {
     // The window closed while it was busy.

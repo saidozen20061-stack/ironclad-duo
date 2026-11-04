@@ -3,6 +3,7 @@ import { net } from './net.js';
 import { settings, saveSettings } from './settings.js';
 import { setActiveView } from './render.js';
 import { MenuScene } from './scenes/menuScene.js';
+import { introReady } from './intro.js';
 import { $, showScreen, hideScreens, backScreen, clearHistory, currentScreen, onScreenChange, toast, setStatus } from './ui/screens.js';
 import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } from './ui/lobbyScreen.js';
@@ -344,3 +345,4 @@ window.addEventListener('keydown', (e) => {
 
 // Keep the server warm-ish and the name in sync once connected.
 goMenu();
+introReady();
