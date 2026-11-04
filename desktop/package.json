@@ -1,7 +1,7 @@
 {
   "name": "ironclad-duo",
   "productName": "Ironclad Duo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Ironclad Duo: low-poly two-player tank and plane battles",
   "author": "saidozen20061-stack",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "appId": "io.github.saidozen20061stack.ironcladduo",
     "productName": "Ironclad Duo",
     "directories": { "output": "release" },
-    "files": ["main.cjs", "icon.png", "game/**"],
+    "files": ["main.cjs", "updater.cjs", "splash.html", "icon.png", "game/**"],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "icon.png",

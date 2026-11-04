@@ -95,7 +95,7 @@ Voice chat uses the same connection settings. Browsers only allow the microphone
 
 Windows may warn that the app is from an unknown publisher, because it isn't code-signed: choose **More info**, then **Run anyway**.
 
-Online, the app runs the published site, so it updates itself and always matches other players. Offline, it falls back to a built-in copy, so Solo still works.
+You only install it once. When the game is updated, the app shows a waiting screen with a progress bar the next time it starts, downloads just the files that changed, and carries on. Left open, it does this when you're back at the main menu, never during a match. If the download fails or you're offline, it plays the version it already has, so Solo still works.
 
 To build the installer yourself: `npm run app`. It ends up in `desktop/release/`.
 
