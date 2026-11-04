@@ -20,13 +20,13 @@ const hints = () => ({
     `About to go down? ${K('plane.bail')} bails both of you out with parachutes.`,
   ],
   heliPilot: [
-    `You are the PILOT of a helicopter. ${K('plane.more')} lifts off and rises, ${K('plane.less')} sinks. Let go of everything and it hangs still in the air.`,
-    `${K('plane.up')}/${K('plane.down')} go forward and back, ${K('plane.left')}/${K('plane.right')} sideways, all at once and very sharply. The mouse turns the nose and aims, ${K('plane.fire')} fires your side minigun. Your gunner has the other one.`,
+    `You are the PILOT of a helicopter. ${K('plane.more')} lifts off and rises, ${K('plane.less')} sinks. It's heavy: let go and it slides to a stop, then hangs in the air, so give it room.`,
+    `${K('plane.up')}/${K('plane.down')} go forward and back, ${K('plane.left')}/${K('plane.right')} sideways, with real weight behind it: it takes a few seconds to get going and to stop. The mouse turns the nose and aims, ${K('plane.fire')} fires your side minigun. Your gunner has the other one.`,
     `Set it down on your own helipad or airfield to repair, refuel and rearm. ${K('plane.bail')} bails out. Stay out of the enemy half for long: after two minutes their AA turrets open up.`,
   ],
   heliSolo: [
-    `SOLO HELICOPTER: ${K('plane.more')} lifts off and rises, ${K('plane.less')} sinks. Let go of everything and it hangs still in the air.`,
-    `${K('plane.up')}/${K('plane.down')} go forward and back, ${K('plane.left')}/${K('plane.right')} sideways, all at once and very sharply. The mouse turns the nose and aims, ${K('plane.fire')} fires both side miniguns.`,
+    `SOLO HELICOPTER: ${K('plane.more')} lifts off and rises, ${K('plane.less')} sinks. It's heavy: let go and it slides to a stop, then hangs in the air, so give it room.`,
+    `${K('plane.up')}/${K('plane.down')} go forward and back, ${K('plane.left')}/${K('plane.right')} sideways, with real weight behind it: it takes a few seconds to get going and to stop. The mouse turns the nose and aims, ${K('plane.fire')} fires both side miniguns.`,
     `Set it down on your own helipad or airfield to repair, refuel and rearm. ${K('plane.bail')} bails out. Stay out of the enemy half for long: after two minutes their AA turrets open up.`,
   ],
   planeGunner: [

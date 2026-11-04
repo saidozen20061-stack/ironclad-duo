@@ -331,10 +331,10 @@ const SHAPES = {
   // A narrow two-seat gunship: stepped glass, stub wings with a minigun on each, a long thin tail boom.
   // Most of it is in heliParts below.
   heli: {
-    mark: [1.7, -0.02], discX: 1.75, markR: 0.34, markT: 0.2, markZ: 0.3, noWingGuns: true, noRails: true, internalBombs: true, fuseSides: 16, smooth: true, noBar: true,
-    fuse: smoothStations([[6.4, 0.25, 0.25, -0.38], [5.6, 0.9, 1, -0.36], [4, 1.25, 1.7, -0.2], [1.5, 1.35, 2.3, 0], [-1.5, 1.3, 2.2, 0.15], [-3.2, 0.9, 1.3, 0.45], [-5, 0.5, 0.65, 0.7], [-8.4, 0.28, 0.34, 0.85]], 3),
+    mark: [1.7, -0.02], discX: 1.75, markR: 0.34, markT: 0.2, markZ: 0.3, noWingGuns: true, noRails: true, internalBombs: true, fuseSides: 6, noBar: true,
+    fuse: [[6.4, 0.3, 0.3, -0.38], [5.2, 1, 1.1, -0.36], [3.4, 1.3, 1.9, -0.18], [0.8, 1.4, 2.4, 0.02], [-2.6, 1.05, 1.7, 0.32], [-4.2, 0.55, 0.75, 0.62], [-8.4, 0.26, 0.32, 0.85]],
     wing: () => {},
-    teamMark: () => upright([[-7.3, 1.5], [-7.75, 2.1], [-8.75, 2.1], [-8.6, 1.5]], 0.24),
+    teamMark: () => flatFin([[-7.3, 1.5], [-7.75, 2.1], [-8.75, 2.1], [-8.6, 1.5]], 0.24),
     canopy: [1, 0.5, 0.2, 0.1], canopyY: 0, gear: 'massive', cockpitY: 0.75, guns: [],
     engineX: 0, engineZ: -2,
   },
@@ -620,23 +620,27 @@ function leviathanParts(add, group, props, spec, sh) {
   }
 }
 
-// Everything on the helicopter apart from the plain hull.
+// A flat-sided fin standing up along the body, sharp corners and all.
+function flatFin(points, thick) {
+  return new THREE.ExtrudeGeometry(new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(z, y))), { depth: thick, bevelEnabled: false }).toNonIndexed().translate(0, 0, -thick / 2).rotateY(-Math.PI / 2);
+}
+
+// Everything on the helicopter apart from the plain hull: flat facets, like the tanks.
 function heliParts(add, group, props, spec, sh, otherGun) {
-  const smoothLoft = (stations, sides = 12, perGap = 3) => toCreasedNormals(loft(smoothStations(stations, perGap), sides), 1);
   // Two sets of stepped glass, one behind and above the other, framed in dark.
-  add.smoothGlass.push(smoothLoft([[5, 0.3, 0.2, 0.42], [4, 0.95, 0.75, 0.62], [3, 1.02, 0.86, 0.78], [2.3, 0.3, 0.2, 0.9]]));
-  add.smoothGlass.push(smoothLoft([[3, 0.3, 0.2, 1], [2, 1.02, 0.8, 1.05], [0.9, 1.06, 0.92, 1.18], [0.1, 0.3, 0.2, 1.22]]));
+  add.glass.push(loft([[5, 0.3, 0.2, 0.42], [4, 0.95, 0.75, 0.62], [3, 1.02, 0.86, 0.78], [2.3, 0.3, 0.2, 0.9]], 6));
+  add.glass.push(loft([[3, 0.3, 0.2, 1], [2, 1.02, 0.8, 1.05], [0.9, 1.06, 0.92, 1.18], [0.1, 0.3, 0.2, 1.22]], 6));
   add.dark.push(box(0.06, 0.1, 2.6, 0, 1.32, 1.55), box(0.06, 0.08, 2.2, 0, 0.98, 3.7));
   for (const z of [3.05, 2, 0.95]) add.dark.push(box(1.08, 0.05, 0.05, 0, z < 2.5 ? 1.5 : 1.1, z));
   // The engine hump and its two black exhausts, the mast, and the rotor head.
-  add.smooth.push(smoothLoft([[0.9, 0.3, 0.2, 1.05], [-0.2, 1.1, 0.95, 1.2], [-2.1, 1.15, 0.9, 1.15], [-3.3, 0.4, 0.25, 0.85]]));
-  for (const s of [-1, 1]) add.dark.push(cyl(0.2, 0.15, 0.7, 8, s * 0.42, 1.08, -2.7));
-  add.dark.push(cyl(0.16, 0.2, 0.95, 10).rotateX(Math.PI / 2).translate(0, 1.95, -0.6));
+  add.body.push(loft([[0.9, 0.3, 0.2, 1.05], [-0.2, 1.1, 0.95, 1.2], [-2.1, 1.15, 0.9, 1.15], [-3.3, 0.4, 0.25, 0.85]], 6));
+  for (const s of [-1, 1]) add.dark.push(cyl(0.2, 0.15, 0.7, 6, s * 0.42, 1.08, -2.7));
+  add.dark.push(cyl(0.16, 0.2, 0.95, 6).rotateX(Math.PI / 2).translate(0, 1.95, -0.6));
   // A sensor ball under the nose.
-  add.smoothDark.push(new THREE.SphereGeometry(0.42, 12, 8).toNonIndexed().translate(0, -0.92, 5.05));
+  add.dark.push(new THREE.IcosahedronGeometry(0.42, 0).toNonIndexed().translate(0, -0.92, 5.05));
   // A swept tail fin, a smaller one under the boom, and a tailplane.
-  add.smooth.push(upright(softCorners([[-6.4, 0.8], [-7.7, 2.4], [-8.8, 2.4], [-8.6, 0.8]], 0.12), 0.14));
-  add.smooth.push(upright(softCorners([[-7.6, 0.75], [-8.5, -0.2], [-8.95, -0.2], [-8.6, 0.75]], 0.08), 0.1));
+  add.body.push(flatFin([[-6.4, 0.8], [-7.7, 2.4], [-8.8, 2.4], [-8.6, 0.8]], 0.14));
+  add.body.push(flatFin([[-7.6, 0.75], [-8.5, -0.2], [-8.95, -0.2], [-8.6, 0.75]], 0.1));
   for (const g of both(panel(0.14, 1.5, 0.78, 0.84, -5.2, -5.9, -5.55, -5.95, 0.1, 0.05))) add.body.push(g);
   // Stub wings, with a minigun under the end of each. One is the gunner's when there is a gunner.
   for (const g of both(panel(0.55, 2.55, 0.12, -0.02, 1.1, -0.4, 0.7, -0.1, 0.2, 0.1))) add.body.push(g);
@@ -646,8 +650,8 @@ function heliParts(add, group, props, spec, sh, otherGun) {
   // Skids.
   const fy = -spec.gearH + 0.08;
   for (const s of [-1, 1]) {
-    add.dark.push(cyl(0.07, 0.07, 5.2, 8, s * 1.1, fy, 0.6));
-    add.dark.push(new THREE.ConeGeometry(0.07, 0.5, 8).rotateX(0.7).toNonIndexed().translate(s * 1.1, fy + 0.16, 3.4));
+    add.dark.push(cyl(0.08, 0.08, 5.2, 5, s * 1.1, fy, 0.6));
+    add.dark.push(new THREE.ConeGeometry(0.08, 0.5, 5).rotateX(0.7).toNonIndexed().translate(s * 1.1, fy + 0.16, 3.4));
     for (const z of [2.1, -0.9]) add.metal.push(box(0.08, 0.08, 0.1, s * 0.85, fy + 0.32, z), box(0.08, 0.5, 0.1, s * 1.05, fy + 0.2, z));
   }
   for (const z of [2.1, -0.9]) add.metal.push(box(1.8, 0.09, 0.1, 0, fy + 0.5, z));
@@ -668,7 +672,7 @@ function heliParts(add, group, props, spec, sh, otherGun) {
 // A helicopter rotor: long thin blades, and the blur they turn into.
 function rotorDisc(r, blades, width) {
   const g = new THREE.Group();
-  const parts = [new THREE.CylinderGeometry(r * 0.05, r * 0.07, 0.3, 8).rotateX(Math.PI / 2).toNonIndexed()];
+  const parts = [new THREE.CylinderGeometry(r * 0.05, r * 0.07, 0.3, 6).rotateX(Math.PI / 2).toNonIndexed()];
   for (let i = 0; i < blades; i++) parts.push(box(width, r, 0.05, 0, r / 2, 0).rotateZ((i / blades) * Math.PI * 2));
   g.add(new THREE.Mesh(merged(parts), mat(0x1a1b1d)));
   const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: 0x15161a, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));

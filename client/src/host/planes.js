@@ -44,6 +44,8 @@ const NPC_TAXI_SPEED = 10; // m/s
 const NPC_CLIMB = { pitch: 0.22, height: 45 }; // radians, m above the ground before it goes about its business
 const NPC_STUCK = 75; // s: longer than this on the ground and something's badly wrong with it
 const SPAWN_RETRY = 2; // s
+const HELI_SETTLE = 3.2; // how quickly (per second) a helicopter leans into a move
+const HELI_TOUCHDOWN = 3; // m/s it comes down at in the last moment before landing
 const GROUND_IDLE = 1.2; // throttle lost per second on the ground with the key let go
 const LIFT_GRACE = 5; // s after lift-off that touching the ground again doesn't count as landing too fast
 const GROUND_EDGE = 10; // m from the edge of the map that a rolling plane stops going any further
@@ -97,6 +99,7 @@ export class Plane {
       delete this.mods.wingR;
       delete this.mods.gear;
       this.hv = { x: 0, y: 0, z: 0 };
+      this.hRate = 0;
     }
     this.aaClock = 0;
     this.aaAway = 0;
@@ -331,8 +334,9 @@ export class PlaneSystem {
     if (!p.dead && p.y - s.gearH <= surface) this.touchdown(p, ground, surface);
   }
 
-  // A helicopter: the keys set the speed it wants in its own frame, and it gets there fast. Let go and
-  // it brakes to a stop and hangs in the air. The nose turns to wherever the pilot is looking.
+  // A helicopter: the keys set the speed it wants in its own frame, and it works its way there. Let go
+  // and it slows to a stop and hangs in the air; turn, and it keeps sliding the way it was going until
+  // the rotor catches up. The nose swings round to wherever the pilot is looking, with some weight to it.
   flyHeli(p) {
     const s = p.spec, h = s.heli, k = p.ctl, v = p.hv, mods = p.mods;
     const crew = this.m.crewOf(p);
@@ -345,6 +349,7 @@ export class PlaneSystem {
     const surface = () => Math.max(groundAt(p.x, p.z), WATER_LEVEL);
     if (p.grounded) {
       v.x = v.y = v.z = 0;
+      p.hRate = 0;
       p.v = 0;
       p.vy = 0;
       p.throttle = power ? 0.25 : 0;
@@ -362,10 +367,10 @@ export class PlaneSystem {
     }
     // A lost tail rotor means it spins, and the nose won't answer so well.
     const tail = mods.tail > 0 ? 0.5 + 0.5 * mods.tail : 0.25;
-    if (!held && k.face != null) {
-      const step = h.turn * tail * DT;
-      p.h = wrapAngle(p.h + clamp(wrapAngle(k.face - p.h), -step, step));
-    }
+    const turn = h.turn * tail;
+    const wantRate = !held && k.face != null ? clamp(wrapAngle(k.face - p.h) * 3.5, -turn, turn) : 0;
+    p.hRate += clamp(wantRate - p.hRate, -h.turnAccel * DT, h.turnAccel * DT);
+    p.h = wrapAngle(p.h + p.hRate * DT);
     if (mods.tail <= 0) p.h = wrapAngle(p.h + 1.1 * DT);
     const fx = Math.sin(p.h), fz = Math.cos(p.h), lx = fz, lz = -fx;
     const max = s.maxSpeed * (0.45 + 0.55 * mods.engine);
@@ -373,6 +378,8 @@ export class PlaneSystem {
     const left = held || !power ? 0 : -k.roll * max * h.side;
     let climb = !power ? -h.downAfterEngine : held ? 0 : k.th * h.climb;
     if (p.y > FLIGHT.maxAlt) climb = Math.min(climb, -2);
+    // Close to the ground the pilot eases it down: holding the key sets it on its skids, no harder.
+    if (power) climb = Math.max(climb, -(HELI_TOUCHDOWN + (p.y - s.gearH - surface()) * 0.9));
     const wx = fx * ahead + lx * left, wz = fz * ahead + lz * left;
     const step = h.accel * DT, ups = h.climbAccel * DT;
     v.x += clamp(wx - v.x, -step, step);
@@ -387,7 +394,7 @@ export class PlaneSystem {
     const vAhead = v.x * fx + v.z * fz, vLeft = v.x * lx + v.z * lz;
     const wantP = -h.tilt * clamp((vAhead + (ahead - vAhead) * 0.5) / s.maxSpeed);
     const wantR = -h.lean * clamp((vLeft + (left - vLeft) * 0.5) / s.maxSpeed);
-    const ease = Math.min(1, DT * 7);
+    const ease = Math.min(1, DT * HELI_SETTLE);
     p.gp += (wantP - p.gp) * ease;
     p.ty += (wantR - p.ty) * ease;
     const speed = Math.hypot(v.x, v.y, v.z);

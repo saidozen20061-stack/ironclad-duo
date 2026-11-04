@@ -118,20 +118,20 @@ export const PLANES = {
     rockets: { count: 0 },
     engineSound: 'inline', stats: { speed: 4, armor: 1, firepower: 2, agility: 4 },
   },
-  // No runway and no stalling: it goes where the keys say, at once, and hangs still when they're let go.
+  // No runway and no stalling, but it's heavy: it takes a few seconds to get going and to stop.
   heli: {
     id: 'heli', name: 'Kestrel', class: 'Attack Helicopter', inspired: 'US AH-1 Cobra', seats: 2, engines: 1,
-    blurb: 'Hovers, stops dead and darts sideways. A minigun on each side: both for one pilot, one each for a duo. Very little armour.',
-    hp: 440, maxSpeed: 110, minSpeed: 0, accel: 40, roll: 1, pitch: 1, yaw: 1, drag: 0.8,
+    blurb: 'Hovers and slides sideways, but it carries its weight: give it room to stop. A minigun on each side: both for one pilot, one each for a duo. Very little armour.',
+    hp: 440, maxSpeed: 95, minSpeed: 0, accel: 40, roll: 1, pitch: 1, yaw: 1, drag: 0.8,
     armor: { front: 1, side: 1.05, rear: 1.1 }, size: { length: 15, width: 5.4, height: 4.2 }, gearH: 2.2,
-    heli: { accel: 58, climb: 26, climbAccel: 60, turn: 3.4, tilt: 0.42, lean: 0.55, side: 0.75, back: 0.6, downAfterEngine: 11 },
+    heli: { accel: 18, climb: 22, climbAccel: 22, turn: 2.6, turnAccel: 6, tilt: 0.46, lean: 0.6, side: 0.7, back: 0.6, downAfterEngine: 11 },
     gunX: 2.3,
     guns: gun('2× Side Miniguns', 13, 0.05, 0.012, 'mg', 620, 2400),
     rear: { damage: 13, interval: 0.1, spread: 0.014, speed: 420, ammo: 1200, noAuto: true },
     rockets: { count: 0 },
     hitBox: { hull: [1.1, 1.6], wing: [-1, 1.5, 0.5], wingY: 0 },
     engineSound: 'rotor',
-    stats: { speed: 3, armor: 1, firepower: 3, agility: 5 },
+    stats: { speed: 3, armor: 1, firepower: 3, agility: 4 },
   },
   wraith: {
     id: 'wraith', name: 'Wraith', class: 'Stealth Bomber', inspired: 'US B-2 Spirit', seats: 2, engines: 2,
