@@ -1223,7 +1223,7 @@ export class Match {
     const u = this.units.map((u) => {
       const a = [u.id, TEAM_CODE[u.team], TYPE_CODE[u.type], Math.round(u.x * 10), Math.round(u.z * 10), Math.round(u.h * 1000), Math.round(u.ty * 1000), Math.round(u.gp * 1000), Math.round((u.hp / u.spec.hp) * 100), u.dead ? 1 : 0, u.crewId != null ? u.crewId + 1 : 0];
       if (u.crew) a.push(Math.round(u.jy * 100));
-      else if (u.kind === 'plane') a.push(Math.round(u.y * 100), Math.round(u.gunYaw * 100), Math.round(u.gunPitch * 100), u.ab ? 1 : 0);
+      else if (u.kind === 'plane') a.push(Math.round(u.y * 100), Math.round(u.gunYaw * 100), Math.round(u.gunPitch * 100), u.ab ? 1 : 0, Math.round((u.spool ?? 1) * 100));
       return a;
     });
     const crews = {};

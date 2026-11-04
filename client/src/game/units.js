@@ -281,10 +281,10 @@ export class UnitsView {
       m.groundShadow.position.set(u.x, Math.max(groundAt(u.x, u.z), WATER_LEVEL) + 1.5, u.z);
       m.groundShadow.rotation.y = u.h;
     }
-    const spin = u.dead ? 0 : 45;
+    const spin = u.dead ? 0 : 45 * u.spool;
     for (const p of m.handles.props) {
       p.rotation.z += spin * dt * (p.userData.dir ?? 1);
-      if (p.userData.disc) p.userData.disc.visible = spin > 0;
+      if (p.userData.disc) p.userData.disc.visible = spin > 30; // slower than this the blades are still blades
     }
     if (u.dead !== m.dead) {
       m.dead = u.dead;

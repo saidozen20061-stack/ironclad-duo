@@ -46,6 +46,10 @@ const NPC_STUCK = 75; // s: longer than this on the ground and something's badly
 const SPAWN_RETRY = 2; // s
 const HELI_SETTLE = 3.2; // how quickly (per second) a helicopter leans into a move
 const HELI_TOUCHDOWN = 3; // m/s it comes down at in the last moment before landing
+const HELI_WARMUP = 3.5; // s of holding the rise key for the rotor to get up to speed
+const HELI_SPINDOWN = 6; // s for it to wind down again on the ground
+const HELI_LIFT = 5; // s after lifting off before it climbs at full rate
+const HELI_LIFT_CLIMB = 1.5; // m/s it leaves the ground at
 const GROUND_IDLE = 1.2; // throttle lost per second on the ground with the key let go
 const LIFT_GRACE = 5; // s after lift-off that touching the ground again doesn't count as landing too fast
 const GROUND_EDGE = 10; // m from the edge of the map that a rolling plane stops going any further
@@ -100,6 +104,8 @@ export class Plane {
       delete this.mods.gear;
       this.hv = { x: 0, y: 0, z: 0 };
       this.hRate = 0;
+      this.spool = s.grounded ? 0 : 1;
+      this.liftT = HELI_LIFT;
     }
     this.aaClock = 0;
     this.aaAway = 0;
@@ -352,14 +358,16 @@ export class PlaneSystem {
       p.hRate = 0;
       p.v = 0;
       p.vy = 0;
-      p.throttle = power ? 0.25 : 0;
+      const warming = !held && k.th > 0 && power;
+      p.spool = warming ? Math.min(1, p.spool + DT / HELI_WARMUP) : Math.max(0, p.spool - DT / HELI_SPINDOWN);
+      p.throttle = power ? 0.05 + 0.6 * p.spool : 0;
       p.gp *= 1 - Math.min(1, DT * 6);
       p.ty *= 1 - Math.min(1, DT * 6);
       p.y = surface() + s.gearH;
       p.pose.y = p.y - s.size.height / 2;
-      if (!held && k.th > 0 && power) {
+      if (warming && p.spool >= 1) {
         p.grounded = false;
-        v.y = 3;
+        p.liftT = 0;
       }
       const f = AIRFIELDS[p.team];
       if (Math.abs(p.x - f.x) < f.len / 2 + 60 && Math.abs(p.z - f.z) < f.width + 90) this.service(p);
@@ -378,6 +386,9 @@ export class PlaneSystem {
     const left = held || !power ? 0 : -k.roll * max * h.side;
     let climb = !power ? -h.downAfterEngine : held ? 0 : k.th * h.climb;
     if (p.y > FLIGHT.maxAlt) climb = Math.min(climb, -2);
+    // Just off the ground it rises slowly, then builds up.
+    p.liftT += DT;
+    if (p.liftT < HELI_LIFT) climb = Math.min(climb, HELI_LIFT_CLIMB + (h.climb - HELI_LIFT_CLIMB) * (p.liftT / HELI_LIFT) ** 2);
     // Close to the ground the pilot eases it down: holding the key sets it on its skids, no harder.
     if (power) climb = Math.max(climb, -(HELI_TOUCHDOWN + (p.y - s.gearH - surface()) * 0.9));
     const wx = fx * ahead + lx * left, wz = fz * ahead + lz * left;

@@ -29,6 +29,7 @@ export function decodeUnit(a) {
     gy: (a[12] ?? 0) / 100, // planes: where the side gun points
     gx: (a[13] ?? 0) / 100,
     ab: !!a[14], // planes: afterburner lit
+    spool: (a[15] ?? 100) / 100, // planes: how far up to speed the rotor or propeller is
   };
 }
 

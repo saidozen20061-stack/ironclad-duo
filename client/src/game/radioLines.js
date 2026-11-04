@@ -2,6 +2,7 @@ import { net } from '../net.js';
 import { settings } from '../settings.js';
 import { TANKS } from '../../../shared/constants.js';
 import { PLANES } from '../../../shared/planes.js';
+import { BASES } from '../../../shared/map.js';
 
 // Command on the radio: the start and end of the battle, flags won and lost, and when this crew
 // destroys a tank or plane or hits or kills a teammate.
@@ -41,6 +42,7 @@ const TAKEOFF_DELAY = 3; // s after the wheels leave the ground
 
 const TEAMS = ['blue', 'red'];
 const JOINED_LATE = 15; // s into the match: someone rejoining doesn't get the opening line again
+const LEFT_BASE = 95; // m from the middle of the base, out past the hangars and sandbags
 
 export class RadioLines {
   constructor(hud, crewId) {
@@ -72,13 +74,22 @@ export class RadioLines {
   onSnapshot(msg) {
     for (const a of msg.u) this.units.set(a[0], { team: TEAMS[a[1]], crew: a[10] > 0 ? a[10] - 1 : null });
     // Once the voices have loaded, so it can't be missed on a slow connection.
-    // A plane on the ground gets its line at take-off instead.
+    // A plane on the ground gets its line at take-off instead, and a tank when it leaves the base.
     const ground = msg.me?.pl?.ground;
     if (this.clips && !this.opened) {
       this.opened = true;
-      if (msg.time < JOINED_LATE && !ground) {
+      if (msg.time >= JOINED_LATE) this.leftBase = true;
+      else if (msg.me?.pl && !ground) {
         this.say('start');
         this.tookOff = true; // that was the same line, for a plane starting in the air
+      }
+    }
+    if (this.opened && !this.leftBase && !msg.me?.pl && !this.tookOff && !msg.me?.dead) {
+      const row = msg.u.find((a) => a[0] === msg.me?.id);
+      const base = BASES[msg.me?.team];
+      if (row && base && Math.hypot(row[3] / 10 - base.x, row[4] / 10 - base.z) > LEFT_BASE) {
+        this.leftBase = true;
+        this.say('start');
       }
     }
     this.dead = msg.me?.dead;
