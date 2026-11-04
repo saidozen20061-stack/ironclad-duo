@@ -45,6 +45,7 @@ const NPC_CLIMB = { pitch: 0.22, height: 45 }; // radians, m above the ground be
 const NPC_STUCK = 75; // s: longer than this on the ground and something's badly wrong with it
 const SPAWN_RETRY = 2; // s
 const GROUND_IDLE = 1.2; // throttle lost per second on the ground with the key let go
+const LIFT_GRACE = 5; // s after lift-off that touching the ground again doesn't count as landing too fast
 const GROUND_EDGE = 10; // m from the edge of the map that a rolling plane stops going any further
 const ROCKET_OFFSET = 1.5; // m to the side of the fuselage
 const ROCKET_BELOW = 0.85; // × gear height under the plane: clear of every wing and its underside
@@ -427,7 +428,10 @@ export class PlaneSystem {
     const water = ground < WATER_LEVEL;
     const gear = p.mods.gear > 0;
     const level = Math.abs(p.ty) < 0.4 && p.gp > -0.28 && p.gp < 0.4;
-    const fast = p.v > s.maxSpeed * (onRunway(p.x, p.z) ? 0.95 : 0.7);
+    // Wheels back on the ground right after lifting off, over rising ground, isn't a landing: at the
+    // speed it takes to lift off, it just carries on rolling and lifts again.
+    const lifting = p.climbOut != null && p.climbOut < LIFT_GRACE;
+    const fast = !lifting && p.v > s.maxSpeed * (onRunway(p.x, p.z) ? 0.95 : 0.7);
     if (water || !level || sink > 9 || fast) return this.crash(p);
     if (!gear) this.m.damage(p, s.hp * 0.25, { owner: p.lastHitBy ?? -1 });
     if (p.dead) return;
@@ -465,8 +469,8 @@ export class PlaneSystem {
     if (ground < WATER_LEVEL) return this.crash(p);
     this.hitProps(p);
     if (p.dead) return;
-    // Rotate and lift off once fast enough, and only from a runway.
-    if (p.v > s.maxSpeed * (s.takeoff ?? TAKEOFF_SPEED) && stickP > 0.08 && gear && onRunway(p.x, p.z)) {
+    // Rotate and lift off once fast enough.
+    if (p.v > s.maxSpeed * (s.takeoff ?? TAKEOFF_SPEED) && stickP > 0.08 && gear) {
       p.grounded = false;
       p.climbOut = 0;
       p.gp = 0.01;
