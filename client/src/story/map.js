@@ -77,16 +77,18 @@ function renderMap() {
   const board = $('#storymap-board');
   board.style.setProperty('--ground', ch.look.ground);
   board.style.setProperty('--ink', ch.look.ink);
+  // Stage positions are kept inside a margin so labels and big boss nodes never hang off the edge.
+  const X = (v) => 6 + v * 0.88, Y = (v) => 7 + v * 0.8;
   // Dotted paths from each stage to the one it follows.
   const lines = ch.stages.filter((s) => s.after && STAGES[s.after]?.chapter === ch.id).map((s) => {
     const a = STAGES[s.after];
-    return `<line x1="${a.mx}" y1="${a.my}" x2="${s.mx}" y2="${s.my}" class="${unlocked(s, story.stars) ? 'open' : ''}"/>`;
+    return `<line x1="${X(a.mx)}" y1="${Y(a.my)}" x2="${X(s.mx)}" y2="${Y(s.my)}" class="${unlocked(s, story.stars) ? 'open' : ''}"/>`;
   }).join('');
   const nodes = ch.stages.map((s) => {
     const t = STAGE_TYPES[s.type];
     const open = unlocked(s, story.stars);
     const best = story.stars[s.id] ?? 0;
-    return `<button class="stage-node ${s.type}${open ? '' : ' locked'}${picked === s.id ? ' sel' : ''}" data-stage="${s.id}" style="left:${s.mx}%;top:${s.my}%;--c:${t.color}" ${open ? '' : 'disabled'} title="${escapeHtml(s.name)}"><i>${open ? t.icon : '🔒'}</i><span>${escapeHtml(s.name)}</span><small>${best ? stars(best) : open ? 'New' : ''}</small></button>`;
+    return `<button class="stage-node ${s.type}${open ? '' : ' locked'}${picked === s.id ? ' sel' : ''}" data-stage="${s.id}" style="left:${X(s.mx)}%;top:${Y(s.my)}%;--c:${t.color}" ${open ? '' : 'disabled'} title="${escapeHtml(s.name)}"><i>${open ? t.icon : '🔒'}</i><span>${escapeHtml(s.name)}</span><small>${best ? stars(best) : open ? 'New' : ''}</small></button>`;
   }).join('');
   board.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${doodles(ch.id)}${lines}</svg>${nodes}`;
   $('#storymap-intro').textContent = ch.intro;
