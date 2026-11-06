@@ -296,6 +296,13 @@ export class MenuScene {
 
   setMode(mode) {
     this.mode = mode;
+    // Story mode's hub is the workshop picture, with the tank drawn over it by the preview.
+    if (mode === 'story' && !this.storyScene) {
+      const tex = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}garage.jpg`);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.storyScene = new THREE.Scene();
+      this.storyScene.background = tex;
+    }
   }
 
   resize(w, h) {
@@ -306,6 +313,7 @@ export class MenuScene {
   update(dt) {
     this.t += dt;
     this.preview.update(dt);
+    if (this.mode === 'story') return;
     const target = this.mode === 'lobby' ? 1 : 0;
     this.blend += (target - this.blend) * Math.min(1, dt * 2);
     const b = this.blend * this.blend * (3 - 2 * this.blend);
@@ -359,6 +367,15 @@ export class MenuScene {
   }
 
   render(renderer) {
+    if (this.mode === 'story') {
+      // Fills the screen without stretching, cropping whichever way the window's narrower.
+      const tex = this.storyScene.background, a = this.camera.aspect, img = 16 / 9;
+      tex.repeat.set(Math.min(1, a / img), Math.min(1, img / a));
+      tex.offset.set((1 - tex.repeat.x) / 2, (1 - tex.repeat.y) / 2);
+      renderer.render(this.storyScene, this.camera);
+      this.preview.render(renderer);
+      return;
+    }
     renderer.render(this.scene, this.camera);
     this.preview.render(renderer);
   }

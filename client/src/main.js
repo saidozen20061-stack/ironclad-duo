@@ -4,6 +4,7 @@ import { settings, saveSettings } from './settings.js';
 import { setActiveView } from './render.js';
 import { MenuScene } from './scenes/menuScene.js';
 import { introReady } from './intro.js';
+import { initStoryHub } from './story/hub.js';
 import { $, showScreen, hideScreens, backScreen, clearHistory, currentScreen, onScreenChange, toast, setStatus } from './ui/screens.js';
 import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } from './ui/lobbyScreen.js';
@@ -139,15 +140,17 @@ function previewCaption(root, id, paint) {
 }
 
 onScreenChange((name) => {
-  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : null);
+  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : name === 'story' ? $('#preview-story') : null);
   if (name === 'settings') onSettingsOpen();
   if (name === 'controls') onControlsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
   if (name === 'lobby' || name === 'solo' || name === 'teams') menuScene.setMode('lobby');
+  if (name === 'story') menuScene.setMode('story');
 });
 
 initSettingsScreen();
 initControlsScreen();
+initStoryHub(menuScene);
 
 // ---------- Lobby ----------
 function leaveRoom() {

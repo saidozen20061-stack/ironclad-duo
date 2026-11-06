@@ -34,6 +34,7 @@
         <button class="btn primary" id="btn-host">Host Game</button>
         <button class="btn" id="btn-join">Join Game</button>
         <button class="btn" id="btn-solo">Solo</button>
+        <button class="btn" id="btn-story">Story Mode</button>
         <button class="btn" id="btn-controls">Controls</button>
         <button class="btn" id="btn-achievements">Achievements</button>
         <button class="btn" id="btn-settings">Settings</button>
@@ -53,6 +54,28 @@
     </section>
 
     <!-- JOIN DIALOG -->
+    <!-- STORY MODE HUB: the workshop, with the crew's tank in the middle (see src/story/hub.js) -->
+    <section class="screen" id="screen-story">
+      <header class="story-bar">
+        <div class="story-rank"><b id="story-rank"></b><div class="bar"><i id="story-xp"></i></div><small id="story-xp-text"></small></div>
+        <div class="story-coins"><i class="coin"></i><b id="story-coins">0</b><small>silver</small></div>
+        <div class="story-tank"><b id="story-tank"></b><small id="story-tier"></small></div>
+      </header>
+      <div class="preview-slot" id="preview-story"><div class="preview-cap"></div><div class="preview-hint">Drag to rotate</div></div>
+      <button class="story-sign" data-open="map" style="left: 3%; top: 18%">War Map<small>Pick your next battle</small></button>
+      <button class="story-sign" data-open="shop" style="right: 3%; top: 18%">Shop<small>Tanks, parts and supplies</small></button>
+      <button class="story-sign" data-open="workshop" style="left: 3%; bottom: 17%">Workshop<small>Fit and upgrade parts</small></button>
+      <button class="story-sign" data-open="motor" style="right: 3%; bottom: 17%">Motor Pool<small>Switch tanks</small></button>
+      <footer class="story-foot">
+        <button class="btn ghost small" id="btn-story-back">Back to menu</button>
+        <span></span>
+        <button class="btn ghost small" data-open="export">Export save</button>
+        <button class="btn ghost small" data-open="import">Import save</button>
+        <button class="btn ghost small" data-open="reset">Reset progress</button>
+      </footer>
+      <div class="story-panel" id="story-panel" hidden></div>
+    </section>
+
     <section class="screen" id="screen-solo">
       <div class="menu-panel solo-panel">
         <h2>Solo</h2>

@@ -304,6 +304,36 @@ export const TANKS = {
     },
     stats: { speed: 1, armor: 5, firepower: 5, reload: 1 },
   },
+  // Story mode's starter: an old light tank with a thin skin and a small gun.
+  t26: {
+    id: 't26',
+    name: 'Sparrow',
+    class: 'Light Tank',
+    inspired: 'Soviet T-26',
+    blurb: 'Old, slow and thinly armoured, with a small 45mm gun. Every crew starts somewhere.',
+    hp: 480,
+    maxSpeed: 10.5,
+    reverseSpeed: 4.5,
+    accel: 4.5,
+    turnRate: deg(40),
+    turretSpeed: deg(32),
+    elevation: { min: deg(-6), max: deg(20) },
+    armor: { front: 0.95, side: 1.2, rear: 1.4 },
+    size: { length: 4.9, width: 2.5, height: 2.2 },
+    mount: { turret: [0, 1.4, 0.25], gun: [0, 0.3, 0.75], barrel: 2.3, sight: [0, 0.95, -0.3] },
+    weapon: {
+      kind: 'cannon',
+      label: '45mm Gun',
+      reload: 3.4,
+      shells: {
+        AP: { damage: 120, speed: 760, splash: 1, splashDamage: 20 },
+        HE: { damage: 70, speed: 600, splash: 4.5, splashDamage: 60 },
+      },
+      spread: deg(0.3),
+      coax: { fireInterval: 0.09, damage: 8, belt: 120, reload: 5, speed: 800, spread: deg(1.4) },
+    },
+    stats: { speed: 2, armor: 1, firepower: 1, reload: 3 },
+  },
 };
 
 // Tank guns can swing right up at the sky, so crews can shoot at planes.
@@ -336,7 +366,7 @@ export const UNITS = {
 };
 
 // Unit type codes on the wire.
-export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew', 'scout', 'wheeled', 'destroyer', 'aa', 'assault', 'superheavy', 'flak', ...ALL_PLANE_IDS];
+export const TYPE_IDS = ['light', 'medium', 'heavy', 'rifle', 'rocket', 'atgun', 'crew', 'scout', 'wheeled', 'destroyer', 'aa', 'assault', 'superheavy', 'flak', ...ALL_PLANE_IDS, 't26'];
 
 export const MATCH = {
   tickets: 500,

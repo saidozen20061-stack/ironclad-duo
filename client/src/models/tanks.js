@@ -408,7 +408,34 @@ function buildSuperheavy(c) {
   return { group, turret, gun, muzzle, stripe: [1.12, -0.9] };
 }
 
+// The T-26 look: a small riveted box on little bogie wheels, a short round turret and a long thin gun.
+function buildT26(c) {
+  const group = new THREE.Group();
+  const L = 4.9, W = 2.5;
+  tracks(group, L, W, 0.45, 0.7, 6, c);
+  const hull = hullShape(L * 0.95, 0.8, 0.7, 0.5, W - 0.9, mat(c.hull));
+  hull.position.y = 0.55;
+  group.add(hull);
+  group.add(box(1.1, 0.2, 1.0, mat(c.dark), 0, 1.4, -1.6)); // engine deck
+  group.add(box(0.5, 0.25, 0.25, mat(c.dark), 0, 1.12, -2.45)); // silencer
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.4, 0.25);
+  const t = cyl(0.72, 0.78, 0.62, 8, mat(c.hull));
+  t.position.y = 0.3;
+  turret.add(t);
+  turret.add(box(0.75, 0.42, 0.45, mat(c.hull), 0, 0.3, -0.75)); // bustle
+  turret.add(box(0.42, 0.12, 0.42, mat(c.dark), 0.15, 0.66, -0.2)); // hatch
+  const gun = new THREE.Group();
+  gun.position.set(0, 0.3, 0.75);
+  const { g, muzzle } = barrel(2.3, 0.055, mat(c.dark));
+  gun.add(g);
+  turret.add(gun);
+  group.add(turret);
+  return { group, turret, gun, muzzle };
+}
+
 const BUILDERS = {
+  t26: buildT26,
   light: buildLight,
   medium: buildMedium,
   heavy: buildHeavy,

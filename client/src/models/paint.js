@@ -14,6 +14,7 @@ export const PAINT = {
   aa: { name: 'Winter wash', colors: [0xd6d8d2, 0x5d6a45, 0x8d8f86], draw: winter },
   assault: { name: 'Urban splinter', colors: [0x9a9d9a, 0x60706a, 0xc4c5be, 0x3e4242], draw: splinter },
   superheavy: { name: 'Two-tone bands', colors: [0x3f4d2e, 0x5f6c3f, 0x2d3822], draw: bands },
+  t26: { name: 'Factory green', colors: [0x4f5c38, 0x3c4630, 0x5e6b45], draw: plain },
   flak: { name: 'Grey splinter', colors: [0x7c8078, 0x4c504a, 0x9a9c92, 0x35382f], draw: splinter },
   // Planes
   stuka: { name: 'Splinter', colors: [0x4a5540, 0x2f3a2c, 0x62705a, 0x3d4737], draw: splinter, plane: true },
