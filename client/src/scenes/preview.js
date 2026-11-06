@@ -6,6 +6,7 @@ import * as THREE from 'three';
 
 const FOV = 30;
 const ELEVATION = 0.3;
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 export class VehiclePreview {
   constructor() {
@@ -22,6 +23,11 @@ export class VehiclePreview {
     this.drag = null;
     this.radius = 5;
     this.centerY = 1;
+    this.size = new THREE.Vector3(4, 2, 6);
+    // Workshop close-ups: a point on the model to swing round to and zoom in on (null: whole tank).
+    this.focus = null;
+    this.zoom = 0;
+    this.target = new THREE.Vector3();
 
     this.scene.add(new THREE.HemisphereLight(0xfff0dc, 0x3a3428, 0.9));
     this.spot = new THREE.SpotLight(0xfff0d8, 900, 0, 0.55, 0.5, 1.6);
@@ -64,6 +70,7 @@ export class VehiclePreview {
     this.scene.add(this.backdrop);
 
     this.onDown = (e) => {
+      if (e.target.closest('button')) return; // workshop hotspots sit on top of the preview
       this.drag = { x: e.clientX, id: e.pointerId };
       this.el.setPointerCapture?.(e.pointerId);
       this.el.classList.add('dragging');
@@ -120,6 +127,7 @@ export class VehiclePreview {
       if (o.isMesh) o.castShadow = o.receiveShadow = true;
     });
     this.holder.add(obj);
+    this.size.copy(size);
     this.radius = Math.max(1.5, Math.hypot(size.x, size.z) / 2);
     this.height = size.y;
     this.table.scale.set(this.radius * 1.08, 1, this.radius * 1.08);
@@ -129,7 +137,14 @@ export class VehiclePreview {
   update(dt) {
     this.t += dt;
     this.idle = (this.idle ?? 1) + dt;
-    if (!this.drag && this.idle > 0.8) this.spin.rotation.y += dt * 0.35;
+    this.zoom += ((this.focus ? 1 : 0) - this.zoom) * Math.min(1, dt * 4);
+    if (this.focus && !this.drag) {
+      // Turn the part towards the camera, the short way round.
+      const f = this.focus;
+      const want = f.x === 0 && Math.abs(f.z) < 0.25 ? 0.75 : -Math.atan2(f.x, f.z) + 0.35;
+      const d = Math.atan2(Math.sin(want - this.spin.rotation.y), Math.cos(want - this.spin.rotation.y));
+      this.spin.rotation.y += d * Math.min(1, dt * 4);
+    } else if (!this.drag && this.idle > 0.8) this.spin.rotation.y += dt * 0.35;
     this.anim = Math.min(1, this.anim + dt * 4);
     const k = 1 - (1 - this.anim) ** 3;
     this.holder.position.x = (1 - k) * this.radius * 1.2;
@@ -140,6 +155,25 @@ export class VehiclePreview {
     this.spot.position.set(this.radius * 1.2, this.radius * 3.6 + 6, this.radius * 1.8);
     this.spot.intensity = 70 * (this.radius * 3.6 + 6) ** 0.8 * Math.min(1, 0.6 + k * 0.4);
     this.spot.shadow.camera.far = this.radius * 8 + 30;
+  }
+
+  // Where on the turned model the focus is, in the preview's world.
+  focusPoint(f = this.focus) {
+    if (!f) return this.target.set(0, this.height * 0.42, 0);
+    this.target.set((f.x * this.size.x) / 2, f.y * this.size.y, (f.z * this.size.z) / 2);
+    return this.target.applyAxisAngle(Y_AXIS, this.spin.rotation.y).multiplyScalar(this.holder.scale.x);
+  }
+
+  // A point given like a focus, as pixels inside the page element (null when it's behind the tank).
+  screenPoint(f) {
+    if (!this.rect) return null;
+    const p = this.focusPoint(f).clone();
+    const toCam = this.camera.position.clone().sub(p);
+    const centre = new THREE.Vector3(0, p.y, 0);
+    const out = p.clone().sub(centre);
+    const facing = out.lengthSq() < 0.01 || out.dot(toCam) > -0.2 * out.length() * toCam.length();
+    p.project(this.camera);
+    return { x: ((p.x + 1) / 2) * this.rect.width, y: ((1 - p.y) / 2) * this.rect.height, facing };
   }
 
   render(renderer) {
@@ -156,12 +190,17 @@ export class VehiclePreview {
     const half = Math.tan((FOV / 2) * (Math.PI / 180));
     const needed = (this.radius * 1.14) / (half * Math.min(1, aspect));
     const up = (this.height * 0.5 + this.radius * Math.sin(ELEVATION) + 0.6) / half;
-    const dist = Math.max(needed, up);
+    const dist = Math.max(needed, up) * (1 - 0.5 * this.zoom);
     cam.far = Math.max(300, dist + this.radius * 3); // the widest planes need the camera a long way back
     cam.updateProjectionMatrix();
     const cy = this.height * 0.42;
-    cam.position.set(0, cy + Math.sin(ELEVATION) * dist, Math.cos(ELEVATION) * dist);
-    cam.lookAt(0, cy, 0);
+    // Looking at the focused part, eased in and out.
+    const fp = this.focusPoint();
+    const tx = fp.x * this.zoom, ty = cy + (fp.y - cy) * this.zoom, tz = fp.z * this.zoom;
+    cam.position.set(tx, ty + Math.sin(ELEVATION) * dist, tz + Math.cos(ELEVATION) * dist);
+    cam.lookAt(tx, ty, tz);
+    cam.updateMatrixWorld();
+    this.rect = r;
 
     const autoClear = renderer.autoClear;
     renderer.autoClear = false;

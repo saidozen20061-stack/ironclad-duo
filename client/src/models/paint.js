@@ -15,6 +15,16 @@ export const PAINT = {
   assault: { name: 'Urban splinter', colors: [0x9a9d9a, 0x60706a, 0xc4c5be, 0x3e4242], draw: splinter },
   superheavy: { name: 'Two-tone bands', colors: [0x3f4d2e, 0x5f6c3f, 0x2d3822], draw: bands },
   t26: { name: 'Factory green', colors: [0x4f5c38, 0x3c4630, 0x5e6b45], draw: plain },
+  // Story mode's tanks, one scheme each (not offered in the paint picker).
+  'story-stuart': { name: 'Olive drab', colors: [0x5a5c3a, 0x4a4c30, 0x666845], draw: plain, story: true },
+  'story-stug': { name: 'Dark yellow', colors: [0xb59a5a, 0x6a6a3c, 0x7a4e30, 0xc4ab6c], draw: ambush, story: true },
+  'story-sherman': { name: 'Army olive', colors: [0x55593a, 0x3f432c, 0x666a45], draw: plain, story: true },
+  'story-hellcat': { name: 'Two-tone olive', colors: [0x5d6240, 0x3d3a28, 0x22231d, 0x777a52], draw: blobs, story: true },
+  'story-t3485': { name: 'Soviet green', colors: [0x4c5a34, 0x43502e, 0x56663c], draw: plain, story: true },
+  'story-panther': { name: 'Ambush', colors: [0xa89558, 0x4d5a33, 0x6b442a], draw: stripes, story: true },
+  'story-kv2': { name: 'Dark green', colors: [0x3f4b2e, 0x35402a, 0x4a5736], draw: plain, story: true },
+  'story-is2': { name: 'Winter green', colors: [0x4a5636, 0xbfc2b6, 0x5b6845], draw: spots, story: true },
+  'story-tiger': { name: 'Dark yellow', colors: [0xb39a5e, 0xa68d52, 0xc0a86a], draw: plain, story: true },
   flak: { name: 'Grey splinter', colors: [0x7c8078, 0x4c504a, 0x9a9c92, 0x35382f], draw: splinter },
   // Planes
   stuka: { name: 'Splinter', colors: [0x4a5540, 0x2f3a2c, 0x62705a, 0x3d4737], draw: splinter, plane: true },

@@ -4,7 +4,11 @@ import { settings, saveSettings } from './settings.js';
 import { setActiveView } from './render.js';
 import { MenuScene } from './scenes/menuScene.js';
 import { introReady } from './intro.js';
-import { initStoryHub } from './story/hub.js';
+import { initStoryHub, renderHub } from './story/hub.js';
+import { initStoryMap, showResults } from './story/map.js';
+import { useSpec } from './story/tanks.js';
+import { initCoop, onJoined, onLobbyState, coop } from './story/coop.js';
+import { openMap } from './story/map.js';
 import { $, showScreen, hideScreens, backScreen, clearHistory, currentScreen, onScreenChange, toast, setStatus } from './ui/screens.js';
 import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } from './ui/lobbyScreen.js';
@@ -94,7 +98,7 @@ function renderSolo() {
   pick('#solo-planes', PLANE_IDS.map((id) => [id, `${PLANES[id].name} <small>${PLANES[id].class}</small>`]), solo.tank, 'tank');
   // Tanks wear tank paints, planes their own schemes.
   const flying = !!PLANES[solo.tank];
-  pick('#solo-camo', Object.entries(PAINT).filter(([id, p]) => (flying ? p.plane && (!p.for || p.for === solo.tank) : !p.plane)).map(([id, p]) => [id, `<i class="swatch" style="background:linear-gradient(135deg, ${hex(p.colors[0])} 50%, ${hex(p.colors[1])} 50%)"></i>${p.name}`]), solo.paint, 'paint');
+  pick('#solo-camo', Object.entries(PAINT).filter(([id, p]) => (flying ? p.plane && (!p.for || p.for === solo.tank) : !p.plane && !p.story)).map(([id, p]) => [id, `<i class="swatch" style="background:linear-gradient(135deg, ${hex(p.colors[0])} 50%, ${hex(p.colors[1])} 50%)"></i>${p.name}`]), solo.paint, 'paint');
   pick('#solo-modes', Object.entries(MODES).map(([id, m]) => [id, m.name]), solo.mode, 'mode');
   $('#solo-kills').innerHTML = `<label>Kill limit</label>${KILL_LIMITS.map((k) => `<button class="btn small${k === solo.killLimit ? ' on' : ''}" data-kills="${k}">${k}</button>`).join('')}`;
   $('#solo-kills').style.display = solo.mode === 'tdm' ? '' : 'none';
@@ -140,17 +144,36 @@ function previewCaption(root, id, paint) {
 }
 
 onScreenChange((name) => {
-  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : name === 'story' ? $('#preview-story') : null);
+  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : name === 'story' ? $('#preview-story') : name === 'workshop' ? $('#preview-workshop') : null);
   if (name === 'settings') onSettingsOpen();
   if (name === 'controls') onControlsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
   if (name === 'lobby' || name === 'solo' || name === 'teams') menuScene.setMode('lobby');
-  if (name === 'story') menuScene.setMode('story');
+  if (['story', 'storymap', 'shop', 'workshop'].includes(name)) menuScene.setMode('story');
 });
 
 initSettingsScreen();
 initControlsScreen();
 initStoryHub(menuScene);
+initCoop({
+  openMap,
+  leave: () => {
+    coop.browsing = false;
+    leaveRoom();
+    clearHistory();
+    setActiveView(menuScene);
+    showScreen('story', { remember: false });
+    renderHub();
+  },
+});
+initStoryMap({
+  renderHub,
+  leaveMatch: () => {
+    leaveRoom();
+    clearHistory();
+    setActiveView(menuScene);
+  },
+});
 
 // ---------- Lobby ----------
 function leaveRoom() {
@@ -177,6 +200,7 @@ net.on('joined', () => {
   setStatus('menu-status', '');
   setStatus('join-status', '');
   clearHistory();
+  if (onJoined()) return;
   showScreen('lobby', { remember: false });
 });
 
@@ -199,6 +223,7 @@ net.on('lobby', (msg) => {
     previewCaption('#preview-lobby', previewTank, previewTank);
   }
   renderLobby();
+  onLobbyState(msg);
   if (msg.phase === 'lobby') voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
 });
 
@@ -246,11 +271,20 @@ net.on('disconnected', (msg) => {
 function returnToLobbyView() {
   setActiveView(menuScene);
   clearHistory();
+  if (lobby.state?.mode === 'story') {
+    // Story co-op: the room's own screen, unless the host is busy picking the next stage.
+    if (!coop.browsing) showScreen('storycoop', { remember: false });
+    return;
+  }
   showScreen('lobby', { remember: false });
   renderLobby();
 }
 
+let undoSpec = null; // a story tank's stats stand in for its model's during the stage
+
 function endMatchClient() {
+  undoSpec?.();
+  undoSpec = null;
   radio?.dispose();
   radio = null;
   tracker?.dispose();
@@ -266,9 +300,10 @@ function endMatchClient() {
 net.on('matchStart', (msg) => {
   endMatchClient();
   const crew = msg.crews.find((c) => c.driver === net.id || c.gunner === net.id);
+  if (msg.story?.spec) undoSpec = useSpec(crew.tank, msg.story.spec);
   const role = msg.solo || msg.style === 'solo' ? 'solo' : crew.driver === net.id ? 'driver' : 'gunner';
   if (!msg.solo) voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
-  setWorldMood({ night: !!msg.night, rain: !!msg.rain });
+  setWorldMood({ night: !!msg.night, rain: !!msg.rain, snow: !!msg.snow });
   match = new MatchClient({
     role,
     tank: crew.tank,
@@ -312,6 +347,7 @@ net.on('matchEnd', (msg) => {
   const earned = tracker?.finish(victory && !draw, mine[2]) ?? [];
   $('#end-achievements').innerHTML = earned.map((a) => `<div class="achievement got"><b>🏆 ${a.name}</b><span>${a.desc}</span></div>`).join('');
   match?.onMatchEnd?.(msg);
+  if (msg.story) return showResults(msg);
   $('#btn-end-lobby').textContent = net.mode === 'solo' ? 'Back to Menu' : lobby.isHost ? 'Return to Lobby' : 'Leave to Menu';
   showScreen('end', { remember: false });
 });
@@ -332,8 +368,13 @@ $('#btn-pause-settings').addEventListener('click', () => showScreen('settings'))
 $('#btn-pause-controls').addEventListener('click', () => showScreen('controls'));
 $('#btn-pause-swap').addEventListener('click', () => net.send({ t: 'swapSeat' }));
 $('#btn-pause-leave').addEventListener('click', () => {
+  const story = match?.mode === 'story';
   leaveRoom();
-  goMenu();
+  if (!story) return goMenu();
+  clearHistory();
+  setActiveView(menuScene);
+  showScreen('story', { remember: false });
+  renderHub();
 });
 
 window.addEventListener('keydown', (e) => {

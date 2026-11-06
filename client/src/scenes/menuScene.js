@@ -228,8 +228,9 @@ export class MenuScene {
     this.setShowcase('medium');
   }
 
-  setShowcase(type, paint = type) {
-    if (this.showcase?.type === type && this.showcase.paint === paint) return;
+  // `dress` adds extra parts to the turntable model (story workshop); `look` names them for caching.
+  setShowcase(type, paint = type, dress = null, look = '') {
+    if (this.showcase?.type === type && this.showcase.paint === paint && this.showcase.look === look) return;
     if (this.showcase) {
       this.scene.remove(this.showcase.group);
       this.showcase.group.traverse((o) => o.geometry?.dispose());
@@ -237,12 +238,17 @@ export class MenuScene {
     this.showcase = buildVehicle(type, 'blue', paint);
     this.showcase.paint = paint;
     this.showcase.type = type;
+    this.showcase.look = look;
     // Anything far wider than the other vehicles is shown smaller, so it still fits the menu.
     const fit = PLANES[type] ? Math.min(1, 22 / PLANES[type].size.width) : 1;
     this.showcase.group.scale.setScalar(fit);
     this.showcase.baseY = PLANES[type] ? PLANES[type].gearH * fit : 0;
     this.scene.add(this.showcase.group);
-    this.preview.set(`${type}|${paint}`, () => buildVehicle(type, 'blue', paint).group);
+    this.preview.set(`${type}|${paint}|${look}`, () => {
+      const v = buildVehicle(type, 'blue', paint);
+      dress?.(v);
+      return v.group;
+    });
   }
 
   // Lobby: every crew's tank in its garage bay, crew standing in front with names above.

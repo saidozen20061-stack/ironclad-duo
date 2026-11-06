@@ -3,6 +3,7 @@ import { TICK_RATE, MATCH } from '../../../shared/constants.js';
 import { FORT, inDepot } from '../../../shared/props.js';
 import { groundAt } from '../../../shared/map.js';
 import { passable } from './nav.js';
+import { installStory } from './storyMode.js';
 
 // Game-mode rules layered on top of the shared battle simulation (Match):
 //   flags    — the default ticket / capture rules in match.js,
@@ -16,6 +17,7 @@ const Team = (t) => (t === 'blue' ? 'Blue' : 'Red');
 export function installMode(m) {
   if (m.mode === 'tdm') installTdm(m);
   else if (m.mode === 'fortress') installFortress(m);
+  else if (m.mode === 'story') installStory(m, m.room.story);
 }
 
 // ---------- Team Deathmatch ----------

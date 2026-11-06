@@ -76,6 +76,73 @@
       <div class="story-panel" id="story-panel" hidden></div>
     </section>
 
+    <!-- STORY WAR MAP and RESULTS (see src/story/map.js) -->
+    <section class="screen" id="screen-storymap">
+      <header class="storymap-head">
+        <button class="btn ghost small" id="btn-storymap-back">Back to garage</button>
+        <nav id="storymap-tabs"></nav>
+      </header>
+      <div class="storymap-body">
+        <div class="storymap-board" id="storymap-board"></div>
+        <aside class="storymap-brief" id="storymap-brief"></aside>
+      </div>
+      <p class="storymap-intro" id="storymap-intro"></p>
+    </section>
+
+    <section class="screen dim" id="screen-storycoop">
+      <div class="menu-panel storycoop">
+        <h2>Story co-op</h2>
+        <div class="coop-code"><small>Room code</small><b id="coop-code">-----</b><button class="btn small" id="btn-coop-copy">Copy</button></div>
+        <div class="coop-seats" id="coop-seats"></div>
+        <p class="coop-stage">Stage: <b id="coop-stage"></b></p>
+        <p class="hint" id="coop-note"></p>
+        <div class="storyend-buttons">
+          <button class="btn ghost" id="btn-coop-leave">Leave</button>
+          <button class="btn" id="btn-coop-map">Pick another stage</button>
+          <button class="btn primary" id="btn-coop-start">Start</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-shop">
+      <header class="story-bar">
+        <button class="btn ghost small" id="btn-shop-back">Back to garage</button>
+        <nav class="shop-tabs"><button data-tab="tanks">Tanks</button><button data-tab="parts">Parts</button><button data-tab="specials">Specials</button></nav>
+        <div class="story-coins"><i class="coin"></i><b id="shop-coins">0</b><small>silver</small></div>
+      </header>
+      <div class="shop-body">
+        <div class="shop-list" id="shop-list"></div>
+        <aside class="shop-detail" id="shop-detail"></aside>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-workshop">
+      <header class="story-bar workshop-head">
+        <button class="btn ghost small" id="btn-workshop-back">Back to garage</button>
+        <div id="workshop-head"></div>
+      </header>
+      <div class="preview-slot" id="preview-workshop"><div class="preview-hint">Drag to rotate · click a part</div><div id="workshop-spots"></div></div>
+      <aside class="workshop-side" id="workshop-side"></aside>
+    </section>
+
+    <section class="screen dim" id="screen-storyend">
+      <div class="menu-panel storyend">
+        <h1 class="result" id="storyend-result">VICTORY</h1>
+        <p class="hint" id="storyend-stage"></p>
+        <div class="storyend-stars" id="storyend-stars"></div>
+        <ul class="storyend-lines" id="storyend-lines"></ul>
+        <p class="storyend-total" id="storyend-total"></p>
+        <p class="hint" id="storyend-rank"></p>
+        <p class="storyend-chapter" id="storyend-chapter" hidden></p>
+        <div class="storyend-buttons">
+          <button class="btn ghost" id="btn-storyend-retry">Play again</button>
+          <button class="btn" id="btn-storyend-map"><span id="storyend-next">Next stage · </span>War map</button>
+          <button class="btn" id="btn-storyend-room" style="display: none">Back to the room</button>
+          <button class="btn primary" id="btn-storyend-garage">Back to garage</button>
+        </div>
+      </div>
+    </section>
+
     <section class="screen" id="screen-solo">
       <div class="menu-panel solo-panel">
         <h2>Solo</h2>

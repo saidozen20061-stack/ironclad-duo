@@ -1080,7 +1080,7 @@ export class Match {
   }
 
   updateCapture() {
-    if (this.mode !== 'flags') return;
+    if (this.mode !== 'flags' && !this.story?.stage.points) return;
     for (const pt of this.points) {
       const def = POINTS.find((p) => p.id === pt.id);
       const weight = { blue: 0, red: 0 };
@@ -1142,7 +1142,7 @@ export class Match {
   endMatch(winner, reason = '') {
     if (this.over) return;
     this.over = true;
-    this.room.broadcast({ t: 'matchEnd', winner, reason, time: this.time, mode: this.mode, crews: this.scoreboard(), npcs: this.npcBoard(), tickets: this.tickets, score: this.score });
+    this.room.broadcast({ t: 'matchEnd', winner, reason, time: this.time, mode: this.mode, crews: this.scoreboard(), npcs: this.npcBoard(), tickets: this.tickets, score: this.score, story: this.storyResult?.() });
   }
 
   // An NPC tank or plane takes the first place on the scoreboard that nobody's using. It lasts the whole

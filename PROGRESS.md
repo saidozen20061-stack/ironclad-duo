@@ -1,19 +1,27 @@
 # Story mode progress
 
 Tanks only, solo first, co-op last. Each phase is committed, pushed and live before the next starts.
-Code: `client/src/story/` (data, save, hub). Save key in localStorage: `ironclad-story`.
+Code: `client/src/story/` (data, save, hub, map, shop, workshop, tanks, looks, rewards, stages, coop) and
+`client/src/host/storyMode.js` (the stage runner). Save key in localStorage: `ironclad-story` (version 2).
 
 - [x] Phase 1: Story Mode button, garage hub (tank on the turntable, four signs, rank/XP/silver/tank bar), save with export/import/reset, Tier I starter "Sparrow" (T-26 style)
-- [ ] Phase 2: war map chapter 1 (Farmlands), stage runner with objectives, results screen with silver and XP, stars
-- [ ] Phase 3: shop and motor pool, Tier II to V tanks
-- [ ] Phase 4: workshop: parts, hotspots, upgrades, weight, combat rating
-- [ ] Phase 5: chapters 2 to 5, bosses, plane (special) stages, chapter story text
-- [ ] Phase 6: balance simulation, BALANCE.md
-- [ ] Phase 7: co-op story with one friend
+- [x] Phase 2: war map, briefing card, stage runner with objectives, in-match objective bar, results screen with counted-up silver and XP, stars
+- [x] Phase 3: shop (tanks, parts, specials, a 20% offer after each stage, sell for half), motor pool, tier II to V tanks
+- [x] Phase 4: workshop: hotspots with camera zoom, equip/upgrade/buy, parts shown on the model, weight bar, combat rating
+- [x] Phase 5: chapters 2 to 5 (56 stages), five bosses, plane stages, snow for Winter Front, story text between chapters
+- [x] Phase 6: balance simulation (`scripts/storyBalance.mjs`), BALANCE.md
+- [x] Phase 7: co-op story with one friend (host's save, friend rides as gunner and gets half the pay)
 
-Notes
-- The hub reuses the update screen's picture (`client/public/garage.jpg`) as its background.
-- Not built yet: everything behind War Map, Shop and Workshop shows "Opens in the next update".
+Tests: `stagetest` (headless, every stage starts and can be won; losing when out of tanks) and a muted
+two-window run (shop, workshop, war map, snowy stage, results, co-op with a friend).
+
+Simplifications
+- Story tanks reuse the battle models with their own stats, names and paint; the Bobcat keeps the Hornet's
+  rapid-fire gun.
+- Optics and radio parts only raise the combat rating. Fire resistance, track HP, stability and ammo-rack
+  explosion resistance are shown but don't change the battle yet.
+- Parts show on the garage turntable, not on the tank in battle.
+- Chapter 5 is fought around Hill 112 and the enemy base, without new fortress buildings.
 
 ---
 

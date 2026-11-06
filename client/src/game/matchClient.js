@@ -71,6 +71,10 @@ export class MatchClient {
       this.capEl.classList.add('fort');
       this.capEl.innerHTML = `<div class="wave"><small>WAVE</small><b>0/10</b></div><div class="wave-info"></div><div class="bunker"><small>COMMAND BUNKER</small><i><u></u></i></div>`;
     }
+    if (this.mode === 'story') {
+      this.capEl.classList.add('fort', 'story');
+      this.capEl.innerHTML = `<div class="wave"><small>OBJECTIVE</small><b></b><span class="wave-info"></span></div><div class="lives"><small>TANKS</small><b></b></div><div class="clock"></div><div class="bunker boss" hidden><small></small><i><u></u></i></div>`;
+    }
     this.hud.appendChild(this.capEl);
     this.flagTarget = {};
 
@@ -193,7 +197,7 @@ export class MatchClient {
     this.world = new World();
     this.units = new UnitsView(this.world.scene);
     // Solo: the player's tank wears the camo picked in the setup screen.
-    this.units.paintFor = (u) => (this.solo && u.crew === this.crew.id && u.player ? this.info.paint : null);
+    this.units.paintFor = (u) => (this.info.paint && u.crew === this.crew.id && u.player ? this.info.paint : null);
     this.fx = new FX(this.world.scene);
     this.props = new PropsView(this.world.scene);
     this.aaGuns = new AaGuns(this.world.scene);
@@ -424,6 +428,7 @@ export class MatchClient {
     if (msg.pd && this.props) this.props.setDestroyed(msg.pd.filter((id) => !this.props.dead.has(id)), null);
     if (msg.pts) this.updateCapture(msg);
     if (msg.fort) this.updateFort(msg.fort);
+    if (msg.story) this.updateStory(msg.story);
     if (msg.sb) {
       this.stats = msg.sb;
       this.npcStats = msg.npcs ?? [];
@@ -496,6 +501,16 @@ export class MatchClient {
         }
         break;
       }
+      case 'kit':
+        // Story supplies: a smoke screen thrown round the tank, or the crew's repair kit.
+        if (ev.u === myId) this.banner(ev.what === 'smoke' ? 'SMOKE SCREEN!' : 'REPAIR KIT USED');
+        this.smokeMat ??= new THREE.MeshStandardMaterial({ color: 0xc9cbc4, flatShading: true, transparent: true, opacity: 0.8, depthWrite: false });
+        if (ev.what === 'smoke' && this.fx) for (let i = 0; i < 28; i++) {
+          const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 17;
+          const x = ev.x + Math.cos(a) * r, z = ev.z + Math.sin(a) * r;
+          this.fx.particle({ geo: this.fx.puffGeo, mat: this.smokeMat, pos: new THREE.Vector3(x, groundAt(x, z) + 1.5 + Math.random() * 2, z), vel: new THREE.Vector3(0, 0.3, 0), size: 3 + Math.random() * 1.5, grow: 0.4, life: 14, fade: 0.35, drag: 0.3 });
+        }
+        break;
       case 'spawn':
         if (ev.u === myId && driver) this.view.onRespawn();
         break;
@@ -612,7 +627,7 @@ export class MatchClient {
       // The flag climbs with the capture progress in the colour of the side that's winning.
       this.flagTarget[id] = { h: Math.abs(progress), team: progress > 0.02 ? 'blue' : progress < -0.02 ? 'red' : null };
     }
-    if (this.mode === 'fortress') return;
+    if (this.mode === 'fortress' || this.mode === 'story') return;
     const tally = this.mode === 'tdm' ? msg.sc : msg.tk;
     this.capEl.querySelector('.tix.blue b').textContent = tally[0];
     this.capEl.querySelector('.tix.red b').textContent = tally[1];
@@ -628,6 +643,21 @@ export class MatchClient {
     const bar = el.querySelector('.bunker u');
     bar.style.width = `${bunker}%`;
     bar.classList.toggle('low', bunker < 35);
+  }
+
+  // Story stage: what to do, how it's going, time left, tanks left and the boss's armour.
+  updateStory({ o, p, t, l, b }) {
+    const el = this.capEl;
+    el.querySelector('.wave b').textContent = o;
+    el.querySelector('.wave-info').textContent = p;
+    el.querySelector('.lives b').textContent = '▮'.repeat(Math.max(0, l)) || '—';
+    el.querySelector('.clock').textContent = t == null ? '' : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    const boss = el.querySelector('.boss');
+    boss.hidden = !b;
+    if (b) {
+      boss.querySelector('small').textContent = b[0].toUpperCase();
+      boss.querySelector('u').style.width = `${b[1]}%`;
+    }
   }
 
   banner(text) {

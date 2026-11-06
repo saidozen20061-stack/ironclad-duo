@@ -60,6 +60,8 @@ function objPoint(id) {
 
 function chooseObjective(match, u) {
   const team = u.team;
+  // Story mode: every unit keeps the job the stage gave it (none means hold where it is).
+  if (match.mode === 'story') return u.ai?.objective ?? null;
   // Fortress Defence: Red storms the Blue base, Blue NPCs man the walls.
   if (match.mode === 'fortress') return team === 'red' ? 'blue' : 'fortress';
   // Team Deathmatch: nothing to capture, so the armies roam from place to place looking for a fight.
@@ -167,7 +169,8 @@ export class ArmyAI {
       const t = u.ai?.target;
       if (t && !u.dead) this.aimedAt.set(t.id, (this.aimedAt.get(t.id) ?? 0) + 1);
     }
-    for (const team of ['blue', 'red']) {
+    // Story mode: the stage decides who's on the field.
+    for (const team of m.mode === 'story' ? [] : ['blue', 'red']) {
       // In Fortress Defence the waves bring Red; Blue only fields wall defenders.
       if (fortress && team === 'red') continue;
       this.waveT[team] -= dt;
@@ -190,7 +193,7 @@ export class ArmyAI {
       }
     }
     // AT guns belong to whoever holds the point.
-    for (const s of fortress ? [] : this.slots) {
+    for (const s of fortress || m.mode === 'story' ? [] : this.slots) {
       const owner = m.points.find((p) => p.id === s.point).owner;
       if (s.gun && (s.gun.dead || !m.units.includes(s.gun))) s.gun = null;
       if (!s.gun && owner) {

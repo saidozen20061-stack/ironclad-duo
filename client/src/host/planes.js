@@ -885,6 +885,7 @@ export class PlaneSystem {
   // ---------- NPC air force ----------
   updateSpawns() {
     const m = this.m;
+    if (m.mode === 'story') return; // the stage brings its own planes
     if (m.tickNo % TICK_RATE === 0) this.updateEscorts();
     this.nextElite -= DT;
     if (this.nextElite <= 0) {

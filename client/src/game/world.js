@@ -134,6 +134,17 @@ export function buildTerrainGeometry() {
   return geo;
 }
 
+// Winter: snow lying on everything that's flat enough to hold it (the river stays dark).
+function snowOver(geo) {
+  const col = geo.attributes.color.array, nor = geo.attributes.normal.array, pos = geo.attributes.position.array;
+  for (let i = 0; i < col.length; i += 3) {
+    const k = Math.max(0, Math.min(1, (nor[i + 1] - 0.7) / 0.25)) * (pos[i + 1] < -0.5 ? 0.2 : 0.85);
+    col[i] += (0.86 - col[i]) * k;
+    col[i + 1] += (0.88 - col[i + 1]) * k;
+    col[i + 2] += (0.92 - col[i + 2]) * k;
+  }
+}
+
 // The map as a grid of separate meshes, so what's behind the camera or past the fog costs nothing.
 function splitTerrain(geo, scene, material) {
   const CELLS = 30;
@@ -284,12 +295,12 @@ const RAIN_BOX = 80; // m around the camera that it falls in
 const RAIN_DROPS = 2200; // at the highest graphics setting
 
 // Falling streaks moved by the graphics card alone, so the rain costs almost no game time.
-function buildRain(q) {
-  const n = Math.round(RAIN_DROPS * q.particles);
+function buildRain(q, snow = false) {
+  const n = Math.round(RAIN_DROPS * q.particles * (snow ? 0.8 : 1));
   const pos = new Float32Array(n * 6);
   for (let i = 0; i < n; i++) {
     const x = Math.random() * RAIN_BOX, y = Math.random() * RAIN_BOX, z = Math.random() * RAIN_BOX;
-    pos.set([x, y, z, x + 0.03, y + 1.3, z + 0.02], i * 6);
+    pos.set(snow ? [x, y, z, x + 0.12, y + 0.12, z + 0.1] : [x, y, z, x + 0.03, y + 1.3, z + 0.02], i * 6);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -300,13 +311,13 @@ function buildRain(q) {
     uniforms: { time: { value: 0 }, focus: { value: new THREE.Vector3() }, box: { value: RAIN_BOX } },
     vertexShader: `uniform float time; uniform vec3 focus; uniform float box;
       void main(){
-        vec3 p = position; p.y -= time * 34.0; p.x -= time * 2.5;
+        vec3 p = position; p.y -= time * ${snow ? '2.2' : '34.0'}; p.x -= time * 2.5${snow ? ' + sin(time * 0.9 + position.y) * 1.2' : ''};
         p = mod(p - focus, box) - box * 0.5 + focus;
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         // A drop right next to the camera would be a line from the top of the screen to the bottom.
-        if (distance(p, cameraPosition) < 7.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        if (distance(p, cameraPosition) < ${snow ? '1.5' : '7.0'}) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       }`,
-    fragmentShader: `void main(){ gl_FragColor = vec4(0.72, 0.78, 0.85, 0.32); }`,
+    fragmentShader: snow ? `void main(){ gl_FragColor = vec4(0.95, 0.96, 1.0, 0.85); }` : `void main(){ gl_FragColor = vec4(0.72, 0.78, 0.85, 0.32); }`,
   });
   const rain = new THREE.LineSegments(g, m);
   rain.frustumCulled = false;
@@ -339,10 +350,10 @@ export class World {
     const q = quality();
     this.scene = new THREE.Scene();
     // Dusty orange-grey haze by day; dark blue at night, wet grey in the rain.
-    const fogColor = new THREE.Color(mood.night ? (mood.rain ? 0x0c0f15 : 0x11151f) : mood.rain ? 0x7c8185 : 0xb4997c);
+    const fogColor = new THREE.Color(mood.night ? (mood.rain ? 0x0c0f15 : 0x11151f) : mood.snow ? 0xc2c8cf : mood.rain ? 0x7c8185 : 0xb4997c);
     this.fogBase = fogColor.clone();
     this.fogNear = 60;
-    this.fogFarGround = mood.rain ? 270 : mood.night ? 320 : 400; // visibility down on the battlefield
+    this.fogFarGround = mood.rain ? 270 : mood.snow ? 300 : mood.night ? 320 : 400; // visibility down on the battlefield
     this.fogFlashK = 0;
     this.scene.fog = new THREE.Fog(fogColor, this.fogNear, this.fogFarGround);
     this.scene.background = fogColor;
@@ -350,9 +361,9 @@ export class World {
     // Late-afternoon sun, low in the west-south-west for long shadows.
     this.sunDir = new THREE.Vector3(0.75, 0.32, -0.45).normalize();
     if (mood.night) this.sunDir.set(-0.4, 0.75, 0.5).normalize(); // the moon, high up
-    this.hemi = mood.night ? new THREE.HemisphereLight(0x8094c8, 0x1a1c26, 0.62) : mood.rain ? new THREE.HemisphereLight(0xc8ced2, 0x4a4c48, 0.8) : new THREE.HemisphereLight(0xffe4c0, 0x40402c, 0.85);
+    this.hemi = mood.night ? new THREE.HemisphereLight(0x8094c8, 0x1a1c26, 0.62) : mood.snow ? new THREE.HemisphereLight(0xdfe6f0, 0x6a6e74, 0.85) : mood.rain ? new THREE.HemisphereLight(0xc8ced2, 0x4a4c48, 0.8) : new THREE.HemisphereLight(0xffe4c0, 0x40402c, 0.85);
     this.scene.add(this.hemi);
-    this.sun = mood.night ? new THREE.DirectionalLight(0xa4b8ff, mood.rain ? 0.35 : 0.8) : new THREE.DirectionalLight(mood.rain ? 0xc8ccd0 : 0xffc690, mood.rain ? 0.7 : 2.35);
+    this.sun = mood.night ? new THREE.DirectionalLight(0xa4b8ff, mood.rain ? 0.35 : 0.8) : mood.snow ? new THREE.DirectionalLight(0xeef2fa, 1.25) : new THREE.DirectionalLight(mood.rain ? 0xc8ccd0 : 0xffc690, mood.rain ? 0.7 : 2.35);
     this.sun.castShadow = q.shadows;
     this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     const S = 110;
@@ -368,9 +379,9 @@ export class World {
     this.sky.material.uniforms.sunDir.value.copy(this.sunDir);
     this.sky.material.uniforms.fogCol.value.copy(fogColor);
     this.sky.material.uniforms.night.value = mood.night ? 1 : 0;
-    this.sky.material.uniforms.overcast.value = mood.rain ? 0.85 : 0;
-    if (mood.rain) {
-      this.rain = buildRain(q);
+    this.sky.material.uniforms.overcast.value = mood.rain ? 0.85 : mood.snow ? 0.6 : 0;
+    if (mood.rain || mood.snow) {
+      this.rain = buildRain(q, !mood.rain);
       this.scene.add(this.rain);
     }
     // Shadow map axes: the same ones the shadow camera ends up with when it looks at the sun.
@@ -380,7 +391,9 @@ export class World {
     this.scene.add(this.sky);
 
     this.terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
-    splitTerrain(buildTerrainGeometry(), this.scene, this.terrainMat);
+    const ground = buildTerrainGeometry();
+    if (mood.snow) snowOver(ground);
+    splitTerrain(ground, this.scene, this.terrainMat);
     this.seeFar = 1; // 2 while the thermal sight looks through the fog
     this.cullAt = new THREE.Vector3(1e9, 0, 1e9);
     this.cullRange = 0;
