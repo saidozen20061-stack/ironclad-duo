@@ -11,6 +11,9 @@ const HALL = { x: 22, back: -24, front: 26, h: 12 };
 const UP = new THREE.Vector3(0, 1, 0);
 const VIEW = { yaw: 0.5, pitch: 0.09, minPitch: 0.02, maxPitch: 0.9, minZoom: 0.6, maxZoom: 1.45 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const SPRING = 3.2; // how quickly the camera's aim glides to a new part (critically damped)
+const TURN = 2.6; // the same for the turntable bringing the part round
+const SWING_S = 1.1; // s: the ease-back-and-in between two parts
 
 const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.85, metalness: o.metal ?? 0, flatShading: true, ...(o.emissive ? { emissive: o.emissive, emissiveIntensity: o.glow ?? 1 } : {}) });
 
@@ -255,6 +258,9 @@ export class StoryGarage {
     this.size = new THREE.Vector3(4, 2.5, 7);
     this.radius = 4;
     this.focus = null;
+    this.fNow = null; // the part the camera is looking at right now, on its way to `focus`
+    this.fVel = { x: 0, y: 0, z: 0 };
+    this.spinVel = 0;
     this.zoom = 0;
     this.shift = 0; // fraction of the screen width the tank moves left (room for a side panel)
     this.shiftNow = 0;
@@ -335,20 +341,38 @@ export class StoryGarage {
   }
 
   update(dt) {
+    dt = Math.min(dt, 0.05); // a stalled frame mustn't kick the springs
     this.t += dt;
     this.idle += dt;
     this.anim = Math.min(1, this.anim + dt * 2.5);
-    this.zoom += ((this.focus ? 1 : 0) - this.zoom) * Math.min(1, dt * 3.5);
+    // Going from one part to another: the camera eases back a little on the way and in again at the end.
+    if (this.focus && this.lastFocus && this.focus !== this.lastFocus) this.swing = 1;
+    this.lastFocus = this.focus;
+    this.swing = Math.max(0, (this.swing ?? 0) - dt / SWING_S);
+    const zoomTo = this.focus ? 1 - 0.35 * Math.sin(Math.PI * (1 - this.swing)) * (this.swing > 0 ? 1 : 0) : 0;
+    this.zoom += (zoomTo - this.zoom) * Math.min(1, dt * 3.5);
     this.shiftNow += (this.shift - this.shiftNow) * Math.min(1, dt * 4);
     const ease = Math.min(1, dt * 6);
     for (const k of ['yaw', 'pitch', 'zoom']) this.view[k] += (this.want[k] - this.view[k]) * ease;
+    // What the camera looks at glides from part to part on a spring, so it never jumps.
+    if (this.focus) {
+      this.fNow ??= { ...this.focus };
+      for (const k of ['x', 'y', 'z']) {
+        this.fVel[k] += (SPRING ** 2 * (this.focus[k] - this.fNow[k]) - 2 * SPRING * this.fVel[k]) * dt;
+        this.fNow[k] += this.fVel[k] * dt;
+      }
+    }
     if (this.focus && !this.drag && this.idle > 0.6) {
-      // Turn the part towards wherever the camera is, the short way round.
+      // Turn the part towards wherever the camera is, the short way round, speeding up and slowing down.
       const f = this.focus;
       const want = this.view.yaw + (f.x === 0 && Math.abs(f.z) < 0.25 ? 0.3 : -Math.atan2(f.x, f.z) - 0.15);
       const d = Math.atan2(Math.sin(want - this.spin.rotation.y), Math.cos(want - this.spin.rotation.y));
-      this.spin.rotation.y += d * Math.min(1, dt * 3);
-    } else if (!this.focus && !this.drag && this.idle > 2.5) this.spin.rotation.y += dt * 0.16;
+      this.spinVel += (TURN ** 2 * d - 2 * TURN * this.spinVel) * dt;
+      this.spin.rotation.y += this.spinVel * dt;
+    } else {
+      this.spinVel = 0;
+      if (!this.focus && !this.drag && this.idle > 2.5) this.spin.rotation.y += dt * 0.16;
+    }
     // A freshly bought or refitted tank settles onto the turntable.
     const k = 1 - (1 - this.anim) ** 3;
     this.holder.position.y = (1 - k) * 1.2;
@@ -380,7 +404,7 @@ export class StoryGarage {
     const wide = (this.radius * 1.4) / (half * Math.min(1.6, cam.aspect));
     let dist = Math.min(22, Math.max(10.5, wide)) * (1 - 0.42 * this.zoom) * this.view.zoom;
     const look = new THREE.Vector3(0, this.size.y * 0.4, 0);
-    if (this.zoom > 0.001 && this.focus) look.lerp(this.partPoint(this.focus), this.zoom);
+    if (this.zoom > 0.001 && this.fNow) look.lerp(this.partPoint(this.fNow), this.zoom);
     // Round the tank and up over it, with a slow sway when nobody's touching it.
     const yaw = this.view.yaw + Math.sin(this.t * 0.11) * 0.04 * Math.min(1, this.idle / 3);
     const pitch = Math.max(this.view.pitch, 0.07 * this.zoom + 0.02);
