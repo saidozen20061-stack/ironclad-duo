@@ -7,9 +7,6 @@ import { TIERS } from './data.js';
 import { battleTank, stageRating, combatRating, buildSpec } from './tanks.js';
 import { SPECIALS } from './data.js';
 import { rollFeatured } from './shop.js';
-import { coop, coopAllowed, hostCoop } from './coop.js';
-
-const FRIEND_SHARE = 0.5; // of the silver and XP, for the friend in a co-op stage
 
 // The war map (chapters, stages, briefings), starting a stage, and the results screen after it.
 
@@ -30,7 +27,6 @@ export const nextStage = () => Object.values(STAGES).find((s) => !story.stars[s.
 export function initStoryMap(h) {
   hooks = h;
   $('#btn-storymap-back').addEventListener('click', () => {
-    coop.browsing = false;
     showScreen('story', { remember: false });
     hooks.renderHub();
   });
@@ -52,7 +48,6 @@ export function initStoryMap(h) {
       return renderBriefing();
     }
     if (e.target.closest('#btn-deploy')) deploy(STAGES[picked]);
-    if (e.target.closest('#btn-deploy-coop')) deploy(STAGES[picked], true);
   });
   $('#btn-storyend-garage').addEventListener('click', () => {
     hooks.leaveMatch();
@@ -60,17 +55,13 @@ export function initStoryMap(h) {
     hooks.renderHub();
   });
   $('#btn-storyend-retry').addEventListener('click', () => {
-    if (!coop.active) hooks.leaveMatch();
+    hooks.leaveMatch();
     deploy(lastStage);
   });
   $('#btn-storyend-map').addEventListener('click', () => {
-    if (coop.active) {
-      coop.browsing = true;
-      net.send({ t: 'toLobby' });
-    } else hooks.leaveMatch();
+    hooks.leaveMatch();
     openMap();
   });
-  $('#btn-storyend-room').addEventListener('click', () => showScreen('storycoop', { remember: false }));
 }
 
 export function openMap() {
@@ -139,7 +130,7 @@ function renderBriefing() {
       <dt>Best</dt><dd class="stars">${best ? stars(best) : 'Not cleared yet'}</dd>
     </dl>
     ${s.plane ? '' : supplies()}
-    ${coop.active ? (coopAllowed(s) ? '<button class="btn primary" id="btn-deploy">Deploy with your crew</button>' : '<p class="sub">This plane has one seat, so this stage is solo only. Leave the room to play it.</p>') : `<div class="row"><button class="btn primary" id="btn-deploy">Deploy</button>${coopAllowed(s) ? '<button class="btn" id="btn-deploy-coop" title="Host a room: a friend joins with the code and rides as your gunner">With a friend</button>' : ''}</div>`}`;
+    <button class="btn primary" id="btn-deploy">Deploy</button>`;
 }
 
 function supplies() {
@@ -148,8 +139,7 @@ function supplies() {
   return `<div class="supplies"><small>TAKE ALONG</small>${have.map(([id, sp]) => `<button data-bring="${id}" class="${bring.has(id) ? 'sel' : ''}" title="${escapeHtml(sp.blurb)}">${bring.has(id) ? '☑' : '☐'} ${sp.name} ×${story.specials[id]}</button>`).join('')}</div>`;
 }
 
-export function deploy(s, withFriend = false) {
-  if (coop.active && !coop.host) return;
+export function deploy(s) {
   lastStage = s;
   // Supplies are used up by this stage, won or lost.
   const used = {};
@@ -159,43 +149,26 @@ export function deploy(s, withFriend = false) {
   }
   saveStory();
   const tank = battleTank(story.current, used);
-  const info = {
+  net.startSolo({
     tank: s.plane ?? tank.model,
     paint: s.plane ?? tank.paint,
+    mode: 'story',
     difficulty: STAGE_TYPES[s.type].difficulty,
     airStart: !!s.plane,
     night: !!s.night,
     rain: !!s.rain,
     snow: !!s.snow,
-  };
-  const st = { stage: s, spec: s.plane ? null : tank.spec, specials: used };
-  if (withFriend) return hostCoop({ ...info, ...st });
-  if (coop.active) {
-    // Our room: back from the last stage's results, then straight into this one.
-    coop.browsing = false;
-    net.send({ t: 'toLobby' });
-    net.send({ t: 'storyStage', story: { ...info, ...st } });
-    net.send({ t: 'start' });
-    return;
-  }
-  net.startSolo({ ...info, mode: 'story', story: st });
+    story: { stage: s, spec: s.plane ? null : tank.spec, specials: used },
+  });
 }
 
 // After a stage: silver and XP counted up line by line, stars, and where to go next.
 export function showResults(msg) {
   const s = STAGES[msg.story.stage];
   const win = msg.winner === 'blue';
-  const guest = coop.active && !coop.host;
-  const before = guest ? 0 : story.stars[s.id] ?? 0;
+  const before = story.stars[s.id] ?? 0;
   const rankBefore = rankInfo().rank;
   const r = rewardsFor(s, msg.story, win, before);
-  if (guest) {
-    // The friend's share: half of it all, into their own save. Stars stay with the host's save.
-    const share = Math.round(r.total * FRIEND_SHARE);
-    r.lines = [["Your share of the crew's pay (50%)", share]];
-    r.total = r.xp = share;
-    r.stars = 0;
-  }
   story.coins += r.total;
   story.xp += r.xp;
   if (r.stars > before) story.stars[s.id] = r.stars;
@@ -210,9 +183,6 @@ export function showResults(msg) {
   list.innerHTML = r.lines.map(([label, v]) => `<li><span>${escapeHtml(label)}</span><b data-v="${v}">0</b></li>`).join('');
   $('#storyend-rank').textContent = rankAfter.rank > rankBefore ? `Promoted to ${rankAfter.name}!` : `${rankAfter.name} · ${rankAfter.need ? `${rankAfter.into} / ${rankAfter.need} XP` : 'top rank'}`;
   $('#storyend-next').style.display = win ? '' : 'none';
-  $('#btn-storyend-retry').style.display = $('#btn-storyend-map').style.display = guest ? 'none' : '';
-  $('#btn-storyend-room').style.display = guest ? '' : 'none';
-  $('#btn-storyend-garage').textContent = coop.active ? 'Leave to garage' : 'Back to garage';
   // Between chapters: a few lines of story when a boss falls for the first time.
   const ch = CHAPTERS[s.chapter - 1];
   const fresh = win && !before && ch.stages.at(-1).id === s.id;

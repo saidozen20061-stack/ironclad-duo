@@ -1,7 +1,7 @@
 # Story mode progress
 
-Tanks only, solo first, co-op last. Each phase is committed, pushed and live before the next starts.
-Code: `client/src/story/` (data, save, hub, map, shop, workshop, tanks, looks, rewards, stages, coop) and
+Tanks only, single-player. Each phase is committed, pushed and live before the next starts.
+Code: `client/src/story/` (data, save, hub, map, shop, workshop, tanks, looks, rewards, stages) and
 `client/src/host/storyMode.js` (the stage runner). Save key in localStorage: `ironclad-story` (version 2).
 
 - [x] Phase 1: Story Mode button, garage hub (tank on the turntable, four signs, rank/XP/silver/tank bar), save with export/import/reset, Tier I starter "Sparrow" (T-26 style)
@@ -10,10 +10,11 @@ Code: `client/src/story/` (data, save, hub, map, shop, workshop, tanks, looks, r
 - [x] Phase 4: workshop: hotspots with camera zoom, equip/upgrade/buy, parts shown on the model, weight bar, combat rating
 - [x] Phase 5: chapters 2 to 5 (56 stages), five bosses, plane stages, snow for Winter Front, story text between chapters
 - [x] Phase 6: balance simulation (`scripts/storyBalance.mjs`), BALANCE.md
-- [x] Phase 7: co-op story with one friend (host's save, friend rides as gunner and gets half the pay)
+- [x] Phase 7: removed: story mode is single-player
+- [x] 3D garage: the hub and workshop are a 3D workshop hall (`client/src/scenes/storyGarage.js`) with the tank on a floor turntable and a low three-quarter camera
 
 Tests: `stagetest` (headless, every stage starts and can be won; losing when out of tanks) and a muted
-two-window run (shop, workshop, war map, snowy stage, results, co-op with a friend).
+two-window run (shop, workshop, war map, snowy stage, results).
 
 Simplifications
 - Story tanks reuse the battle models with their own stats, names and paint; the Bobcat keeps the Hornet's

@@ -7,6 +7,7 @@ import { SoldierRig, idleUpdate } from '../models/rig.js';
 import { quality } from '../settings.js';
 import { VehiclePreview } from './preview.js';
 import { WarScene } from './warScene.js';
+import { StoryGarage } from './storyGarage.js';
 
 const buildVehicle = (type, team, paint) => (PLANES[type] ? buildPlane(type, team, paint ?? type) : buildTank(type, team, paint));
 
@@ -228,9 +229,8 @@ export class MenuScene {
     this.setShowcase('medium');
   }
 
-  // `dress` adds extra parts to the turntable model (story workshop); `look` names them for caching.
-  setShowcase(type, paint = type, dress = null, look = '') {
-    if (this.showcase?.type === type && this.showcase.paint === paint && this.showcase.look === look) return;
+  setShowcase(type, paint = type) {
+    if (this.showcase?.type === type && this.showcase.paint === paint) return;
     if (this.showcase) {
       this.scene.remove(this.showcase.group);
       this.showcase.group.traverse((o) => o.geometry?.dispose());
@@ -238,17 +238,12 @@ export class MenuScene {
     this.showcase = buildVehicle(type, 'blue', paint);
     this.showcase.paint = paint;
     this.showcase.type = type;
-    this.showcase.look = look;
     // Anything far wider than the other vehicles is shown smaller, so it still fits the menu.
     const fit = PLANES[type] ? Math.min(1, 22 / PLANES[type].size.width) : 1;
     this.showcase.group.scale.setScalar(fit);
     this.showcase.baseY = PLANES[type] ? PLANES[type].gearH * fit : 0;
     this.scene.add(this.showcase.group);
-    this.preview.set(`${type}|${paint}|${look}`, () => {
-      const v = buildVehicle(type, 'blue', paint);
-      dress?.(v);
-      return v.group;
-    });
+    this.preview.set(`${type}|${paint}`, () => buildVehicle(type, 'blue', paint).group);
   }
 
   // Lobby: every crew's tank in its garage bay, crew standing in front with names above.
@@ -302,13 +297,20 @@ export class MenuScene {
 
   setMode(mode) {
     this.mode = mode;
-    // Story mode's hub is the workshop picture, with the tank drawn over it by the preview.
-    if (mode === 'story' && !this.storyScene) {
-      const tex = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}garage.jpg`);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      this.storyScene = new THREE.Scene();
-      this.storyScene.background = tex;
-    }
+  }
+
+  // Story mode's 3D workshop hall, built the first time it's needed.
+  get story() {
+    return (this.storyGarage ??= new StoryGarage());
+  }
+
+  // The crew's story tank on the hall's turntable; `dress` adds its fitted parts, `look` names them.
+  setStoryTank(type, paint, dress, look = '') {
+    this.story.setTank(`${type}|${paint}|${look}`, () => {
+      const v = buildVehicle(type, 'blue', paint);
+      dress?.(v);
+      return v.group;
+    });
   }
 
   resize(w, h) {
@@ -319,7 +321,7 @@ export class MenuScene {
   update(dt) {
     this.t += dt;
     this.preview.update(dt);
-    if (this.mode === 'story') return;
+    if (this.mode === 'story') return this.story.update(dt);
     const target = this.mode === 'lobby' ? 1 : 0;
     this.blend += (target - this.blend) * Math.min(1, dt * 2);
     const b = this.blend * this.blend * (3 - 2 * this.blend);
@@ -373,15 +375,7 @@ export class MenuScene {
   }
 
   render(renderer) {
-    if (this.mode === 'story') {
-      // Fills the screen without stretching, cropping whichever way the window's narrower.
-      const tex = this.storyScene.background, a = this.camera.aspect, img = 16 / 9;
-      tex.repeat.set(Math.min(1, a / img), Math.min(1, img / a));
-      tex.offset.set((1 - tex.repeat.x) / 2, (1 - tex.repeat.y) / 2);
-      renderer.render(this.storyScene, this.camera);
-      this.preview.render(renderer);
-      return;
-    }
+    if (this.mode === 'story') return this.story.render(renderer);
     renderer.render(this.scene, this.camera);
     this.preview.render(renderer);
   }

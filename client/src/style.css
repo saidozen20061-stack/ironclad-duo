@@ -532,7 +532,10 @@ input, select {
 .story-coins b { color: #e9e6dc; font-size: 22px; }
 .coin { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f4f3ee, #a9aca6 60%, #6d706b); box-shadow: 0 0 0 2px #50534d; align-self: center; }
 .story-tank { display: grid; text-align: right; }
-#preview-story { position: absolute; left: 25%; right: 25%; top: 11%; bottom: 13%; }
+.story-caption { position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%); display: grid; justify-items: center; gap: 2px; pointer-events: none; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
+.story-caption b { font: 400 34px var(--stencil); letter-spacing: 0.06em; color: #f1d998; }
+.story-caption small { color: #d9d2bd; font-size: 15px; }
+.garage-hint { position: absolute; left: 0; right: 440px; bottom: 14px; margin: 0; text-align: center; color: rgba(230, 222, 200, 0.6); font-size: 13px; pointer-events: none; }
 .story-sign { position: absolute; display: grid; gap: 3px; min-width: 210px; padding: 14px 20px; text-align: left; cursor: pointer; font: 400 26px var(--stencil); letter-spacing: 0.06em; text-transform: uppercase; color: #f1d998; background: linear-gradient(#3b4834, #2a3426); border: 2px solid #c9a24a; border-radius: 3px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), inset 0 0 0 4px rgba(0, 0, 0, 0.25); transform: rotate(-1.2deg); transition: transform 0.15s, box-shadow 0.15s; }
 .story-sign:nth-of-type(even) { transform: rotate(1.2deg); }
 .story-sign small { font: 600 13px var(--ui); letter-spacing: 0; text-transform: none; color: #d9d2bd; }
@@ -639,7 +642,6 @@ input, select {
 #workshop-head .bar i { display: block; height: 100%; background: #7fc06a; }
 #workshop-head .bar i.over { background: #e0645a; }
 #workshop-head .story-coins { margin-left: auto; }
-#preview-workshop { position: absolute; left: 2%; right: 440px; top: 72px; bottom: 16px; }
 #workshop-spots { position: absolute; inset: 0; pointer-events: none; }
 #workshop-spots button { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; margin: -11px 0 0 -11px; padding: 0; background: none; border: 0; cursor: pointer; pointer-events: auto; color: #f3ead2; font: 700 12px var(--ui); text-shadow: 0 1px 3px #000; transition: opacity 0.2s; }
 #workshop-spots i { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--c) 35%, transparent); border: 2px solid var(--c); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 12px var(--c); animation: spot 1.6s ease-in-out infinite; }
@@ -663,14 +665,4 @@ input, select {
 .storyend-chapter b { font: 400 20px var(--stencil); color: var(--accent); letter-spacing: 0.04em; }
 .storyend-chapter span { color: #d8d2bd; font-style: italic; }
 .storyend-chapter[hidden] { display: none; }
-.storycoop { width: min(480px, 94vw); display: grid; gap: 12px; }
-.storycoop h2 { margin: 0; font: 400 30px var(--stencil); color: var(--accent); letter-spacing: 0.05em; text-align: center; }
-.coop-code { display: flex; gap: 12px; align-items: center; justify-content: center; }
-.coop-code small { color: var(--ink-dim); }
-.coop-code b { font: 400 34px var(--stencil); letter-spacing: 0.2em; color: #e9e6dc; }
-.coop-seats { display: grid; gap: 6px; }
-.coop-seats .seat { display: grid; padding: 8px 12px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-edge); border-radius: 4px; }
-.coop-seats .seat.free span { color: var(--ink-dim); font-style: italic; }
-.coop-seats small { color: var(--ink-dim); }
-.coop-stage { margin: 0; text-align: center; }
 .storymap-brief .row { display: flex; gap: 8px; flex-wrap: wrap; }

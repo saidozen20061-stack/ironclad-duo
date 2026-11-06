@@ -92,12 +92,12 @@ export function renderHub() {
   $('#story-tank').textContent = t.name;
   $('#story-tier').textContent = `${tier} · ${t.class} · rating ${combatRating(buildSpec(story.current))}`;
   showTank();
-  $('#preview-story .preview-cap').innerHTML = `<b>${escapeHtml(t.name)}</b><small>${tier} ${t.class}${t.inspired ? ` · inspired by the ${t.inspired}` : ''}</small>`;
+  $('#story-caption').innerHTML = `<b>${escapeHtml(t.name)}</b><small>${tier} ${t.class}${t.inspired ? ` · inspired by the ${t.inspired}` : ''}</small>`;
 }
 
 // The crew's tank on the turntable, with its fitted parts showing.
 export function showTank() {
   const { model, paint } = battleTank();
   const fit = fitOf(story.current);
-  scene.setShowcase(model, paint, (v) => dress(v, model, fit), lookKey(fit));
+  scene.setStoryTank(model, paint, (v) => dress(v, model, fit), lookKey(fit));
 }

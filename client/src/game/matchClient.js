@@ -197,7 +197,7 @@ export class MatchClient {
     this.world = new World();
     this.units = new UnitsView(this.world.scene);
     // Solo: the player's tank wears the camo picked in the setup screen.
-    this.units.paintFor = (u) => (this.info.paint && u.crew === this.crew.id && u.player ? this.info.paint : null);
+    this.units.paintFor = (u) => (this.solo && u.crew === this.crew.id && u.player ? this.info.paint : null);
     this.fx = new FX(this.world.scene);
     this.props = new PropsView(this.world.scene);
     this.aaGuns = new AaGuns(this.world.scene);

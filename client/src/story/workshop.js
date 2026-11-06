@@ -49,6 +49,7 @@ export function initWorkshop(menuScene, h) {
 export function openWorkshop() {
   showScreen('workshop', { remember: false });
   section = null;
+  scene.story.shift = 0.11; // the tank moves left of the side panel
   render();
   cancelAnimationFrame(raf);
   const loop = () => {
@@ -60,13 +61,14 @@ export function openWorkshop() {
 
 function close() {
   cancelAnimationFrame(raf);
-  scene.preview.focus = null;
+  scene.story.focus = null;
+  scene.story.shift = 0;
 }
 
 function pick(s) {
   section = s;
   const at = s && PARTS[s].at;
-  scene.preview.focus = at ? { x: at[0], y: at[1], z: at[2] } : null;
+  scene.story.focus = at ? { x: at[0], y: at[1], z: at[2] } : null;
   render();
 }
 
@@ -74,8 +76,7 @@ function pick(s) {
 function placeSpots() {
   for (const el of document.querySelectorAll('#workshop-spots [data-spot]')) {
     const [x, y, z] = PARTS[el.dataset.spot].at;
-    const p = scene.preview.screenPoint({ x, y, z });
-    if (!p) continue;
+    const p = scene.story.screenPoint({ x, y, z });
     el.style.transform = `translate(${p.x}px, ${p.y}px)`;
     el.classList.toggle('behind', !p.facing && el.dataset.spot !== section);
   }

@@ -47,7 +47,6 @@ export class Room {
     this.rain = false;
     this.phase = 'lobby'; // 'lobby' | 'match'
     this.match = null;
-    this.story = null; // co-op story stage: { stage, spec, specials, tank, paint, difficulty, ... } from the host's save
   }
 
   get full() {
@@ -129,7 +128,6 @@ export class Room {
       airStart: this.airStart,
       night: this.night,
       rain: this.rain,
-      story: this.mode === 'story' && this.story ? { id: this.story.stage.id, name: this.story.stage.name } : null,
       crews: this.crews,
       players: this.players.map((p) => ({ id: p.id, name: p.name, crew: p.crew, role: p.role, ready: p.ready })),
     };
@@ -302,23 +300,6 @@ export class Room {
     this.sync();
   }
 
-  // Co-op story: the host picks the stage and brings the tank from their own save; both players share
-  // one crew. Whoever joins sits in the gunner's seat.
-  setStory(player, s) {
-    if (this.phase !== 'lobby' || !this.isHost(player) || !s?.stage?.id || !(TANK_IDS.includes(s.tank) || PLANES[s.tank])) return;
-    this.setStyle('duo');
-    this.mode = 'story';
-    this.story = s;
-    this.difficulty = Object.hasOwn(DIFFICULTY, s.difficulty) ? s.difficulty : 'normal';
-    this.airStart = !!s.airStart;
-    this.night = !!s.night;
-    this.rain = !!s.rain;
-    const crew = this.crews[player.crew] ?? this.crews[0];
-    crew.tank = s.tank;
-    crew.team = 'blue';
-    this.sync();
-  }
-
   setReady(player, ready) {
     if (this.phase !== 'lobby') return;
     const crew = this.crews[player.crew];
@@ -332,7 +313,6 @@ export class Room {
   startProblem() {
     const crews = this.occupied();
     if (!crews.length) return 'No crews yet.';
-    if (this.mode === 'story') return this.story ? null : 'Pick a stage first.';
     if (this.players.some((p) => p.crew == null)) return 'Everyone needs a seat.';
     if (this.style === 'duo' && crews.some((c) => c.driver == null || c.gunner == null)) return 'Every crew needs a driver and a gunner.';
     if (this.players.some((p) => !p.ready && p.id !== this.hostId)) return 'Waiting for everyone to ready up…';
@@ -343,12 +323,9 @@ export class Room {
     if (this.phase !== 'lobby' || !this.isHost(player)) return;
     const problem = this.startProblem();
     if (problem) return player.send({ t: 'error', msg: problem });
-    const story = this.mode === 'story' ? this.story : null;
-    // A story stage is one crew: the host's.
-    const crews = (story ? [this.crews[this.byId(this.hostId).crew] ?? this.occupied()[0]] : this.occupied()).map((c) => ({ ...c, team: this.mode === 'fortress' || story ? 'blue' : c.team }));
+    const crews = this.occupied().map((c) => ({ ...c, team: this.mode === 'fortress' ? 'blue' : c.team }));
     this.phase = 'match';
     this.matchInfo = { style: this.style, mode: this.mode, killLimit: this.killLimit, difficulty: this.difficulty, airStart: this.airStart, night: this.night, rain: this.rain, crews };
-    if (story) Object.assign(this.matchInfo, { story: { stage: story.stage, spec: story.spec, specials: story.specials }, snow: !!story.snow, paint: story.paint });
     this.manager.onMatchStart?.(this);
     this.broadcast({
       t: 'matchStart',
@@ -460,9 +437,6 @@ export class RoomManager {
         return true;
       case 'start':
         room?.start(player);
-        return true;
-      case 'storyStage':
-        room?.setStory(player, msg.story);
         return true;
       case 'toLobby':
         if (room && room.phase === 'match' && room.match?.over && room.isHost(player)) room.returnToLobby();

@@ -61,7 +61,7 @@
         <div class="story-coins"><i class="coin"></i><b id="story-coins">0</b><small>silver</small></div>
         <div class="story-tank"><b id="story-tank"></b><small id="story-tier"></small></div>
       </header>
-      <div class="preview-slot" id="preview-story"><div class="preview-cap"></div><div class="preview-hint">Drag to rotate</div></div>
+      <div class="story-caption" id="story-caption"></div>
       <button class="story-sign" data-open="map" style="left: 3%; top: 18%">War Map<small>Pick your next battle</small></button>
       <button class="story-sign" data-open="shop" style="right: 3%; top: 18%">Shop<small>Tanks, parts and supplies</small></button>
       <button class="story-sign" data-open="workshop" style="left: 3%; bottom: 17%">Workshop<small>Fit and upgrade parts</small></button>
@@ -89,21 +89,6 @@
       <p class="storymap-intro" id="storymap-intro"></p>
     </section>
 
-    <section class="screen dim" id="screen-storycoop">
-      <div class="menu-panel storycoop">
-        <h2>Story co-op</h2>
-        <div class="coop-code"><small>Room code</small><b id="coop-code">-----</b><button class="btn small" id="btn-coop-copy">Copy</button></div>
-        <div class="coop-seats" id="coop-seats"></div>
-        <p class="coop-stage">Stage: <b id="coop-stage"></b></p>
-        <p class="hint" id="coop-note"></p>
-        <div class="storyend-buttons">
-          <button class="btn ghost" id="btn-coop-leave">Leave</button>
-          <button class="btn" id="btn-coop-map">Pick another stage</button>
-          <button class="btn primary" id="btn-coop-start">Start</button>
-        </div>
-      </div>
-    </section>
-
     <section class="screen" id="screen-shop">
       <header class="story-bar">
         <button class="btn ghost small" id="btn-shop-back">Back to garage</button>
@@ -121,7 +106,8 @@
         <button class="btn ghost small" id="btn-workshop-back">Back to garage</button>
         <div id="workshop-head"></div>
       </header>
-      <div class="preview-slot" id="preview-workshop"><div class="preview-hint">Drag to rotate · click a part</div><div id="workshop-spots"></div></div>
+      <div id="workshop-spots"></div>
+      <p class="garage-hint">Drag to turn the tank · click a part</p>
       <aside class="workshop-side" id="workshop-side"></aside>
     </section>
 
@@ -137,7 +123,6 @@
         <div class="storyend-buttons">
           <button class="btn ghost" id="btn-storyend-retry">Play again</button>
           <button class="btn" id="btn-storyend-map"><span id="storyend-next">Next stage · </span>War map</button>
-          <button class="btn" id="btn-storyend-room" style="display: none">Back to the room</button>
           <button class="btn primary" id="btn-storyend-garage">Back to garage</button>
         </div>
       </div>

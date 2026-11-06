@@ -70,7 +70,6 @@ export class VehiclePreview {
     this.scene.add(this.backdrop);
 
     this.onDown = (e) => {
-      if (e.target.closest('button')) return; // workshop hotspots sit on top of the preview
       this.drag = { x: e.clientX, id: e.pointerId };
       this.el.setPointerCapture?.(e.pointerId);
       this.el.classList.add('dragging');

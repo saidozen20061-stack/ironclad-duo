@@ -7,8 +7,6 @@ import { introReady } from './intro.js';
 import { initStoryHub, renderHub } from './story/hub.js';
 import { initStoryMap, showResults } from './story/map.js';
 import { useSpec } from './story/tanks.js';
-import { initCoop, onJoined, onLobbyState, coop } from './story/coop.js';
-import { openMap } from './story/map.js';
 import { $, showScreen, hideScreens, backScreen, clearHistory, currentScreen, onScreenChange, toast, setStatus } from './ui/screens.js';
 import { initSettingsScreen, onSettingsOpen } from './ui/settingsScreen.js';
 import { initLobbyScreen, renderLobby, lobby, setSpeaking, showOfflineTeams } from './ui/lobbyScreen.js';
@@ -144,7 +142,9 @@ function previewCaption(root, id, paint) {
 }
 
 onScreenChange((name) => {
-  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : name === 'story' ? $('#preview-story') : name === 'workshop' ? $('#preview-workshop') : null);
+  menuScene.preview.attach(name === 'solo' ? $('#preview-solo') : name === 'lobby' ? $('#preview-lobby') : null);
+  if (name === 'story' || name === 'workshop') menuScene.story.attach($(`#screen-${name}`));
+  else menuScene.storyGarage?.attach(null);
   if (name === 'settings') onSettingsOpen();
   if (name === 'controls') onControlsOpen();
   if (name === 'menu' || name === 'join' || name === 'quit') menuScene.setMode('menu');
@@ -155,17 +155,6 @@ onScreenChange((name) => {
 initSettingsScreen();
 initControlsScreen();
 initStoryHub(menuScene);
-initCoop({
-  openMap,
-  leave: () => {
-    coop.browsing = false;
-    leaveRoom();
-    clearHistory();
-    setActiveView(menuScene);
-    showScreen('story', { remember: false });
-    renderHub();
-  },
-});
 initStoryMap({
   renderHub,
   leaveMatch: () => {
@@ -200,7 +189,6 @@ net.on('joined', () => {
   setStatus('menu-status', '');
   setStatus('join-status', '');
   clearHistory();
-  if (onJoined()) return;
   showScreen('lobby', { remember: false });
 });
 
@@ -223,7 +211,6 @@ net.on('lobby', (msg) => {
     previewCaption('#preview-lobby', previewTank, previewTank);
   }
   renderLobby();
-  onLobbyState(msg);
   if (msg.phase === 'lobby') voice.setRoster(rosterFrom(msg.crews, msg.mode, net.id));
 });
 
@@ -271,11 +258,6 @@ net.on('disconnected', (msg) => {
 function returnToLobbyView() {
   setActiveView(menuScene);
   clearHistory();
-  if (lobby.state?.mode === 'story') {
-    // Story co-op: the room's own screen, unless the host is busy picking the next stage.
-    if (!coop.browsing) showScreen('storycoop', { remember: false });
-    return;
-  }
   showScreen('lobby', { remember: false });
   renderLobby();
 }
