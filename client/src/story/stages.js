@@ -1,6 +1,11 @@
 // Story mode's chapters and stages. Positions are on the one battlefield map: Blue's base is south
 // (z -640), the river runs across the middle (z about -40), Red's base is north. The player is Blue.
 // `after` is the stage that has to be won first; `mx`/`my` place the node on the war map (percent).
+// Like a solo battle, every stage starts with each side in its own half: see `toHalves` at the end,
+// which also adds the player's (weaker) friendly forces.
+
+import { POINTS } from '../../../shared/map.js';
+import { TANK_BAYS } from '../../../shared/props.js';
 
 // A group of units: kind 'tank' | 'inf' | 'atgun' | 'plane', placed around `at`. `go` is where they
 // head (a capture point or base); without it they hold where they are.
@@ -228,7 +233,65 @@ export const CHAPTERS = [
   },
 ];
 
-export const STAGES = Object.fromEntries(CHAPTERS.flatMap((c) => c.stages.map((s) => [s.id, { ...s, chapter: c.id }])));
+// ---- Each side in its own half. The crew starts in the Blue base; whatever the stage puts in Blue's half
+// moves over to Red's (mirrored across the middle), and comes forward to the objective. Friendly NPCs,
+// about half as many as the enemy and a class lighter, start with the crew and head the same way.
+const RED_HALF = [120, 560]; // z range the enemy starts in
+const ALLY_SHARE = 0.45; // friendly tanks and squads per enemy one
+const LIGHTER = { heavy: 'medium', assault: 'medium', superheavy: 'medium', medium: 't26', destroyer: 't26', aa: 't26', flak: 't26', light: 't26', scout: 't26', wheeled: 't26', t26: 't26' };
+const TRAVEL = { time: 120, par: 90, defend: 60 }; // s added for the drive out of the base
+
+const intoRed = ([x, z, ...rest]) => [x, z >= RED_HALF[0] ? Math.min(z, RED_HALF[1]) : Math.max(RED_HALF[0], Math.min(RED_HALF[1], -z)), ...rest];
+const pointAt = (id) => POINTS.find((p) => p.id === id);
+// Where the two sides meet when the stage has no point of its own: the village on the west, the ford otherwise.
+const middleFor = (x) => (x < -200 ? 'A' : 'C');
+
+function toHalves(s) {
+  if (s.plane) return { ...s, groups: s.groups.map((g) => (g.kind === 'plane' || (g.team ?? 'red') !== 'red' ? g : { ...g, at: intoRed(g.at) })) };
+  const bay = TANK_BAYS.blue[0];
+  const out = { ...s, start: [bay.x, bay.z, bay.h], time: s.time + (s.obj === 'defend' ? TRAVEL.defend : TRAVEL.time), par: s.par + (s.obj === 'defend' ? TRAVEL.defend : TRAVEL.par) };
+  const red = s.groups.filter((g) => (g.team ?? 'red') === 'red');
+  // The convoy in an escort stage drives from the base towards the enemy, to the hill if it was going somewhere nearer.
+  const convoy = s.groups.find((g) => g.escort);
+  let target = s.points?.[0] ?? null;
+  if (convoy) {
+    target = convoy.go === 'red' ? 'red' : 'B';
+    const b = pointAt('B');
+    if (target === 'B') out.dest = [b.x + 14, b.z + 6, 40];
+  } else if (!target) {
+    const near = red.filter((g) => g.kind !== 'atgun');
+    const mx = near.length ? near.reduce((a, g) => a + g.at[0], 0) / near.length : 0;
+    target = middleFor(mx);
+  }
+  const holds = s.obj === 'reach' || s.obj === 'targets';
+  out.groups = s.groups.map((g) => {
+    if ((g.team ?? 'red') !== 'red') return { ...g, at: [bay.x - 20 + Math.random() * 10, bay.z + 40], go: target };
+    const moved = { ...g, at: intoRed(g.at) };
+    if (!g.go && !holds && !g.target && g.kind !== 'atgun') moved.go = target;
+    return moved;
+  });
+  if (s.dest && s.obj === 'reach') out.dest = intoRed(s.dest);
+  // Friendly forces from what the enemy brings (every wave), fewer of them and lighter.
+  const count = (kind) => red.filter((g) => g.kind === kind).reduce((a, g) => a + (g.n ?? 1), 0);
+  const tankTypes = red.filter((g) => g.kind === 'tank').flatMap((g) => Array(g.n ?? 1).fill(g.type));
+  const nTanks = tankTypes.length ? Math.max(1, Math.round(tankTypes.length * ALLY_SHARE)) : 0;
+  const nSquads = Math.floor(count('inf') * ALLY_SHARE);
+  const allies = [];
+  for (let i = 0; i < nTanks; i++) allies.push(tanks(LIGHTER[tankTypes[i % tankTypes.length]] ?? 't26', 1, [bay.x - 30 + i * 14, bay.z + 55], { team: 'blue', ally: true, go: target, spread: 4 }));
+  for (let i = 0; i < nSquads; i++) allies.push(inf(1, [bay.x - 20 + i * 12, bay.z + 70], { team: 'blue', ally: true, go: target, spread: 4 }));
+  out.groups.push(...allies);
+  out.objectiveKey = target;
+  return out;
+}
+
+export const STAGES = Object.fromEntries(CHAPTERS.flatMap((c) => c.stages.map((s) => [s.id, toHalves({ ...s, chapter: c.id })])));
+
+// Friendly forces, for the briefing card.
+export function allyList(s) {
+  const t = s.groups.filter((g) => g.ally && g.kind === 'tank').length;
+  const q = s.groups.filter((g) => g.ally && g.kind === 'inf').length;
+  return [t && `${t} tank${t > 1 ? 's' : ''}`, q && `${q} squad${q > 1 ? 's' : ''}`].filter(Boolean);
+}
 
 // The tier a stage is pitched at: the chapter's, one more for hard and boss stages.
 export const recommendedTier = (s) => Math.min(5, s.chapter + (s.type === 'hard' || s.type === 'boss' ? 1 : 0));
@@ -238,7 +301,7 @@ export function enemyList(s) {
   const names = { inf: 'Infantry', atgun: 'Anti-tank guns', plane: 'Planes' };
   const seen = new Set();
   for (const g of s.groups) {
-    if ((g.team ?? 'red') !== 'red') continue;
+    if ((g.team ?? 'red') !== 'red') continue; // friendly forces aren't enemies
     seen.add(g.boss ? `${g.boss.name} (boss)` : g.kind === 'tank' ? `${g.type === 'heavy' || g.type === 'assault' || g.type === 'superheavy' ? 'Heavy' : g.type === 'medium' || g.type === 'destroyer' ? 'Medium' : 'Light'} tanks` : names[g.kind]);
   }
   return [...seen];

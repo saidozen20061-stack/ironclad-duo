@@ -11,6 +11,7 @@ Code: `client/src/story/` (data, save, hub, map, shop, workshop, tanks, looks, r
 - [x] Phase 5: chapters 2 to 5 (56 stages), five bosses, plane stages, snow for Winter Front, story text between chapters
 - [x] Phase 6: balance simulation (`scripts/storyBalance.mjs`), BALANCE.md
 - [x] Phase 7: removed: story mode is single-player
+- [x] Halves and allies: every stage starts like a solo battle, the crew in the Blue base and the enemy in the Red half coming forward; friendly NPCs (about half the enemy, a class lighter, 60% armour, half damage) come along
 - [x] 3D garage: the hub and workshop are a 3D workshop hall (`client/src/scenes/storyGarage.js`) with the tank on a floor turntable and a low three-quarter camera
 
 Tests: `stagetest` (headless, every stage starts and can be won; losing when out of tanks) and a muted

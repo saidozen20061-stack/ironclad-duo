@@ -12,6 +12,8 @@ const DT = 1 / TICK_RATE;
 const LIVES = 3; // tanks a crew can lose before the stage is lost
 const REACH = 30; // m: close enough to a place to count as there
 const rand = (a, b) => a + Math.random() * (b - a);
+// Friendly NPCs are there to help, not to win it for the crew.
+const ALLY = { hp: 0.6, damage: 0.5 };
 
 // The nearest spot a unit can stand on: a stage's positions are rounded, and buildings move about.
 function snap(x, z, cls = 'tank') {
@@ -38,7 +40,7 @@ const OBJECTIVE_TEXT = {
 // `story`: { stage, spec (the story tank's stats with its parts), specials (supplies brought along) }.
 export function installStory(m, { stage, spec, specials = {} }) {
   const crew = [...m.crews.values()][0];
-  const s = { stage, lives: LIVES, deaths: 0, kills: {}, shots: 0, hits: 0, pending: false, shotAt: 0, minHp: 1, wave: -1, hostile: [], targets: [], escorts: [], boss: null, holdT: 0, over: false };
+  const s = { stage, lives: LIVES, deaths: 0, kills: {}, shots: 0, hits: 0, pending: false, shotAt: 0, minHp: 1, wave: -1, hostile: [], targets: [], escorts: [], allies: new Set(), boss: null, holdT: 0, over: false };
   m.story = s;
 
   // The player's tank, or plane, where the stage puts it.
@@ -98,6 +100,11 @@ export function installStory(m, { stage, spec, specials = {} }) {
       }
     }
     for (const u of out) {
+      if (g.ally) {
+        s.allies.add(u.id);
+        u.spec = { ...u.spec, hp: Math.round(u.spec.hp * ALLY.hp) };
+        u.hp = u.spec.hp;
+      }
       if (team === 'red') s.hostile.push(u);
       if (g.target) s.targets.push(u);
       if (g.escort) s.escorts.push(u);
@@ -131,6 +138,7 @@ export function installStory(m, { stage, spec, specials = {} }) {
   const damage = m.damage.bind(m);
   m.damage = (u, amount, p) => {
     const me = crew.tank;
+    if (s.allies.has(p?.owner)) amount *= ALLY.damage;
     if (s.pending && p?.owner === me.id && u.team !== me.team && !u.dead && m.time - s.shotAt < 3) {
       s.hits++;
       s.pending = false;

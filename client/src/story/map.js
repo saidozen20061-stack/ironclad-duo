@@ -1,7 +1,7 @@
 import { $, showScreen, escapeHtml } from '../ui/screens.js';
 import { net } from '../net.js';
 import { story, saveStory, rankInfo } from './save.js';
-import { CHAPTERS, STAGES, STAGE_TYPES, recommendedTier, enemyList, unlocked } from './stages.js';
+import { CHAPTERS, STAGES, STAGE_TYPES, recommendedTier, enemyList, allyList, unlocked } from './stages.js';
 import { rewardsFor, bonusText, stageBase } from './rewards.js';
 import { TIERS } from './data.js';
 import { battleTank, stageRating, combatRating, buildSpec } from './tanks.js';
@@ -126,6 +126,7 @@ function renderBriefing() {
       <dt>Stars</dt><dd>★ Win · ★★ ${b2} · ★★★ ${b3}</dd>
       <dt>Recommended</dt><dd>Tier ${TIERS[recommendedTier(s)]} · combat rating ${stageRating(s)} <small>(yours: ${combatRating(buildSpec(story.current))})</small></dd>
       <dt>Enemy</dt><dd>${enemyList(s).join(', ')}</dd>
+      ${allyList(s).length ? `<dt>With you</dt><dd>${allyList(s).join(', ')} <small>(green crews: they need you to lead)</small></dd>` : ''}
       <dt>Reward</dt><dd>${stageBase(s)} silver, +50% for winning${best ? ' (60% on replays)' : `, +${Math.round(stageBase(s) / 2)} first clear`}, plus kills</dd>
       <dt>Best</dt><dd class="stars">${best ? stars(best) : 'Not cleared yet'}</dd>
     </dl>
