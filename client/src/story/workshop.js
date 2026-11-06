@@ -13,6 +13,8 @@ let scene = null;
 let hooks = null;
 let section = null;
 let raf = 0;
+let trail = null; // a spark flying from the last part's dot to the new one: { from, to, t0 }
+const TRAIL_MS = 420;
 
 export function initWorkshop(menuScene, h) {
   scene = menuScene;
@@ -50,6 +52,8 @@ export function openWorkshop() {
   showScreen('workshop', { remember: false });
   section = null;
   scene.story.shift = 0.11; // the tank moves left of the side panel
+  scene.story.resetView({ keepYaw: true });
+  buildSpots();
   render();
   cancelAnimationFrame(raf);
   const loop = () => {
@@ -66,27 +70,63 @@ function close() {
 }
 
 function pick(s) {
+  const was = section;
   section = s;
+  // The old dot settles back, the new one springs up with a ripple, and a spark flies between them.
+  for (const el of document.querySelectorAll('#workshop-spots [data-spot]')) {
+    el.classList.remove('picked', 'leave');
+    void el.offsetWidth; // restart the animations
+    if (el.dataset.spot === s) el.classList.add('picked');
+    if (el.dataset.spot === was) el.classList.add('leave');
+  }
+  trail = was && s ? { from: was, to: s, t0: performance.now() } : null;
+  if (s) scene.story.resetView({ keepYaw: true });
   const at = s && PARTS[s].at;
   scene.story.focus = at ? { x: at[0], y: at[1], z: at[2] } : null;
   render();
 }
 
+// One dot per part, made when the workshop opens; they pop in one after another.
+function buildSpots() {
+  $('#workshop-spots').innerHTML = SECTIONS.map((s, i) => `<button data-spot="${s}" style="--d:${120 + i * 70}ms"><b class="dot"><i></i><u></u></b><span>${PARTS[s].name}</span></button>`).join('') + '<div class="spark" id="workshop-spark"></div>';
+}
+
+const at = (s) => {
+  const [x, y, z] = PARTS[s].at;
+  return scene.story.screenPoint({ x, y, z });
+};
+
 // Hotspots follow their part as the tank turns; ones round the back fade out.
 function placeSpots() {
   for (const el of document.querySelectorAll('#workshop-spots [data-spot]')) {
-    const [x, y, z] = PARTS[el.dataset.spot].at;
-    const p = scene.story.screenPoint({ x, y, z });
+    const p = at(el.dataset.spot);
     el.style.transform = `translate(${p.x}px, ${p.y}px)`;
     el.classList.toggle('behind', !p.facing && el.dataset.spot !== section);
   }
+  const spark = $('#workshop-spark');
+  if (!spark) return;
+  const k = trail ? (performance.now() - trail.t0) / TRAIL_MS : 1;
+  if (k >= 1) {
+    trail = null;
+    spark.style.opacity = 0;
+    return;
+  }
+  // Eased along a slight arc between the two dots, following them as the camera moves.
+  const a = at(trail.from), b = at(trail.to), e = 1 - (1 - k) ** 3;
+  const lift = Math.sin(Math.PI * e) * Math.min(80, Math.hypot(b.x - a.x, b.y - a.y) * 0.3);
+  spark.style.opacity = String(Math.min(1, (1 - k) * 3));
+  spark.style.transform = `translate(${a.x + (b.x - a.x) * e}px, ${a.y + (b.y - a.y) * e - lift}px) scale(${1.2 - 0.5 * k})`;
 }
 
 export function render() {
   const id = story.current;
   const fit = fitOf(id);
   hooks.showTank();
-  $('#workshop-spots').innerHTML = SECTIONS.map((s) => `<button data-spot="${s}" class="${s === section ? 'sel' : ''}" style="--c:${QUALITY[fit[s].q].color}"><i></i><span>${PARTS[s].name}</span></button>`).join('');
+  $('#workshop-spots').classList.toggle('focused', !!section);
+  for (const el of document.querySelectorAll('#workshop-spots [data-spot]')) {
+    el.classList.toggle('sel', el.dataset.spot === section);
+    el.style.setProperty('--c', QUALITY[fit[el.dataset.spot].q].color);
+  }
   const spec = buildSpec(id, fit);
   const cr = combatRating(spec);
   const next = nextStage();

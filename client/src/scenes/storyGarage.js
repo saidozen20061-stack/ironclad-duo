@@ -2,12 +2,15 @@ import * as THREE from 'three';
 import { mulberry32 } from '../../../shared/noise.js';
 
 // Story mode's garage: a 3D workshop hall with the crew's tank on a turntable set into the floor.
-// The camera sits low at the tank's front three-quarter, like a racing game's garage, and the tank turns
-// slowly; drag to turn it. The workshop swings the camera in on one part at a time (`focus`).
+// The camera starts low at the tank's front three-quarter, like a racing game's garage, while the tank
+// turns slowly. Drag to walk the camera round the tank and up over it; the wheel moves it in and out.
+// The workshop swings the camera in on one part at a time (`focus`).
 
 const FOV = 34;
 const HALL = { x: 22, back: -24, front: 26, h: 12 };
 const UP = new THREE.Vector3(0, 1, 0);
+const VIEW = { yaw: 0.5, pitch: 0.09, minPitch: 0.02, maxPitch: 0.9, minZoom: 0.6, maxZoom: 1.45 };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.85, metalness: o.metal ?? 0, flatShading: true, ...(o.emissive ? { emissive: o.emissive, emissiveIntensity: o.glow ?? 1 } : {}) });
 
@@ -83,6 +86,16 @@ function buildHall() {
     }
   }
   box(2 * X, H, 0.4, sheet, 0, H / 2, F);
+  // The front wall: a row of windows and a side door with its own sign.
+  for (let x = -X + 4; x < X - 2; x += 6) {
+    box(4.4, 2.2, 0.1, mat(0x9fb6c4, { emissive: 0xbcd0dc, glow: 0.9 }), x, H - 2.4, F - 0.3, 0, false);
+    box(4.6, 0.15, 0.2, rib, x, H - 2.4, F - 0.35, 0, false);
+  }
+  box(2.4, 4, 0.2, mat(0x4d5143, { metal: 0.3 }), -12, 2, F - 0.3);
+  const exit = textPlane('WORKSHOP · KEEP CLEAR', 5, 0.7, { color: '#1c1c18', bg: '#d6b236', font: 'Rajdhani, sans-serif', size: 0.55 });
+  exit.position.set(-12, 4.6, F - 0.42);
+  exit.rotation.y = Math.PI;
+  g.add(exit);
   // The big rolling door in the back wall, and the unit's name over it.
   const slatA = mat(0x6b6a55, { rough: 0.7, metal: 0.2 }), slatB = mat(0x5e5d4a, { rough: 0.7, metal: 0.2 });
   for (let i = 0; i < 14; i++) box(14, 0.5, 0.2, i % 2 ? slatA : slatB, 0, 0.25 + i * 0.5, B + 0.45, 0, false);
@@ -185,7 +198,7 @@ export class StoryGarage {
     // Light: a cool fill, daylight from the windows and three hanging lamps over the turntable.
     this.scene.add(new THREE.HemisphereLight(0xc9d2dc, 0x4a4234, 1.1));
     // Work lights washing the walls, so the hall reads behind the tank.
-    for (const [x, z] of [[-14, -18], [0, -19], [14, -18], [-18, 4], [18, 4]]) {
+    for (const [x, z] of [[-14, -18], [0, -19], [14, -18], [-18, 4], [18, 4], [-12, 21], [12, 21]]) {
       const wash = new THREE.PointLight(0xffd9a0, 90, 22, 1.3);
       wash.position.set(x, 6.5, z);
       this.scene.add(wash);
@@ -251,18 +264,41 @@ export class StoryGarage {
     this.drag = null;
     this.el = null;
     this.tmp = new THREE.Vector3();
+    // Where the camera looks from: angle round the tank, height angle and distance, eased towards
+    // where the mouse put them so it glides rather than jumps.
+    this.view = { yaw: VIEW.yaw, pitch: VIEW.pitch, zoom: 1 };
+    this.want = { ...this.view };
     this.onDown = (e) => {
       if (e.target !== this.el) return; // only the bare garage, not buttons and panels over it
-      this.drag = { x: e.clientX, id: e.pointerId };
+      this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
       this.el.setPointerCapture?.(e.pointerId);
+      this.el.classList.add('orbiting');
     };
     this.onMove = (e) => {
       if (!this.drag || e.pointerId !== this.drag.id) return;
-      this.spin.rotation.y += (e.clientX - this.drag.x) * 0.01;
+      this.want.yaw -= (e.clientX - this.drag.x) * 0.006;
+      this.want.pitch = clamp(this.want.pitch + (e.clientY - this.drag.y) * 0.004, VIEW.minPitch, VIEW.maxPitch);
       this.drag.x = e.clientX;
+      this.drag.y = e.clientY;
       this.idle = 0;
     };
-    this.onUp = () => (this.drag = null);
+    this.onUp = () => {
+      this.drag = null;
+      this.el?.classList.remove('orbiting');
+    };
+    this.onWheel = (e) => {
+      if (e.target !== this.el) return;
+      e.preventDefault();
+      this.want.zoom = clamp(this.want.zoom * Math.exp(e.deltaY * 0.001), VIEW.minZoom, VIEW.maxZoom);
+      this.idle = 0;
+    };
+  }
+
+  // Back to the starting view (opening the garage, or the workshop picking a part).
+  resetView({ keepYaw = false } = {}) {
+    if (!keepYaw) this.want.yaw = this.view.yaw = VIEW.yaw;
+    this.want.pitch = VIEW.pitch;
+    this.want.zoom = 1;
   }
 
   // Drag-to-turn on this page element (the active story screen).
@@ -270,11 +306,11 @@ export class StoryGarage {
     if (el === this.el) return;
     if (this.el) for (const [k, f] of this.handlers()) this.el.removeEventListener(k, f);
     this.el = el;
-    if (el) for (const [k, f] of this.handlers()) el.addEventListener(k, f);
+    if (el) for (const [k, f, o] of this.handlers()) el.addEventListener(k, f, o);
   }
 
   handlers() {
-    return [['pointerdown', this.onDown], ['pointermove', this.onMove], ['pointerup', this.onUp], ['pointercancel', this.onUp]];
+    return [['pointerdown', this.onDown], ['pointermove', this.onMove], ['pointerup', this.onUp], ['pointercancel', this.onUp], ['wheel', this.onWheel, { passive: false }]];
   }
 
   // key: identifies the model, paint and fitted parts; build() returns the tank's Object3D.
@@ -304,13 +340,15 @@ export class StoryGarage {
     this.anim = Math.min(1, this.anim + dt * 2.5);
     this.zoom += ((this.focus ? 1 : 0) - this.zoom) * Math.min(1, dt * 3.5);
     this.shiftNow += (this.shift - this.shiftNow) * Math.min(1, dt * 4);
-    if (this.focus && !this.drag) {
-      // Turn the part towards the camera, the short way round.
+    const ease = Math.min(1, dt * 6);
+    for (const k of ['yaw', 'pitch', 'zoom']) this.view[k] += (this.want[k] - this.view[k]) * ease;
+    if (this.focus && !this.drag && this.idle > 0.6) {
+      // Turn the part towards wherever the camera is, the short way round.
       const f = this.focus;
-      const want = f.x === 0 && Math.abs(f.z) < 0.25 ? 0.75 : -Math.atan2(f.x, f.z) + 0.35;
+      const want = this.view.yaw + (f.x === 0 && Math.abs(f.z) < 0.25 ? 0.3 : -Math.atan2(f.x, f.z) - 0.15);
       const d = Math.atan2(Math.sin(want - this.spin.rotation.y), Math.cos(want - this.spin.rotation.y));
       this.spin.rotation.y += d * Math.min(1, dt * 3);
-    } else if (!this.drag && this.idle > 1.5) this.spin.rotation.y += dt * 0.16;
+    } else if (!this.focus && !this.drag && this.idle > 2.5) this.spin.rotation.y += dt * 0.16;
     // A freshly bought or refitted tank settles onto the turntable.
     const k = 1 - (1 - this.anim) ** 3;
     this.holder.position.y = (1 - k) * 1.2;
@@ -340,12 +378,18 @@ export class StoryGarage {
     // Tank about half the screen across, camera at hull height: the car-showroom view.
     const half = Math.tan((FOV / 2) * (Math.PI / 180));
     const wide = (this.radius * 1.4) / (half * Math.min(1.6, cam.aspect));
-    const dist = Math.min(22, Math.max(10.5, wide)) * (1 - 0.5 * this.zoom);
+    let dist = Math.min(22, Math.max(10.5, wide)) * (1 - 0.42 * this.zoom) * this.view.zoom;
     const look = new THREE.Vector3(0, this.size.y * 0.4, 0);
     if (this.zoom > 0.001 && this.focus) look.lerp(this.partPoint(this.focus), this.zoom);
-    const yaw = 0.5 + Math.sin(this.t * 0.11) * 0.04;
-    const camY = this.size.y * 0.55 + 0.35 + 1.2 * this.zoom;
-    cam.position.set(look.x + Math.sin(yaw) * dist, camY, look.z + Math.cos(yaw) * dist);
+    // Round the tank and up over it, with a slow sway when nobody's touching it.
+    const yaw = this.view.yaw + Math.sin(this.t * 0.11) * 0.04 * Math.min(1, this.idle / 3);
+    const pitch = Math.max(this.view.pitch, 0.07 * this.zoom + 0.02);
+    const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    // Stay inside the hall: closer in rather than through a wall or the roof.
+    const room = (v, lo, hi, from) => (v > 1e-4 ? (hi - from) / v : v < -1e-4 ? (lo - from) / v : Infinity);
+    dist = Math.min(dist, room(dir.x, -HALL.x + 1.5, HALL.x - 1.5, look.x), room(dir.z, HALL.back + 1.5, HALL.front - 1.5, look.z), room(dir.y, 0.5, HALL.h - 1.4, look.y));
+    cam.position.copy(look).addScaledVector(dir, dist);
+    cam.position.y = Math.max(0.6, cam.position.y);
     cam.lookAt(look);
     cam.setViewOffset(size.x, size.y, this.shiftNow * size.x, 0, size.x, size.y);
     cam.updateProjectionMatrix();

@@ -15,6 +15,7 @@ let scene = null;
 export function initStoryHub(menuScene) {
   scene = menuScene;
   $('#btn-story').addEventListener('click', () => {
+    scene.story.resetView();
     showScreen('story');
     renderHub();
   });

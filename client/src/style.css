@@ -643,13 +643,29 @@ input, select {
 #workshop-head .bar i.over { background: #e0645a; }
 #workshop-head .story-coins { margin-left: auto; }
 #workshop-spots { position: absolute; inset: 0; pointer-events: none; }
-#workshop-spots button { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; margin: -11px 0 0 -11px; padding: 0; background: none; border: 0; cursor: pointer; pointer-events: auto; color: #f3ead2; font: 700 12px var(--ui); text-shadow: 0 1px 3px #000; transition: opacity 0.2s; }
-#workshop-spots i { width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--c) 35%, transparent); border: 2px solid var(--c); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 12px var(--c); animation: spot 1.6s ease-in-out infinite; }
-#workshop-spots span { padding: 1px 6px; background: rgba(10, 12, 9, 0.7); border-radius: 3px; opacity: 0; transition: opacity 0.15s; }
-#workshop-spots button:hover span, #workshop-spots button.sel span { opacity: 1; }
-#workshop-spots button.sel i { background: var(--accent); border-color: #fff; }
-#workshop-spots button.behind { opacity: 0.25; }
+#workshop-spots button { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 8px; margin: -11px 0 0 -11px; padding: 0; background: none; border: 0; cursor: pointer; pointer-events: auto; color: #f3ead2; font: 700 12px var(--ui); text-shadow: 0 1px 3px #000; transition: opacity 0.3s; }
+#workshop-spots .dot { position: relative; display: block; width: 22px; height: 22px; transition: transform 0.4s cubic-bezier(0.3, 1.7, 0.5, 1); animation: spot-in 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d) backwards; }
+#workshop-spots i { position: absolute; inset: 0; border-radius: 50%; background: color-mix(in srgb, var(--c) 35%, transparent); border: 2px solid var(--c); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 12px var(--c); transition: background 0.3s, border-color 0.4s, box-shadow 0.4s; animation: spot 1.6s ease-in-out infinite; }
+#workshop-spots u { position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; pointer-events: none; }
+#workshop-spots span { padding: 2px 7px; background: rgba(10, 12, 9, 0.75); border-radius: 3px; opacity: 0; transform: translateX(-8px); transition: opacity 0.2s, transform 0.25s cubic-bezier(0.3, 1.5, 0.5, 1); }
+#workshop-spots button:hover span, #workshop-spots button.sel span { opacity: 1; transform: none; }
+#workshop-spots button:hover .dot { transform: scale(1.15); }
+#workshop-spots button.sel .dot { transform: scale(1.35); }
+#workshop-spots button.sel i { background: var(--accent); border-color: #fff; box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 22px var(--accent); }
+#workshop-spots.focused button:not(.sel) { opacity: 0.6; }
+#workshop-spots.focused button:not(.sel) .dot { transform: scale(0.8); }
+#workshop-spots button.behind { opacity: 0.2; }
+#workshop-spots button.picked i { animation: spot-pop 0.5s cubic-bezier(0.3, 1.8, 0.5, 1), spot 1.6s 0.5s ease-in-out infinite; }
+#workshop-spots button.picked u { animation: spot-ripple 0.75s ease-out; }
+#workshop-spots button.picked u::after { content: ''; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--accent); animation: spot-ripple 0.75s 0.15s ease-out backwards; }
+#workshop-spots button.leave .dot { animation: spot-leave 0.4s ease-out; }
+#workshop-spots .spark { position: absolute; left: 0; top: 0; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff4d0; box-shadow: 0 0 10px 3px var(--accent), 0 0 30px 10px rgba(217, 164, 65, 0.35); opacity: 0; pointer-events: none; }
 @keyframes spot { 50% { transform: scale(1.18); } }
+@keyframes spot-in { 0% { transform: scale(0); opacity: 0; } 70% { transform: scale(1.3); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes spot-pop { 0% { transform: scale(0.5); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
+@keyframes spot-ripple { from { transform: scale(1); opacity: 0.95; } to { transform: scale(3.4); opacity: 0; } }
+@keyframes spot-leave { 0% { transform: scale(1.35); } 45% { transform: scale(0.6); } 100% { transform: scale(0.8); } }
+#screen-story.orbiting, #screen-workshop.orbiting { cursor: grabbing; }
 .workshop-side { position: absolute; right: 16px; top: 72px; bottom: 16px; width: 410px; }
 .part-card { display: grid; gap: 8px; padding: 10px 12px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--panel-edge); border-radius: 4px; }
 .part-card.fitted { border-color: var(--accent); }
@@ -666,3 +682,4 @@ input, select {
 .storyend-chapter span { color: #d8d2bd; font-style: italic; }
 .storyend-chapter[hidden] { display: none; }
 .storymap-brief .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.garage-hint.hub { right: 0; bottom: 20px; z-index: 1; }
